@@ -1,0 +1,20 @@
+/* One ID dialog for draft changes and persistent workbench transactions. */
+html body #record-id-dialog{box-sizing:border-box;width:min(480px,calc(100vw - 32px));max-height:calc(100dvh - 40px);padding:24px;color:var(--sg-text);background:var(--sg-surface);border:1px solid var(--sg-line);border-radius:var(--sg-radius,18px);line-height:1.65;overflow:auto}
+#record-id-dialog header,#record-id-dialog footer{display:flex;align-items:center;gap:12px}
+#record-id-dialog header{justify-content:space-between;margin-bottom:18px}
+#record-id-dialog h2{margin:2px 0 0;font-size:22px;line-height:1.35}
+#record-id-dialog .record-id-eyebrow{font-size:11px;letter-spacing:.08em;color:var(--sg-muted)}
+#record-id-dialog header>button{width:34px;min-height:34px;padding:0;font-size:22px;flex-shrink:0}
+#record-id-dialog .record-id-current{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 20px;padding:10px 12px;border-radius:10px;background:var(--sg-field);color:var(--sg-muted);font-size:13px}
+#record-id-dialog .record-id-current strong{color:var(--sg-text);font-variant-numeric:tabular-nums}
+#record-id-dialog label{display:block;margin-bottom:8px;font-size:13px;font-weight:600}
+#record-id-dialog .record-id-input-row{display:flex;align-items:stretch;gap:8px;min-width:0;width:100%}
+html body #record-id-dialog input{box-sizing:border-box;min-width:0;flex:1;width:100%;min-height:46px;padding:10px 12px;font-size:18px;font-variant-numeric:tabular-nums;letter-spacing:.03em;background:var(--sg-field);color:var(--sg-text);border:1px solid var(--sg-line);border-radius:10px}
+#record-id-dialog .record-id-input-row>button{flex-shrink:0}
+#record-id-dialog :is(.helper,.record-id-draft-note){margin:12px 0 0;color:var(--sg-muted);font-size:12px;line-height:1.7}
+#record-id-dialog footer{justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--sg-line-soft)}
+#record-id-dialog footer button{min-width:88px;min-height:40px}
+html body #record-id-dialog :is([data-id-error],[data-id-warning]){color:var(--sg-danger);white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;margin:12px 0 0}
+#record-id-dialog :is([data-id-error],[data-id-warning]):empty{display:none}
+[data-record-table]{font-variant-numeric:tabular-nums;font-size:.85rem}
+@media(max-width:540px){html body #record-id-dialog{padding:18px}.record-id-input-row{flex-wrap:wrap}}

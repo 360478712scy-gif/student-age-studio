@@ -1,0 +1,6 @@
+.record-id-prefix{font-size:.85em;font-weight:500;color:inherit;opacity:.76;white-space:nowrap}
+.hide-record-ids .record-id-prefix{display:none!important}
+.talk-card-header{flex-wrap:wrap}
+.talk-card-header>strong{flex:1;min-width:0;overflow-wrap:anywhere}
+.event-card-open>strong,.wk-record-heading h2,#wk-row-list strong,.ap-card>strong,.social-post-list-item strong,.space-list-item strong{overflow-wrap:anywhere}
+.social-post-list-item>span,.space-list-item>span{min-width:0}

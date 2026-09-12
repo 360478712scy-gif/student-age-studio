@@ -1,0 +1,17 @@
+name: Check updater
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -B -m unittest discover -s standalone/tests -p test_app_updates.py
+      - run: python -B tools/build_update.py --out release/student-age-studio-update.zip

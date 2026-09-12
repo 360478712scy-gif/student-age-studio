@@ -1,0 +1,93 @@
+/* Geometry is from NewTalkView, HistoryTalkView and Cell_CommonOptionItem (2560×1440 canvas). */
+:root{--game-ui-scale:1;--game-male-paper:#dff4ff;--game-male-text:#1f4457;--game-male-name:#507a90;--game-male-name-text:#d2f0ff;--game-female-paper:#ffedf8;--game-female-text:#80303f;--game-female-name:#b77380;--game-female-name-text:#ffedf8;--game-neutral-paper:#fffbf3;--game-neutral-text:#692b16;--game-neutral-name:#f3dbb7;--game-neutral-name-text:#483c29}
+body.story-fullscreen #large-scene,body.story-fullscreen #large-scene *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+body.story-fullscreen #large-scene:focus,body.story-fullscreen #large-scene:focus-visible{outline:none}
+body.story-fullscreen #large-scene ::selection{background:transparent;color:inherit}
+body.story-fullscreen #story-preview-controls{display:flex!important;inset:auto calc(30px * var(--game-ui-scale)) calc(8px * var(--game-ui-scale)) auto;height:calc(50px * var(--game-ui-scale));gap:calc(8px * var(--game-ui-scale));align-items:center}
+body.story-fullscreen #story-preview-controls button{display:flex;align-items:center;justify-content:center;gap:calc(6px * var(--game-ui-scale));min-height:0;height:100%;padding:0 calc(4px * var(--game-ui-scale));border:0;border-radius:0;background:transparent;box-shadow:none;font:900 calc(25px * var(--game-ui-scale)) 'StudentAge serif',serif;color:#fffbf3;white-space:nowrap}
+body.story-fullscreen #story-preview-controls button i{display:block;width:calc(40px * var(--game-ui-scale));height:calc(40px * var(--game-ui-scale));background:center/contain no-repeat}
+body.story-fullscreen #story-preview-controls [data-story-preview=history] i{background-image:var(--game-key-tab)}
+body.story-fullscreen #story-preview-controls [data-story-preview=auto] i{background-image:var(--game-key-shift)}
+body.story-fullscreen #story-preview-controls [data-story-preview=exit] i{background-image:var(--game-key-esc)}
+body.story-fullscreen #story-preview-controls [aria-pressed=true]{color:#ffe297}
+.story-scene .scene-dialogue,.story-history-line{--paper:var(--game-neutral-paper);--ink:var(--game-neutral-text);--name-ink:var(--game-neutral-name-text);--name-color:var(--game-neutral-name);--dialogue-image:var(--game-dialogue-neutral);--name-image:var(--game-name-neutral);--history-image:var(--game-history-neutral);--history-name-image:var(--game-history-name-neutral)}
+.story-scene .scene-dialogue[data-speaker-gender=male],.story-history-line[data-speaker-gender=male]{--paper:var(--game-male-paper);--ink:var(--game-male-text);--name-ink:var(--game-male-name-text);--name-color:var(--game-male-name);--dialogue-image:var(--game-dialogue-male);--name-image:var(--game-name-male);--history-image:var(--game-history-male);--history-name-image:var(--game-history-name-male)}
+.story-scene .scene-dialogue[data-speaker-gender=female],.story-history-line[data-speaker-gender=female]{--paper:var(--game-female-paper);--ink:var(--game-female-text);--name-ink:var(--game-female-name-text);--name-color:var(--game-female-name);--dialogue-image:var(--game-dialogue-female);--name-image:var(--game-name-female);--history-image:var(--game-history-female);--history-name-image:var(--game-history-name-female)}
+.story-scene .scene-dialogue{box-sizing:border-box;left:50%;right:auto;bottom:calc(50px * var(--game-ui-scale));transform:translateX(-50%);width:calc(1400px * var(--game-ui-scale));height:calc(300px * var(--game-ui-scale));min-height:0;padding:0;border:0;border-radius:calc(30px * var(--game-ui-scale));background:var(--paper);box-shadow:none;overflow:visible}
+/* Fill behind the nine-slice seams: fractional WebView pixels must not expose the scene. */
+.game-ui-ready .story-scene .scene-dialogue{border-radius:0;background:linear-gradient(var(--paper),var(--paper)) center/calc(100% - 60px * var(--game-ui-scale)) 100% no-repeat,linear-gradient(var(--paper),var(--paper)) center/100% calc(100% - 60px * var(--game-ui-scale)) no-repeat;border-image-source:var(--dialogue-image);border-image-slice:47 44 50 63 fill;border-image-width:calc(47px * var(--game-ui-scale)) calc(44px * var(--game-ui-scale)) calc(50px * var(--game-ui-scale)) calc(63px * var(--game-ui-scale));border-image-outset:0}
+.story-scene .scene-dialogue p,.story-scene .scene-dialogue textarea{position:absolute;inset:calc(60px * var(--game-ui-scale)) calc(70px * var(--game-ui-scale)) calc(30px * var(--game-ui-scale));box-sizing:border-box;width:auto;height:auto;min-width:0;min-height:0;padding:0;border:0;background:transparent;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;margin:0;max-height:none;color:var(--ink);font-family:'StudentAge sans','Source Han Sans CN',sans-serif;font-size:calc(40px * var(--game-ui-scale));font-weight:500;line-height:1.75;letter-spacing:0;overflow:auto;text-shadow:none}
+.story-scene .scene-speaker-name{box-sizing:border-box;display:flex;align-items:center;justify-content:center;position:absolute;left:calc(40px * var(--game-ui-scale));top:auto;bottom:100%;transform:none;width:calc(350px * var(--game-ui-scale));height:calc(80px * var(--game-ui-scale));min-height:0;margin:0;padding:0 calc(40px * var(--game-ui-scale));border:0;border-radius:calc(30px * var(--game-ui-scale)) calc(30px * var(--game-ui-scale)) 0 0;background:var(--name-color);opacity:1;box-shadow:none}
+.game-ui-ready .story-scene .scene-speaker-name{border-radius:0;background:none;border-image-source:var(--name-image);border-image-slice:38 35 0 42 fill;border-image-width:calc(38px * var(--game-ui-scale)) calc(35px * var(--game-ui-scale)) 0 calc(42px * var(--game-ui-scale))}
+.story-scene .scene-speaker-name strong{margin:0;font-family:'StudentAge serif','Source Han Serif CN',serif;font-weight:900;font-size:calc(35px * var(--game-ui-scale));line-height:1.4;letter-spacing:0;color:var(--name-ink);text-align:center;text-shadow:none}
+.story-scene .scene-dialogue[data-narration=true] .scene-speaker-name{display:none}
+body.story-fullscreen #large-scene .scene-route-overlay{top:calc(50% - 83.1px * var(--game-ui-scale));width:calc(664px * var(--game-ui-scale));max-height:80%;padding:0;gap:calc(20px * var(--game-ui-scale));background:none;border:0;box-shadow:none;overflow-x:hidden}
+body.story-fullscreen #large-scene .scene-route-overlay button{box-sizing:border-box;position:relative;flex:none;width:100%;height:calc(126px * var(--game-ui-scale));min-height:0;padding:0 calc(20px * var(--game-ui-scale)) calc(33.22px * var(--game-ui-scale));border:0;border-radius:0;background:var(--game-option-normal) center/100% 100% no-repeat;box-shadow:none;color:#724d32;font-family:'StudentAge serif','Source Han Serif CN',serif;font-size:calc(45px * var(--game-ui-scale));font-weight:900;line-height:1.25;letter-spacing:0;white-space:normal;overflow-wrap:anywhere;outline-offset:-6px}
+body.story-fullscreen #large-scene .scene-route-overlay button:hover,body.story-fullscreen #large-scene .scene-route-overlay button:focus-visible{background-image:var(--game-option-highlight);transform:none;color:#724d32}
+body.story-fullscreen #large-scene .scene-route-overlay button:active{background-image:var(--game-option-select)}
+body.story-fullscreen #large-scene .scene-route-overlay button:disabled{background-image:var(--game-option-disable);opacity:1;color:#777}
+#story-history{box-sizing:border-box;position:fixed;inset:0;margin:0;width:100vw;max-width:none;height:100vh;max-height:none;padding:0;border:0;border-radius:0;background:rgba(0,0,0,.568627);box-shadow:none;outline:none}
+#story-history::backdrop{background:none;backdrop-filter:none}#story-history header{display:none}
+#story-history-entries{box-sizing:border-box;padding:calc(30px * var(--game-ui-scale)) 0;flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;outline:none;scrollbar-width:thin;scrollbar-color:#ddd #000}
+.story-history-line{box-sizing:border-box;position:relative;display:grid;grid-template-columns:calc(250px * var(--game-ui-scale)) 1fr;align-items:end;width:calc(1500px * var(--game-ui-scale));min-height:calc(300px * var(--game-ui-scale));margin:0 auto;padding:calc(100px * var(--game-ui-scale)) 0 0;gap:0;border:0;color:var(--ink)}
+.story-history-portraits{position:absolute;left:0;bottom:0;display:flex;flex-wrap:nowrap;width:calc(251px * var(--game-ui-scale));max-width:none;height:calc(250px * var(--game-ui-scale));overflow:hidden;gap:0}
+.story-history-portrait{flex:1;min-width:0;width:100%;height:100%;overflow:hidden;display:block}.story-history-portrait img{width:100%;height:100%;object-fit:cover;object-position:center top;filter:none}
+.story-history-text{grid-column:2;box-sizing:border-box;position:relative;min-height:calc(200px * var(--game-ui-scale));padding:calc(40px * var(--game-ui-scale)) calc(50px * var(--game-ui-scale)) calc(20px * var(--game-ui-scale));background:var(--paper);border:0}
+.game-ui-ready .story-history-text{background:none;border-image-source:var(--history-image);border-image-slice:80 22 33 60 fill;border-image-width:calc(80px * var(--game-ui-scale)) calc(22px * var(--game-ui-scale)) calc(33px * var(--game-ui-scale)) calc(60px * var(--game-ui-scale))}
+.story-history-text strong{box-sizing:border-box;position:absolute;bottom:0;left:calc(-250px * var(--game-ui-scale));width:calc(250px * var(--game-ui-scale));height:calc(52px * var(--game-ui-scale));display:flex;align-items:center;justify-content:center;background:var(--name-color);color:var(--name-ink);font-family:'StudentAge serif',serif;font-size:calc(30px * var(--game-ui-scale));font-weight:900;line-height:1;z-index:1}
+.game-ui-ready .story-history-text strong{background:none;border-image-source:var(--history-name-image);border-image-slice:3 83 3 89 fill;border-image-width:calc(3px * var(--game-ui-scale)) calc(83px * var(--game-ui-scale)) calc(3px * var(--game-ui-scale)) calc(89px * var(--game-ui-scale))}
+.story-history-text p{margin:0;font-family:'StudentAge sans',sans-serif;font-size:calc(30px * var(--game-ui-scale));font-weight:500;line-height:1.6;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;letter-spacing:0}
+.story-history-line[data-narration=true] .story-history-text{margin-left:calc(26px * var(--game-ui-scale));border-image-source:var(--game-aside-neutral);border-image-slice:29 24 26 24 fill;border-image-width:calc(29px * var(--game-ui-scale)) calc(24px * var(--game-ui-scale)) calc(26px * var(--game-ui-scale)) calc(24px * var(--game-ui-scale))}
+.story-history-line[data-narration=true] strong{display:none}
+/* Selected routes reuse the game's selected option artwork, not a generic log banner. */
+.story-history-choice{box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:calc(664px * var(--game-ui-scale));min-height:calc(126px * var(--game-ui-scale));margin:calc(30px * var(--game-ui-scale)) auto;padding:0 calc(20px * var(--game-ui-scale)) calc(33.22px * var(--game-ui-scale));border:0;background:var(--game-option-select) center/100% 100% no-repeat;box-shadow:none;color:#724d32;font-family:'StudentAge serif',serif;font-size:calc(45px * var(--game-ui-scale));font-weight:900;line-height:1.25;text-align:center;white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* Original TalkView_Next: y = -10 → -4 → -10, one-second loop. */
+.story-scene .scene-dialogue p:not(:empty)::after{content:"";display:inline-block;width:calc(50px * var(--game-ui-scale));height:calc(50px * var(--game-ui-scale));margin-left:calc(10px * var(--game-ui-scale));background:var(--game-plane) center/contain no-repeat;vertical-align:baseline;animation:game-talk-next 1s cubic-bezier(.333333,0,.666667,1) infinite;pointer-events:none}
+body.story-fullscreen #large-scene.scene-awaiting-choice .scene-dialogue p::after{display:none}
+@keyframes game-talk-next{0%,100%{transform:translateY(calc(10px * var(--game-ui-scale)))}50%{transform:translateY(calc(4px * var(--game-ui-scale)))}}
+
+.game-ui-ready body.story-fullscreen #story-preview-controls button{border-image-source:var(--game-key-bg);border-image-slice:17 19 15 29 fill;border-image-width:calc(17px * var(--game-ui-scale)) calc(19px * var(--game-ui-scale)) calc(15px * var(--game-ui-scale)) calc(29px * var(--game-ui-scale))}
+
+/* Editing uses the same frame, fonts and wrapping; only the text remains interactive. */
+.story-scene .scene-dialogue textarea{resize:none;border-radius:0;box-shadow:none;caret-color:var(--ink);}
+.story-scene .scene-dialogue-editable:focus-within{box-shadow:none;}
+.story-scene .scene-speaker-name:hover:not(:disabled){background:var(--name-color);filter:brightness(1.04);}
+.game-ui-ready .story-scene .scene-speaker-name:hover:not(:disabled){background:none;}
+
+/* Narration has no in-game name plate; reveal its editing target on interaction. */
+.story-scene.scene-editing .scene-dialogue[data-narration=true]:hover .scene-speaker-name,
+.story-scene.scene-editing .scene-dialogue[data-narration=true]:focus-within .scene-speaker-name{display:flex;}
+
+.story-scene .scene-phone-backdrop{position:absolute;inset:0;clip-path:inset(0 50% 0 0);pointer-events:none;z-index:0}
+.story-scene .scene-phone-backdrop img{width:100%;height:100%;object-fit:cover}
+.story-scene .scene-phone-divider{position:absolute;top:0;bottom:0;left:50%;width:calc(30.609863px * var(--game-ui-scale));transform:translateX(-50%);background:#000;pointer-events:none;z-index:2}
+.story-scene .scene-phone-backdrop[hidden],.story-scene .scene-phone-divider[hidden]{display:none}
+.story-scene .scene-paper-overlay{position:absolute;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.454902);cursor:pointer}
+.story-scene .scene-paper-overlay[hidden]{display:none}
+.story-scene .scene-paper-overlay canvas{display:block;max-width:96%;max-height:96%;object-fit:contain;box-shadow:none}
+
+/* Authoring retains the narrator picker; playback follows the native speaker side. */
+.story-scene.scene-editing .scene-dialogue[data-narration=true] .scene-speaker-name{display:flex}
+.story-fullscreen .scene-dialogue[data-speaker-axis="2"] .scene-speaker-name{left:auto;right:calc(40px * var(--game-ui-scale));transform:none}
+.story-fullscreen .scene-dialogue[data-speaker-axis="3"] .scene-speaker-name{left:50%;right:auto;transform:translateX(-50%)}
+dialog.outfit-location-picker{max-height:86vh;overflow:hidden;padding-bottom:0}
+.outfit-location-picker .character-picker-body{max-height:calc(86vh - 190px);overflow-y:auto;min-height:0}
+.outfit-location-footer{display:flex;justify-content:flex-end;padding:12px 24px 20px;background:var(--panel,#182c22);border-top:1px solid #385344}
+.talk-card[data-speaker-gender="male"]{border-color:#5984a3;background:#1b303f}.talk-card[data-speaker-gender="male"].selected{border-color:#92cbf0;background:#28485e;box-shadow:inset 5px 0 #92cbf0}
+.talk-card[data-speaker-gender="female"]{border-color:#a57086;background:#3b2834}.talk-card[data-speaker-gender="female"].selected{border-color:#efacc8;background:#54394a;box-shadow:inset 5px 0 #efacc8}
+.speaker-dot img{width:100%;height:100%;object-fit:contain}.speaker-dot:has(img){width:44px;height:44px;overflow:hidden;background:transparent;flex-shrink:0}
+.studio-delete-menu{position:fixed;z-index:100000;border:1px solid #567361;border-radius:8px;background:#182b22;padding:5px;box-shadow:0 6px 20px #0008}.studio-delete-menu button{color:#ffb8a9}
+/* CGView@Talk, 2560×1440: bottom mask 600, body bottom 100/height 200,
+   name bottom 300/height 57. Font files and mask are the original assets. */
+.story-scene .scene-dialogue[data-cg=true]{left:0;right:0;bottom:0;transform:none;width:100%;height:calc(600px * var(--game-ui-scale));padding:0;border:0;border-image:none;border-radius:0;background:var(--cg-mask,linear-gradient(transparent,#000b)) center/100% 100% no-repeat;box-shadow:none}
+.story-scene .scene-dialogue[data-cg=true] p,.story-scene .scene-dialogue[data-cg=true] textarea{inset:auto calc(100px * var(--game-ui-scale)) calc(100px * var(--game-ui-scale));height:calc(200px * var(--game-ui-scale));width:auto;color:white;font-family:'StudentAge CG body','StudentAge serif',serif;font-size:calc(50px * var(--game-ui-scale));font-weight:400;line-height:1.3;text-align:center;letter-spacing:0}
+.story-scene .scene-dialogue[data-cg=true] p{display:flex;align-items:center;justify-content:center;white-space:pre-wrap}
+.story-scene .scene-dialogue[data-cg=true] textarea{padding-top:calc(64px * var(--game-ui-scale))}
+.story-scene .scene-dialogue[data-cg=true] p[hidden],.story-scene .scene-dialogue[data-cg=true] textarea[hidden]{display:none}
+.story-scene .scene-dialogue[data-cg=true] p::after{display:none}
+.story-scene .scene-dialogue[data-cg=true] .scene-speaker-name,.story-scene .scene-dialogue[data-cg=true] .scene-speaker-name:hover:not(:disabled){left:50%;right:auto;top:auto;bottom:calc(300px * var(--game-ui-scale));transform:translateX(-50%);width:max-content;height:calc(57px * var(--game-ui-scale));padding:0;border:0;border-image:none;border-radius:0;background:none;box-shadow:none;filter:none}
+.story-scene .scene-dialogue[data-cg=true] .scene-speaker-name strong{font-family:'StudentAge CG name','StudentAge serif',serif;color:white;font-size:calc(40px * var(--game-ui-scale));font-weight:400;line-height:1.425}
+.story-scene .scene-dialogue[data-cg=true] .scene-speaker-name::after{content:'';position:absolute;left:calc(-10px * var(--game-ui-scale));right:calc(-10px * var(--game-ui-scale));bottom:calc(-10px * var(--game-ui-scale));height:calc(2px * var(--game-ui-scale));background:white}
+#story-exit-confirm{width:min(440px,90vw);padding:26px;border:1px solid #5f796c;border-radius:14px;background:#18291f;color:#e3eee7}
+#story-exit-confirm::backdrop{background:#0008}#story-exit-confirm h2{font-size:22px;margin-bottom:16px}#story-exit-confirm p{line-height:1.8;margin-bottom:24px}#story-exit-confirm>div{display:flex;justify-content:flex-end;gap:12px}

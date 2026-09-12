@@ -1,0 +1,1504 @@
+[
+  {
+    "label": "增减属性",
+    "template": [
+      1.0,
+      1.0,
+      101.0,
+      1.0
+    ],
+    "match": {
+      "0": 1.0,
+      "1": 1.0
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "属性",
+        "type": "int",
+        "range": {
+          "table": "PersonAttrCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "变化量（负数为减少）",
+        "type": "float"
+      }
+    ]
+  },
+  {
+    "label": "设定属性数值",
+    "template": [
+      1.0,
+      2.0,
+      101.0,
+      10.0
+    ],
+    "match": {
+      "0": 1.0,
+      "1": 2.0
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "属性",
+        "type": "int",
+        "range": {
+          "table": "PersonAttrCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "目标值",
+        "type": "float"
+      }
+    ]
+  },
+  {
+    "label": "获得物品",
+    "template": [
+      60.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "match": {
+      "0": 60.0,
+      "1": 1.0
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "物品",
+        "type": "int",
+        "range": {
+          "table": "ItemCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "数量",
+        "type": "int",
+        "min": 1.0,
+        "max": 1000000.0
+      }
+    ]
+  },
+  {
+    "label": "失去物品",
+    "template": [
+      60.0,
+      -1.0,
+      1.0,
+      1.0
+    ],
+    "match": {
+      "0": 60.0,
+      "1": -1.0
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "物品",
+        "type": "int",
+        "range": {
+          "table": "ItemCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "数量",
+        "type": "int",
+        "min": 1.0,
+        "max": 1000000.0
+      }
+    ]
+  },
+  {
+    "label": "获得书籍",
+    "template": [
+      60.0,
+      2.0,
+      1.0,
+      1.0
+    ],
+    "match": {
+      "0": 60.0,
+      "1": 2.0
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "书籍",
+        "type": "int",
+        "range": {
+          "table": "BookCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "数量",
+        "type": "int",
+        "min": 1.0,
+        "max": 1000000.0
+      }
+    ]
+  },
+  {
+    "label": "失去书籍",
+    "template": [
+      60.0,
+      -2.0,
+      1.0,
+      1.0
+    ],
+    "match": {
+      "0": 60.0,
+      "1": -2.0
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "书籍",
+        "type": "int",
+        "range": {
+          "table": "BookCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "数量",
+        "type": "int",
+        "min": 1.0,
+        "max": 1000000.0
+      }
+    ]
+  },
+  {
+    "label": "每回合增减属性",
+    "template": [
+      1,
+      11,
+      1,
+      1
+    ],
+    "match": {
+      "0": 1,
+      "1": 11
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "属性",
+        "type": "int",
+        "range": {
+          "table": "PersonAttrCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "每回合变化量（负数为减少）",
+        "type": "float"
+      }
+    ],
+    "category": "属性",
+    "categoryId": 1,
+    "description": "安装持续的每回合属性变化；重复执行会再添加一份效果。",
+    "source": "Effect.EffectorChangeAttr.OnRun subtype 11"
+  },
+  {
+    "label": "获得状态（使用状态默认时长）",
+    "template": [
+      7,
+      2,
+      10
+    ],
+    "match": {
+      "0": 7,
+      "1": 2
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "状态",
+        "type": "int",
+        "range": {
+          "table": "PersonStateCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "状态",
+    "categoryId": 7,
+    "description": "使用该状态配置的持续回合；默认时长为零时不自动到期。已有相同状态不重复添加或刷新时长。",
+    "source": "Effect.EffectorChangeState.ctor + OnRun subtype 2; Role.AddState"
+  },
+  {
+    "label": "获得状态（指定时长）",
+    "template": [
+      7,
+      2,
+      10,
+      1
+    ],
+    "match": {
+      "0": 7,
+      "1": 2
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "状态",
+        "type": "int",
+        "range": {
+          "table": "PersonStateCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 3,
+        "label": "持续回合（0用默认，−1不限）",
+        "type": "int",
+        "min": -1,
+        "max": 1000000
+      }
+    ],
+    "category": "状态",
+    "categoryId": 7,
+    "description": "指定状态的剩余回合；0采用状态配置，−1不自动到期。已有相同状态不刷新时长。",
+    "source": "Effect.EffectorChangeState.ctor + OnRun subtype 2; Role.AddState"
+  },
+  {
+    "label": "移除状态",
+    "template": [
+      7,
+      -2,
+      10
+    ],
+    "match": {
+      "0": 7,
+      "1": -2
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "状态",
+        "type": "int",
+        "range": {
+          "table": "PersonStateCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "状态",
+    "categoryId": 7,
+    "description": "移除指定状态及该状态安装的效果。",
+    "source": "Effect.EffectorChangeState.OnRun subtype -2; Role.DelState"
+  },
+  {
+    "label": "获得技能",
+    "template": [
+      3,
+      2,
+      1
+    ],
+    "match": {
+      "0": 3,
+      "1": 2
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "技能",
+        "type": "int",
+        "range": {
+          "table": "SkillCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "技能",
+    "categoryId": 3,
+    "description": "解锁技能，同时加入技能配置关联的行动；已有技能不会重复加入。",
+    "source": "Effect.EffectorChangeSkill.ctor + OnRun subtype 2; SkillData.AddSkill"
+  },
+  {
+    "label": "增加技能经验",
+    "template": [
+      6,
+      1,
+      1,
+      10
+    ],
+    "match": {
+      "0": 6,
+      "1": 1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "技能",
+        "type": "int",
+        "range": {
+          "table": "SkillCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 3,
+        "label": "经验值",
+        "type": "float",
+        "min": 0
+      }
+    ],
+    "category": "技能",
+    "categoryId": 6,
+    "description": "增加指定技能经验；原生执行不使用选项的效果倍率。",
+    "source": "Effect.EffectorChangeHobby.SubType.AddExp / OnRun; SkillData.AddExp"
+  },
+  {
+    "label": "每回合增加技能经验",
+    "template": [
+      6,
+      11,
+      1,
+      1
+    ],
+    "match": {
+      "0": 6,
+      "1": 11
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "技能",
+        "type": "int",
+        "range": {
+          "table": "SkillCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 3,
+        "label": "每回合经验值",
+        "type": "float",
+        "min": 0
+      }
+    ],
+    "category": "技能",
+    "categoryId": 6,
+    "description": "安装持续的每回合技能经验效果；重复执行会叠加。",
+    "source": "Effect.EffectorChangeHobby.SubType.AddExpEachRound / OnRun"
+  },
+  {
+    "label": "增加一次成就升级机会",
+    "template": [
+      6,
+      99
+    ],
+    "match": {
+      "0": 6,
+      "1": 99
+    },
+    "parameters": [],
+    "category": "技能",
+    "categoryId": 6,
+    "description": "成就系统的剩余升级次数增加1。",
+    "source": "Effect.EffectorChangeHobby.SubType.ExtraAchievement / OnRun"
+  },
+  {
+    "label": "增减人物好感",
+    "template": [
+      20,
+      1,
+      3,
+      10
+    ],
+    "match": {
+      "0": 20,
+      "1": 1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 3,
+        "label": "好感变化量（负数为减少）",
+        "type": "float"
+      }
+    ],
+    "category": "社交",
+    "categoryId": 20,
+    "description": "对所选人物调用原生好感变化，使用选项效果倍率及游戏本身的好感规则。",
+    "source": "Effect.EffectorChangeRelation.ctor + OnRun subtype 1"
+  },
+  {
+    "label": "认识人物",
+    "template": [
+      20,
+      2,
+      3
+    ],
+    "match": {
+      "0": 20,
+      "1": 2
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "社交",
+    "categoryId": 20,
+    "description": "将人物与主角的关系改为熟人。",
+    "source": "Effect.EffectorChangeRelation.ctor subtype 2 defaults relationId=1; OnRun"
+  },
+  {
+    "label": "设置人物关系",
+    "template": [
+      20,
+      2,
+      3,
+      1
+    ],
+    "match": {
+      "0": 20,
+      "1": 2
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 3,
+        "label": "关系",
+        "type": "int",
+        "range": {
+          "table": "RelationCfg"
+        }
+      }
+    ],
+    "category": "社交",
+    "categoryId": 20,
+    "description": "调用原生关系变更，可选择当前配置内的关系类别。",
+    "source": "Effect.EffectorChangeRelation.ctor + OnRun subtype 2; RelationData.ChangeRelation"
+  },
+  {
+    "label": "增减指定人物属性",
+    "template": [
+      22,
+      6,
+      3,
+      1,
+      1
+    ],
+    "match": {
+      "0": 22,
+      "1": 6
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 3,
+        "label": "属性",
+        "type": "int",
+        "range": {
+          "table": "PersonAttrCfg"
+        }
+      },
+      {
+        "index": 4,
+        "label": "变化量（负数为减少）",
+        "type": "float"
+      }
+    ],
+    "category": "人物",
+    "categoryId": 22,
+    "description": "直接修改所选人物的属性，使用其原生属性规则；此指令不应用选项的效果倍率。",
+    "source": "Effect.EffectorNpc.ctor + OnRun subtype 6"
+  },
+  {
+    "label": "添加行动",
+    "template": [
+      40,
+      1,
+      2001
+    ],
+    "match": {
+      "0": 40,
+      "1": 1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "行动",
+        "type": "int",
+        "range": {
+          "table": "ActionCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "行动",
+    "categoryId": 40,
+    "description": "使用主角的行动列表；添加时会解锁关联地点。",
+    "source": "Effect.EffectorChangeAction.ctor + OnRun subtype 1"
+  },
+  {
+    "label": "添加行动（随主角性别选择）",
+    "template": [
+      40,
+      1,
+      2001,
+      2002
+    ],
+    "match": {
+      "0": 40,
+      "1": 1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "男生主角对应行动",
+        "type": "int",
+        "range": {
+          "table": "ActionCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 3,
+        "label": "女生主角对应行动",
+        "type": "int",
+        "range": {
+          "table": "ActionCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "行动",
+    "categoryId": 40,
+    "description": "游戏按主角性别选择其中一个行动。",
+    "source": "Effect.EffectorChangeAction.ctor subtype 1 gender split; OnRun"
+  },
+  {
+    "label": "移除行动",
+    "template": [
+      40,
+      -1,
+      2001
+    ],
+    "match": {
+      "0": 40,
+      "1": -1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "行动",
+        "type": "int",
+        "range": {
+          "table": "ActionCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "行动",
+    "categoryId": 40,
+    "description": "从主角当前行动列表移除所选行动。",
+    "source": "Effect.EffectorChangeAction.ctor + OnRun subtype -1"
+  },
+  {
+    "label": "移除行动（随主角性别选择）",
+    "template": [
+      40,
+      -1,
+      2001,
+      2002
+    ],
+    "match": {
+      "0": 40,
+      "1": -1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "男生主角对应行动",
+        "type": "int",
+        "range": {
+          "table": "ActionCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 3,
+        "label": "女生主角对应行动",
+        "type": "int",
+        "range": {
+          "table": "ActionCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "行动",
+    "categoryId": 40,
+    "description": "游戏按主角性别选择其中一个行动。",
+    "source": "Effect.EffectorChangeAction.ctor subtype -1 gender split; OnRun"
+  },
+  {
+    "label": "替换已有行动",
+    "template": [
+      40,
+      5,
+      2002,
+      2001
+    ],
+    "match": {
+      "0": 40,
+      "1": 5
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "换成的新行动",
+        "type": "int",
+        "range": {
+          "table": "ActionCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 3,
+        "label": "被替换的旧行动",
+        "type": "int",
+        "range": {
+          "table": "ActionCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "行动",
+    "categoryId": 40,
+    "description": "仅当旧行动存在时替换；保留该行动实例的地点与次数等数据。参数顺序为新、旧。",
+    "source": "Effect.EffectorChangeAction.OnRun subtype 5; ActionData.ReplaceAction(int _new,int _old)"
+  },
+  {
+    "label": "添加临时行动",
+    "template": [
+      40,
+      10,
+      2001,
+      1
+    ],
+    "match": {
+      "0": 40,
+      "1": 10
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "行动",
+        "type": "int",
+        "range": {
+          "table": "ActionCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 3,
+        "label": "可存在回合数",
+        "type": "int",
+        "min": 1,
+        "max": 1000000
+      }
+    ],
+    "category": "行动",
+    "categoryId": 40,
+    "description": "添加存在指定回合数的行动；已有同一行动不会重新添加或延长。",
+    "source": "Effect.EffectorChangeAction.ctor + OnRun subtype 10; ActionData.AddAction"
+  },
+  {
+    "label": "移动行动到地点",
+    "template": [
+      40,
+      8,
+      2001,
+      4
+    ],
+    "match": {
+      "0": 40,
+      "1": 8
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "行动",
+        "type": "int",
+        "range": {
+          "table": "ActionCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 3,
+        "label": "目标地点",
+        "type": "int",
+        "range": {
+          "table": "MapCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "行动",
+    "categoryId": 40,
+    "description": "修改主角当前行动实例的地点。",
+    "source": "Effect.EffectorChangeAction.OnRun subtype 8; ActionData.ChangeActionMap"
+  },
+  {
+    "label": "增减行动练习进度",
+    "template": [
+      40,
+      20,
+      2005,
+      1
+    ],
+    "match": {
+      "0": 40,
+      "1": 20
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "行动",
+        "type": "int",
+        "range": {
+          "table": "ActionCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 3,
+        "label": "练习次数变化量",
+        "type": "int"
+      }
+    ],
+    "category": "行动",
+    "categoryId": 40,
+    "description": "仅对当前拥有且需要练习、尚未完成的行动生效；达到目标会运行原生奖励并续接其下一行动。",
+    "source": "Effect.EffectorChangeAction.ctor + OnRun subtype 20"
+  },
+  {
+    "label": "添加目标",
+    "template": [
+      70,
+      1,
+      101
+    ],
+    "match": {
+      "0": 70,
+      "1": 1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "目标",
+        "type": "int",
+        "range": {
+          "table": "IntentCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "目标",
+    "categoryId": 70,
+    "description": "按原生目标规则添加；目标期限和条件来自目标配置。",
+    "source": "Effect.EffectorChangeIntent.OnRun subtype 1; IntentData.AddIntent"
+  },
+  {
+    "label": "移除目标（保留完成记录规则）",
+    "template": [
+      70,
+      -1,
+      101
+    ],
+    "match": {
+      "0": 70,
+      "1": -1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "目标",
+        "type": "int",
+        "range": {
+          "table": "IntentCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "目标",
+    "categoryId": 70,
+    "description": "移除目标；只有它已处于完成或领奖状态时才记入完成列表。不会强制达成或发奖，可能自动衔接目标配置的下一组。",
+    "source": "Effect.EffectorChangeIntent.OnRun subtype -1; IntentData.DelIntent"
+  },
+  {
+    "label": "移除目标（不记为完成）",
+    "template": [
+      70,
+      -11,
+      101
+    ],
+    "match": {
+      "0": 70,
+      "1": -11
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "目标",
+        "type": "int",
+        "range": {
+          "table": "IntentCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "目标",
+    "categoryId": 70,
+    "description": "移除目标且不写完成记录；仍可能自动衔接目标配置的下一组。",
+    "source": "Effect.EffectorChangeIntent.OnRun subtype -11; IntentData.DelIntent"
+  },
+  {
+    "label": "追踪目标",
+    "template": [
+      70,
+      10,
+      101
+    ],
+    "match": {
+      "0": 70,
+      "1": 10
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "目标",
+        "type": "int",
+        "range": {
+          "table": "IntentCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "目标",
+    "categoryId": 70,
+    "description": "将当前追踪目标设为所选目标；应选择玩家已有的目标。",
+    "source": "Effect.EffectorChangeIntent.OnRun subtype 10; IntentData.Focus"
+  },
+  {
+    "label": "发布企鹅动态或日志",
+    "template": [
+      23,
+      1,
+      301
+    ],
+    "match": {
+      "0": 23,
+      "1": 1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "动态或日志",
+        "type": "int",
+        "range": {
+          "table": "KZoneContentCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "企鹅空间",
+    "categoryId": 23,
+    "description": "当前模组的动态和日志直接发布；原版以93或97开头的特殊条目只开放为可发布内容。已发布内容不重复添加。",
+    "source": "Effect.EffectSocialMedia.ctor + OnRun type 1; KZoneData.Post"
+  },
+  {
+    "label": "删除已发布企鹅内容",
+    "template": [
+      23,
+      -1,
+      301
+    ],
+    "match": {
+      "0": 23,
+      "1": -1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "动态或日志",
+        "type": "int",
+        "range": {
+          "table": "KZoneContentCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "企鹅空间",
+    "categoryId": 23,
+    "description": "移除游戏中的已发布条目；保留模组配置。",
+    "source": "Effect.EffectSocialMedia.OnRun type -1; KZoneData.DelPost"
+  },
+  {
+    "label": "添加企鹅留言",
+    "template": [
+      23,
+      2,
+      301
+    ],
+    "match": {
+      "0": 23,
+      "1": 2
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "留言",
+        "type": "int",
+        "range": {
+          "table": "KZoneMessageBoardCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "企鹅空间",
+    "categoryId": 23,
+    "description": "按留言配置的第二个人物发送留言；该条目需要完整的发送者和接收者配置。",
+    "source": "Effect.EffectSocialMedia.OnRun type 2"
+  },
+  {
+    "label": "添加电话联系人",
+    "template": [
+      23,
+      99,
+      3
+    ],
+    "match": {
+      "0": 23,
+      "1": 99
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "社交",
+    "categoryId": 23,
+    "description": "将人物加入电话联系人。",
+    "source": "Effect.EffectSocialMedia.OnRun type 99; TelephoneData.AddPhone"
+  },
+  {
+    "label": "移除电话联系人",
+    "template": [
+      23,
+      -99,
+      3
+    ],
+    "match": {
+      "0": 23,
+      "1": -99
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "社交",
+    "categoryId": 23,
+    "description": "将人物从电话联系人移除。",
+    "source": "Effect.EffectSocialMedia.OnRun type -99; TelephoneData.RemovePhone"
+  },
+  {
+    "label": "发送手机消息",
+    "template": [
+      23,
+      200,
+      301001
+    ],
+    "match": {
+      "0": 23,
+      "1": 200
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "消息",
+        "type": "int",
+        "range": {
+          "table": "PhoneMsgCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "社交",
+    "categoryId": 23,
+    "description": "按所选手机消息配置发出消息。",
+    "source": "Effect.EffectSocialMedia.OnRun type 200; PhoneData.PostMsg"
+  },
+  {
+    "label": "解锁功能",
+    "template": [
+      101,
+      1,
+      2
+    ],
+    "match": {
+      "0": 101,
+      "1": 1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "功能",
+        "type": "int",
+        "range": {
+          "table": "FuncCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "功能与地点",
+    "categoryId": 101,
+    "description": "调用游戏原生功能解锁。部分功能还依赖学段等系统条件。",
+    "source": "Effect.EffectorUI.OnRun type 1; FuncMgr.OpenFunc"
+  },
+  {
+    "label": "解锁地点",
+    "template": [
+      101,
+      4,
+      4
+    ],
+    "match": {
+      "0": 101,
+      "1": 4
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "地点",
+        "type": "int",
+        "range": {
+          "table": "MapCfg",
+          "startId": 2
+        }
+      }
+    ],
+    "category": "功能与地点",
+    "categoryId": 101,
+    "description": "将地点加入玩家已解锁列表。",
+    "source": "Effect.EffectorUI.OnRun type 4; MapData.UnlockMapScene"
+  },
+  {
+    "label": "锁定地点",
+    "template": [
+      101,
+      -4,
+      4
+    ],
+    "match": {
+      "0": 101,
+      "1": -4
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "地点",
+        "type": "int",
+        "range": {
+          "table": "MapCfg",
+          "startId": 2
+        }
+      }
+    ],
+    "category": "功能与地点",
+    "categoryId": 101,
+    "description": "将地点从玩家已解锁列表移除。",
+    "source": "Effect.EffectorUI.OnRun type -4; MapData.LockMapScene"
+  },
+  {
+    "label": "获得人生回忆",
+    "template": [
+      8,
+      4,
+      101
+    ],
+    "match": {
+      "0": 8,
+      "1": 4
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "人生回忆",
+        "type": "int",
+        "range": {
+          "table": "RenshengguanMemoryCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "人生观",
+    "categoryId": 8,
+    "description": "获得该回忆并增加对应类别点数；已获得的回忆不重复添加。",
+    "source": "Effect.EffectorRensheng.OnRun subtype 4; RenshengguanData.AddMemory"
+  },
+  {
+    "label": "获得一个随机贝壳",
+    "template": [
+      60,
+      3
+    ],
+    "match": {
+      "0": 60,
+      "1": 3
+    },
+    "parameters": [],
+    "category": "物品",
+    "categoryId": 60,
+    "description": "原生每次只调用一次随机贝壳添加；该指令的额外数量参数不参与执行。",
+    "source": "Effect.EffectorChangeItem.ctor + OnRun subtype 3"
+  },
+  {
+    "label": "获得一件物品",
+    "template": [
+      60,
+      1,
+      1
+    ],
+    "match": {
+      "0": 60,
+      "1": 1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "物品",
+        "type": "int",
+        "range": {
+          "table": "ItemCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "物品",
+    "categoryId": 60,
+    "description": "原生省略数量的写法，数量固定为1。",
+    "source": "Effect.EffectorChangeItem.ctor default itemCnt=1; OnRun subtype 1"
+  },
+  {
+    "label": "失去一件物品",
+    "template": [
+      60,
+      -1,
+      1
+    ],
+    "match": {
+      "0": 60,
+      "1": -1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "物品",
+        "type": "int",
+        "range": {
+          "table": "ItemCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "物品",
+    "categoryId": 60,
+    "description": "原生省略数量的写法，数量固定为1。",
+    "source": "Effect.EffectorChangeItem.ctor default itemCnt=1; OnRun subtype -1"
+  },
+  {
+    "label": "获得一本书籍",
+    "template": [
+      60,
+      2,
+      3005
+    ],
+    "match": {
+      "0": 60,
+      "1": 2
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "书籍",
+        "type": "int",
+        "range": {
+          "table": "BookCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "物品",
+    "categoryId": 60,
+    "description": "原生省略数量的写法，数量固定为1。",
+    "source": "Effect.EffectorChangeItem.ctor default itemCnt=1; OnRun subtype 2"
+  },
+  {
+    "label": "失去一本书籍",
+    "template": [
+      60,
+      -2,
+      3005
+    ],
+    "match": {
+      "0": 60,
+      "1": -2
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "书籍",
+        "type": "int",
+        "range": {
+          "table": "BookCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "物品",
+    "categoryId": 60,
+    "description": "原生省略数量的写法，数量固定为1。",
+    "source": "Effect.EffectorChangeItem.ctor default itemCnt=1; OnRun subtype -2"
+  },
+  {
+    "label": "给人物添加物品",
+    "template": [
+      60,
+      100,
+      1,
+      1,
+      3
+    ],
+    "match": {
+      "0": 60,
+      "1": 100,
+      "2": 1
+    },
+    "parameters": [
+      {
+        "index": 3,
+        "label": "物品",
+        "type": "int",
+        "range": {
+          "table": "ItemCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 4,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "人物",
+    "categoryId": 60,
+    "description": "添加到所选人物的物品记录，不是主角背包；不使用数量参数。",
+    "source": "Effect.EffectorChangeItem.ctor + OnRun subtype 100/1; Role.AddItem"
+  },
+  {
+    "label": "移除人物物品",
+    "template": [
+      60,
+      100,
+      -1,
+      1,
+      3
+    ],
+    "match": {
+      "0": 60,
+      "1": 100,
+      "2": -1
+    },
+    "parameters": [
+      {
+        "index": 3,
+        "label": "物品",
+        "type": "int",
+        "range": {
+          "table": "ItemCfg",
+          "startId": 1
+        }
+      },
+      {
+        "index": 4,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "人物",
+    "categoryId": 60,
+    "description": "移除所选人物的对应物品记录，不是主角背包。",
+    "source": "Effect.EffectorChangeItem.ctor + OnRun subtype 100/-1; Role.DelItem"
+  },
+  {
+    "label": "增加学习进度",
+    "template": [
+      4,
+      1,
+      1,
+      1
+    ],
+    "match": {
+      "0": 4,
+      "1": 1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "学习范围",
+        "type": "int",
+        "choices": [
+          {
+            "id": 0,
+            "label": "当前选中的课程"
+          },
+          {
+            "id": -1,
+            "label": "全部文科"
+          },
+          {
+            "id": -2,
+            "label": "全部理科"
+          },
+          {
+            "id": 6,
+            "label": "全部学科"
+          },
+          {
+            "id": 1,
+            "label": "语文"
+          },
+          {
+            "id": 2,
+            "label": "数学"
+          },
+          {
+            "id": 3,
+            "label": "英语"
+          },
+          {
+            "id": 4,
+            "label": "文综"
+          },
+          {
+            "id": 5,
+            "label": "理综"
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "label": "进度变化量",
+        "type": "float"
+      }
+    ],
+    "category": "学习",
+    "categoryId": 4,
+    "description": "增加原生学习进度并应用选项倍率；全部文理科按 KnowledgeCfg.type 分组。",
+    "source": "Effect.EffectorChangeKnowledge.ctor + OnRun subtype 1"
+  },
+  {
+    "label": "人物 MBTI 改变",
+    "template": [
+      20,
+      64,
+      3,
+      101,
+      102
+    ],
+    "match": {
+      "0": 20,
+      "1": 64
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg",
+          "startId": 0
+        }
+      },
+      {
+        "index": 3,
+        "label": "改变维度",
+        "type": "int"
+      },
+      {
+        "index": 4,
+        "label": "转变为",
+        "type": "int"
+      }
+    ],
+    "category": "人物",
+    "categoryId": 20,
+    "description": "替换该人物当前维度的倾向；只有人物原有对应倾向时生效，其他三个维度不变。",
+    "source": "CommonEvtMgr type20; EffectorChangeRelation ctor/OnRun subtype64; TheEntity.Role.ChangeMainPersonality"
+  }
+]

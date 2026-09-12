@@ -1,0 +1,6 @@
+Pillow==12.3.0
+UnityPy==1.25.3
+numpy>=2,<3
+imageio-ffmpeg>=0.6,<0.7
+fmod_toolkit==0.1.3
+pywebview==6.2.1; sys_platform == 'win32'

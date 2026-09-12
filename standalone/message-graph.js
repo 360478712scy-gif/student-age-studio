@@ -1,0 +1,12 @@
+/* Pure graph helpers shared by phone authoring and branch navigation. */
+(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.StudentAgeMessageGraph=api;})(typeof window==='object'?window:globalThis,()=>{
+'use strict';
+const links=r=>(r?.next||[]).map(Number);
+function reachable(rows,root){const found=new Set(),todo=[Number(root)];while(todo.length){const id=todo.pop();if(found.has(id)||!rows[id])continue;found.add(id);todo.push(...links(rows[id]));}return found;}
+function roots(rows){const incoming=new Set(Object.values(rows).flatMap(links));return Object.values(rows).filter(r=>Number(r.role)>0&&!incoming.has(Number(r.id))).sort((a,b)=>a.id-b.id);}
+function path(rows,root,choices={}){const result=[],seen=new Set();let id=Number(root);while(rows[id]&&!seen.has(id)){seen.add(id);result.push(rows[id]);const next=links(rows[id]);id=next.includes(Number(choices[id]))?Number(choices[id]):next[0];}return result;}
+function branchEntries(rows,root){const result=[];function visit(id,choices={},label='',parentKey=null,seen=new Set()){while(rows[id]&&!seen.has(id)){seen=new Set(seen);seen.add(id);const next=links(rows[id]);if(next.length>1){next.forEach((child,i)=>{const name=label?label+'.'+(i+1):String(i+1),selected={...choices,[id]:child},key=(parentKey||'root')+'/'+id+':'+child;result.push({id:child,owner:id,choices:selected,label:name,depth:name.split('.').length-1,key,parentKey});visit(child,selected,name,key,seen);});return;}id=next[0];}}visit(Number(root));return result;}
+function chooseFor(rows,root,target){const queue=[{id:Number(root),choices:{}}],seen=new Set();while(queue.length){const {id,choices}=queue.shift();if(id===Number(target))return choices;if(seen.has(id)||!rows[id])continue;seen.add(id);for(const next of links(rows[id]))queue.push({id:next,choices:{...choices,[id]:next}});}return {};}
+function remove(rows,id){id=Number(id);const candidates=reachable(rows,id);for(const r of Object.values(rows))if(!candidates.has(Number(r.id)))r.next=links(r).filter(n=>n!==id);const preserved=new Set();for(const r of Object.values(rows))if(!candidates.has(Number(r.id)))for(const child of links(r))if(candidates.has(child))for(const n of reachable(rows,child))preserved.add(n);for(const n of candidates)if(!preserved.has(n))delete rows[n];return new Set([...candidates].filter(n=>!preserved.has(n)));}
+return {links,reachable,roots,path,branches:branchEntries,chooseFor,remove};
+});

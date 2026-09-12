@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN" data-booting>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>拾光工坊 · 学生时代模组编辑器</title>
+  <link rel="icon" href="/icon.png">
+  <link rel="stylesheet" href="/onboarding.css">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/workshop.css">
+  <link rel="stylesheet" href="/warehouse.css">
+  <link rel="stylesheet" href="/social.css">
+  <link rel="stylesheet" href="/asset-picker.css">
+  <link rel="stylesheet" href="/scene-dialogue.css">
+  <link rel="stylesheet" href="/events.css">
+  <link rel="stylesheet" href="/ui-controls.css">
+  <link rel="stylesheet" href="/navigation.css">
+  <link rel="stylesheet" href="/performance.css">
+  <link rel="stylesheet" href="/preview-ui.css">
+  <script>window.STUDIO_TOKEN = "__STUDIO_TOKEN__";</script>
+  <link rel="stylesheet" href="/record-ids.css">
+  <link rel="stylesheet" href="/record-labels.css">
+  <script src="/original-mode.js" defer></script>
+  <script src="/record-labels.js" defer></script>
+  <script src="/search-pinyin.js" defer></script>
+  <script src="/search.js" defer></script>
+  <script src="/record-ids.js" defer></script>
+  <script src="/expressions.js" defer></script>
+  <script src="/asset-names.js" defer></script>
+  <script src="/preview-ui.js" defer></script>
+  <script src="/screen-effects.js" defer></script>
+  <link rel="stylesheet" href="/screen-effects.css">
+  <script src="/scene.js" defer></script>
+  <script src="/branches.js" defer></script>
+  <script src="/timeline.js" defer></script>
+  <script src="/conditions.js" defer></script>
+  <script src="/condition-library.js" defer></script>
+  <script src="/effects.js" defer></script>
+  <script src="/history.js" defer></script>
+  <script src="/dialogue-text.js" defer></script>
+  <script src="/action-editor.js" defer></script>
+  <script src="/ui-controls.js" defer></script>
+  <script src="/events.js" defer></script>
+  <script src="/save-review.js" defer></script>
+  <script src="/event-ownership.js" defer></script>
+  <script src="/app.js" defer></script>
+  <script src="/social-media.js" defer></script>
+  <script src="/branch-tree.js"></script>
+<script src="/message-graph.js" defer></script>
+<script src="/social.js" defer></script>
+  <script src="/space-style.js" defer></script>
+  <script src="/space.js" defer></script>
+<script src="/event-types.js" defer></script>
+<script src="/event-bindings.js" defer></script>
+<script src="/character-ui.js" defer></script>
+<script src="/minigame-sudoku.js" defer></script>
+<script src="/minigame-library.js" defer></script>
+<script src="/character-states.js" defer></script>
+<script src="/character-controls.js" defer></script>
+<script src="/live-preview.js" defer></script>
+<script src="/character-model.js" defer></script>
+<script src="/characters.js" defer></script>
+<script src="/warehouse.js" defer></script>
+<script src="/libraries.js" defer></script>
+<script src="/messages.js" defer></script>
+<script src="/idle-chats.js" defer></script>
+<link rel="stylesheet" href="/idle-chats.css">
+<script src="/goals.js" defer></script>
+<script src="/workshop.js" defer></script>
+  <script src="/app-updates.js" defer></script>
+  <script src="/locations.js" defer></script>
+  <script src="/asset-picker.js" defer></script>
+  <script src="/help.js" defer></script>
+  <script src="/navigation.js" defer></script>
+<link rel="stylesheet" href="/characters.css">
+<link rel="stylesheet" href="/space-style.css">
+<link rel="stylesheet" href="/minigame-library.css">
+<link rel="stylesheet" href="/goals.css">
+<link rel="stylesheet" href="/messages.css">
+<link rel="stylesheet" href="/json-editor.css">
+<link rel="stylesheet" href="/editor-theme.css">
+<script src="/config-doctor.js" defer></script>
+<script src="/json-editor.js" defer></script>
+<script src="/onboarding.js" defer></script>
+<link rel="stylesheet" href="/character-model.css">
+<link rel="stylesheet" href="/glass-palette.css">
+<link rel="stylesheet" href="/glass-theme.css">
+<link rel="stylesheet" href="/glass-tones.css">
+<script src="/theme.js" defer></script>
+<script src="/liquid-glass.js" defer></script>
+</head>
+<body>
+  <section id="studio-onboarding" class="brand-only" aria-label="拾光工坊启动与首次使用引导"><div class="startup-brand"><img src="/icon.png" alt="拾光工坊图标"><h1>拾光工坊</h1><p>学生时代模组编辑器</p></div></section>
+  <header class="app-header">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">◫</span><div><strong>拾光工坊</strong><span>学生时代 · 独立编辑器</span></div></div>
+    <div class="project-control"><span class="field-caption">模组</span><select id="project-select" aria-label="模组"><option value="">正在读取模组…</option></select><button class="icon-button" data-action="refresh-projects" title="刷新模组列表" aria-label="刷新模组列表">↻</button></div>
+    <div class="header-actions"><button id="open-workshop" class="secondary">工坊主页</button><button class="quiet" data-action="create-project">＋ 新建</button><button class="quiet" id="copy-project" data-action="copy-project" disabled>创建副本</button><span class="header-divider"></span><button class="icon-button" id="undo" data-action="undo" title="撤销 ⌘Z" aria-label="撤销" disabled>↶</button><button class="icon-button" id="redo" data-action="redo" title="重做 ⇧⌘Z" aria-label="重做" disabled>↷</button><button class="primary" id="save" data-action="save" disabled><span>保存模组</span><kbd>⌘S</kbd></button></div>
+  </header>
+  <main class="workspace">
+    <aside class="dialogue-sidebar">
+      <button class="text-button event-list-back" data-action="event-list">← 事件列表</button>
+      <div class="sidebar-preview"><button class="primary" data-action="preview-story">▶ 从所选对话预览</button></div>
+      <div class="event-controls"><select id="event-select" aria-label="当前事件"><option value="all">全部对话</option></select><button class="icon-button" data-action="event-details" title="事件设置" aria-label="事件设置">⋯</button></div>
+      <label class="search-box"><span aria-hidden="true">⌕</span><input id="talk-search" type="search" placeholder="搜索对话…" aria-label="搜索对话"><kbd>⌘F</kbd></label>
+      <div class="list-meta"><span id="talk-count">尚未打开模组</span></div><div class="new-content-actions"><button class="secondary" data-action="add-talk">＋ 添加对话</button></div>
+      <div id="talk-list" class="talk-list" aria-label="对话列表"></div>
+      <div class="sidebar-bottom"><button data-action="move-up" title="前移一句">↑ 前移</button><button data-action="move-down" title="后移一句">↓ 后移</button><button data-action="duplicate-talk">复制</button><button class="danger-text" data-action="delete-talk" title="删除所选对话">删除</button></div>
+    </aside>
+    <section class="editor-column">
+      <div id="editor-scroll" class="editor-scroll">
+        <section id="scene-panel" class="inline-scene-panel" hidden>
+          <div class="inline-scene-heading"><h2>当前舞台</h2><div id="scene-speakers" class="scene-speakers" aria-label="本句说话人"></div><div class="protagonist-gender event-grade"><span>事件学段</span><div class="segmented" role="group" aria-label="整个事件的学段"><button data-action="set-grade" data-value="0" aria-pressed="true">小学</button><button data-action="set-grade" data-value="1" aria-pressed="false">中学</button></div></div><div class="protagonist-gender"><span>主角性别 <small>预览</small></span><div class="segmented" role="group" aria-label="白雨性别"><button data-action="set-protagonist-gender" data-value="1" aria-pressed="true">男</button><button data-action="set-protagonist-gender" data-value="2" aria-pressed="false">女</button></div></div></div>
+          <div class="stage-catalog-buttons"><button id="scene-enter-button" data-action="pick-person"><span class="stage-catalog-icon" aria-hidden="true">＋</span><span><strong>人物登场</strong><small>选择已有角色</small></span><span aria-hidden="true">›</span></button><button id="scene-cg-button" data-action="add-cg"><span class="stage-catalog-icon" aria-hidden="true">▣</span><span><strong>CG</strong><small>插入一张 CG 画面</small></span><span aria-hidden="true">›</span></button><button id="scene-background-button" data-action="pick-background"><span class="stage-catalog-icon" aria-hidden="true">▧</span><span><strong>场景</strong><small>选择背景图片</small></span><span aria-hidden="true">›</span></button></div>
+          <div id="large-scene" class="large-scene" tabindex="0" aria-label="当前完整场景，单击选人，拖动设置移动，右键编辑人物"></div>
+          <div class="stage-tools"><label><span>在场人物</span><select id="scene-person-select" data-no-search="true" aria-label="操作在场人物"></select></label><div class="stage-action-pair"><button id="scene-action-button" class="secondary" data-action="action-editor">人物动作</button><button id="scene-effect-button" class="secondary" data-action="screen-effect">屏幕效果</button></div></div>
+          <div id="scene-initial-position" class="scene-initial-position" aria-label="人物初始站位"></div>
+          <div class="scene-player-controls"><button class="primary" data-scene="play">播放</button><button class="secondary" data-action="history-export">导出对话</button><button class="secondary" data-action="dialogue-import">导入对话</button></div>
+          <div hidden><span id="scene-position"></span><span id="preview-history-count"></span><p id="scene-status"></p><span id="scene-summary"></span><div id="scene-warnings"></div></div>
+          <div id="story-preview-controls" hidden></div>
+        </section>
+        <div id="editor-content" class="editor-content"></div>
+      </div>
+    </section>
+    <aside class="preview-column">
+      <div class="preview-heading"><h2>人物与表情</h2></div>
+      <div id="scene-cast"></div>
+      <div id="preview-controls" class="preview-controls"></div>
+      <div id="portrait-inspector" class="portrait-inspector"></div>
+      <div id="portrait-note" class="preview-note"></div>
+      <div class="expression-header"><h3>表情选择</h3><span id="expression-current">默认</span></div>
+      <div id="expression-grid" class="expression-grid"></div>
+      <div class="preview-footnote">点击表情或选择服装立即应用，可以撤销。</div>
+    </aside>
+  </main>
+  <div hidden aria-hidden="true"><i id="connection-dot"></i><span id="footer-status"></span><span id="project-path"></span></div>
+  <div id="toast-region" class="toast-region" aria-live="polite" popover="manual"></div>
+  <dialog id="modal"><div id="modal-content"></div></dialog>
+  <div id="scene-context-menu" class="scene-context-menu" role="menu" hidden></div>
+  <input type="file" id="audio-file" accept="audio/*,.wav,.ogg,.mp3,.flac,.m4a" hidden>
+  <audio id="audio-audition" preload="none" hidden></audio>
+<dialog id="story-history" aria-label="剧情日志">
+  <div id="story-history-entries" tabindex="0" aria-label="已播放的对话"></div>
+</dialog>
+</body>
+</html>

@@ -1,0 +1,53 @@
+.story-scene .scene-dialogue{
+  --scene-speaker-color:#e3e7e1;
+  --scene-speaker-panel:#27372ff5;
+  --scene-dialogue-panel:rgba(31,36,42,.92);
+  height:25%;min-height:0;max-height:none;overflow:visible;
+  padding:1.3% 2.3%;pointer-events:auto;
+  background:var(--scene-dialogue-panel);border-color:var(--scene-speaker-color);
+}
+.story-scene .scene-dialogue[data-speaker-gender="male"]{
+  --scene-speaker-color:#9fd4ff;--scene-speaker-panel:#1b3d57f5;
+  --scene-dialogue-panel:rgba(25,51,77,.92);
+}
+.story-scene .scene-dialogue[data-speaker-gender="female"]{
+  --scene-speaker-color:#ffc1d9;--scene-speaker-panel:#583343f5;
+  --scene-dialogue-panel:rgba(86,42,64,.92);
+}
+.story-scene .scene-speaker-name{
+  position:absolute;left:0;bottom:calc(100% + .35em);max-width:100%;
+  padding:.32em .85em;border:1px solid var(--scene-speaker-color);
+  border-radius:5px;background:var(--scene-speaker-panel);color:var(--scene-speaker-color);
+  white-space:normal;overflow-wrap:anywhere;text-align:left;line-height:1.4;
+  font-size:clamp(11px,1.8cqw,19px);box-shadow:0 2px 8px #0003;
+}
+.story-scene .scene-speaker-name strong{
+  color:inherit;font-size:inherit;line-height:inherit;letter-spacing:0;margin:0;
+}
+.story-scene .scene-speaker-name:disabled{opacity:1;cursor:default;}
+.story-scene .scene-speaker-name:hover:not(:disabled){background:var(--scene-speaker-panel);border-color:var(--scene-speaker-color);filter:brightness(1.15);}
+.story-scene .scene-dialogue p,.story-scene .scene-dialogue-content{
+  width:100%;height:100%;max-height:none;margin:0;padding:0;
+  color:#f1f3e6;font-size:clamp(11px,2cqw,21px);line-height:1.7;
+  letter-spacing:.015em;white-space:pre-wrap;overflow:auto;overflow-wrap:anywhere;
+}
+.story-scene .scene-dialogue-content{
+  display:block;resize:none;border:0;border-radius:0;background:transparent;
+  box-shadow:none;touch-action:pan-y;caret-color:var(--scene-speaker-color);
+}
+.story-scene .scene-dialogue-content:focus{outline:none;}
+.story-scene .scene-dialogue-editable:focus-within{border-color:var(--scene-speaker-color);box-shadow:0 0 0 1px var(--scene-speaker-color),0 4px 20px #0005;}
+.story-scene .scene-dialogue [hidden]{display:none!important;}
+
+.protagonist-gender{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px}.protagonist-gender small{color:var(--muted);font-size:12px}.protagonist-gender button{min-width:48px}.inline-scene-heading{flex-wrap:wrap;gap:12px}
+/* Bubble emoji (action 3009): original img_bubble_face artwork positioned like the game cell. */
+.scene-actor-emoji{position:absolute;background:transparent no-repeat center/100% 100%;pointer-events:none;z-index:2;box-sizing:border-box}
+.scene-actor-emoji[hidden]{display:none}
+.scene-actor-emoji-glyph{position:absolute;display:block;overflow:hidden}
+.scene-actor-emoji-glyph>img{position:absolute;display:block;max-width:none!important;max-height:none!important}
+.scene-actor-emoji-glyph .social-emoji{width:100%!important;height:100%!important;vertical-align:0;display:block!important;line-height:0}
+.scene-actor-emoji-glyph .social-emoji-fallback{display:none}
+/* Action editor: bubble emoji picker row. */
+.action-emoji-param .action-emoji-current{display:flex;align-items:center;gap:12px;margin-top:6px}
+.action-emoji-param .action-emoji-current .social-emoji{width:40px!important;height:40px!important;vertical-align:0;display:block!important;background:#fff;border-radius:50%;padding:5px;box-sizing:border-box}
+.action-emoji-param .action-emoji-current>span{font-size:12px;color:var(--muted)}

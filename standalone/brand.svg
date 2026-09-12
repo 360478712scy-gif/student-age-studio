@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+ <defs><linearGradient id="base" x2=".8" y2="1"><stop stop-color="#294d3a"/><stop offset="1" stop-color="#11271f"/></linearGradient><linearGradient id="paper" y2="1" x2=".4"><stop stop-color="#f8e7bc"/><stop offset="1" stop-color="#d7bb7a"/></linearGradient><linearGradient id="leaf" y2="1" x2=".5"><stop stop-color="#b5e5c7"/><stop offset="1" stop-color="#6cb497"/></linearGradient></defs>
+ <rect x="32" y="32" width="960" height="960" rx="225" fill="url(#base)"/>
+ <rect x="54" y="54" width="916" height="916" rx="206" fill="none" stroke="#749377" stroke-opacity=".3" stroke-width="3"/>
+ <path d="M197 365 C307 349 395 377 479 442 L479 794 C390 721 302 704 197 715 Z" fill="#0c211b" opacity=".4" transform="translate(0 22)"/>
+ <path d="M197 341 C307 327 403 354 479 417 L479 766 C388 702 300 678 197 690 Z" fill="url(#leaf)"/>
+ <path d="M545 420 C635 356 727 329 828 340 L828 688 C721 678 635 704 545 766 Z" fill="url(#paper)"/>
+ <path d="M545 420 C635 356 727 329 828 340 L770 402 C687 408 615 438 545 486 Z" fill="#fff3d6" opacity=".56"/>
+ <path d="M268 456 C320 458 364 472 409 496 M268 539 C321 541 366 555 409 579" stroke="#3d7d64" stroke-width="19" stroke-linecap="round" fill="none" opacity=".65"/>
+ <path d="M512 180 C522 227 551 256 598 266 C551 276 522 305 512 352 C502 305 473 276 426 266 C473 256 502 227 512 180 Z" fill="#f4d48a"/>
+ <path d="M651 214 L677 187 M372 214 L346 187" fill="none" stroke="#d3ba7f" stroke-width="15" stroke-linecap="round"/>
+ <path d="M511 431 L511 735" stroke="#c7dbb3" stroke-width="10" stroke-linecap="round" opacity=".32"/>
+</svg>

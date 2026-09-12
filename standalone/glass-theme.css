@@ -1,0 +1,301 @@
+/* Light, quiet editor chrome. Frost is restricted to floating surfaces, never the game canvas.
+   CSS fallback for the shared WebGL material in liquid-glass.js. */
+:root{
+ color-scheme:light;
+ --sg-bg:var(--glass-tone-85,#f4f6fa);--sg-surface:var(--glass-tone-86,#fdfdfe);--sg-raised:var(--glass-tone-87,#f0f3f8);--sg-field:var(--glass-tone-88,#ffffff);
+ --sg-hover:var(--glass-tone-89,#e9eff8);--sg-line:var(--glass-tone-90,#ccd5e2);--sg-line-soft:var(--glass-tone-91,#dce2eb);
+ --sg-text:var(--glass-tone-92,#1d2430);--sg-muted:var(--glass-tone-93,#536176);--sg-dim:var(--glass-tone-94,#647185);
+ --sg-gold:var(--glass-tone-95,#0669d8);--sg-gold-hover:var(--glass-tone-96,#0059bf);--sg-selected:var(--glass-tone-97,#e1edff);--sg-selected-line:var(--glass-tone-98,#8eb8ed);
+ --sg-success:var(--glass-tone-99,#24734a);--sg-danger:var(--glass-tone-100,#b5362b);--sg-danger-bg:var(--glass-tone-101,#fff0ee);
+ --sg-radius:15px;--sg-control-radius:10px;--input:var(--glass-tone-102,#fff);
+ --shadow:0 16px 48px var(--glass-tone-103,#273a531a);
+ --glass:linear-gradient(145deg,var(--glass-tone-104,#ffffffeb),var(--glass-tone-105,#f7faffcc));
+ --glass-edge:var(--glass-tone-106,#ffffff);--glass-shadow:inset 0 1px 0 var(--glass-tone-107,#fff),0 8px 30px var(--glass-tone-108,#31466412);
+ font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+html body{color:var(--sg-text);background:var(--sg-bg);-webkit-font-smoothing:antialiased}
+html body :is(#workshop,#story-events,#studio-help,#studio-empty-home){background:radial-gradient(ellipse at 0 0,var(--glass-tone-109,#dfebfa99),transparent 60%),radial-gradient(ellipse at 100% 100%,var(--glass-tone-110,#e9e1f080),transparent 60%),var(--sg-bg);color:var(--sg-text)}
+html body #studio-toolbar{background:var(--glass);border-bottom:1px solid var(--glass-tone-111,#ffffffd9);box-shadow:0 1px 0 var(--glass-tone-112,#32425c12),0 5px 24px var(--glass-tone-113,#32425c0a);-webkit-backdrop-filter:blur(20px) saturate(1.35);backdrop-filter:blur(20px) saturate(1.35)}
+html body #studio-toolbar button{color:var(--sg-text);background:var(--glass-tone-114,#ffffff9c);border-color:var(--glass-tone-115,#d4dce6);border-radius:12px}
+html body #studio-toolbar button:hover:not(:disabled){background:var(--glass-tone-102,#fff);border-color:var(--glass-tone-116,#99b9e4);color:var(--glass-tone-117,#075fc4)}
+html body #studio-toolbar .uc-trigger{border-color:var(--glass-tone-118,#d2dbe7)!important;background:var(--glass-tone-119,#ffffffac)!important}
+html body .studio-brand{color:var(--glass-tone-120,#242b38);letter-spacing:.025em;font-weight:650}
+html body :is(button.primary,[data-nav=save]):not(:where(.story-scene,.story-scene *,#story-history,#story-history *,.goal-native-canvas,.goal-native-canvas *,.message-native-phone,.message-native-phone *,.social-feed-card,.social-feed-card *,#space-preview,#space-preview *,.model-art,.model-art *)){background:linear-gradient(var(--glass-tone-121,#1681ed),var(--glass-tone-122,#0565d4))!important;color:var(--glass-tone-123,#fff)!important;border-color:var(--glass-tone-124,#0060cd)!important;box-shadow:inset 0 1px 0 var(--glass-tone-125,#ffffff42),0 2px 5px var(--glass-tone-126,#0066cc20)}
+html body :is(button.primary,[data-nav=save]):not(:where(.story-scene,.story-scene *,#story-history,#story-history *,.goal-native-canvas,.goal-native-canvas *,.message-native-phone,.message-native-phone *,.social-feed-card,.social-feed-card *,#space-preview,#space-preview *,.model-art,.model-art *)):hover:not(:disabled){background:var(--glass-tone-127,#005ebf)!important;color:var(--glass-tone-123,#fff)!important}
+html body button.danger-button:not(:where(.story-scene,.story-scene *,#story-history,#story-history *,.goal-native-canvas,.goal-native-canvas *,.message-native-phone,.message-native-phone *,.social-feed-card,.social-feed-card *,#space-preview,#space-preview *,.model-art,.model-art *)){color:var(--glass-tone-128,#a62721)!important;background:var(--glass-tone-101,#fff0ee)!important;border-color:var(--glass-tone-129,#e9bcb6)!important}
+html body button.danger-button:not(:where(.story-scene,.story-scene *,#story-history,#story-history *,.goal-native-canvas,.goal-native-canvas *,.message-native-phone,.message-native-phone *,.social-feed-card,.social-feed-card *,#space-preview,#space-preview *,.model-art,.model-art *)):hover:not(:disabled){background:var(--glass-tone-130,#ffe2dc)!important}
+html body :is(input,textarea,.uc-trigger):focus-visible:not(:where(.story-scene,.story-scene *,#story-history,#story-history *,.goal-native-canvas,.goal-native-canvas *,.message-native-phone,.message-native-phone *,.social-feed-card,.social-feed-card *,#space-preview,#space-preview *,.model-art,.model-art *)){outline:3px solid var(--glass-tone-131,#0879ed65);outline-offset:2px}
+html body :is(input,textarea):not(:where(.story-scene,.story-scene *,#story-history,#story-history *,.goal-native-canvas,.goal-native-canvas *,.message-native-phone,.message-native-phone *,.social-feed-card,.social-feed-card *,#space-preview,#space-preview *,.model-art,.model-art *))::placeholder{color:var(--glass-tone-132,#6c7889)}
+html body button:disabled:not(:where(.story-scene,.story-scene *,#story-history,#story-history *,.goal-native-canvas,.goal-native-canvas *,.message-native-phone,.message-native-phone *,.social-feed-card,.social-feed-card *,#space-preview,#space-preview *,.model-art,.model-art *)){opacity:.48}
+/* Homepage cards: a solid reading surface with a luminous edge rather than a blur per card. */
+html body .wk-home #wk-main{background:transparent}
+html body .wk-home-heading h2{font-size:30px;letter-spacing:-.035em;font-weight:700}
+html body .wk-feature-group>h3{color:var(--glass-tone-133,#5a6678);letter-spacing:.045em;font-size:12px}
+html body #workshop .wk-feature-card{background:linear-gradient(140deg,var(--glass-tone-134,#ffffffef),var(--glass-tone-135,#ffffffa8))!important;border:1px solid var(--glass-tone-136,#fff)!important;border-radius:20px!important;box-shadow:0 1px 2px var(--glass-tone-137,#243b5510),0 7px 22px var(--glass-tone-138,#243b5508);transition:box-shadow .18s,border-color .18s,background .18s}
+html body #workshop .wk-feature-card:hover{background:var(--glass-tone-102,#fff)!important;border-color:var(--glass-tone-139,#9ac0ef)!important;box-shadow:0 5px 24px var(--glass-tone-140,#24578b18)}
+html body #workshop .wk-feature-main{min-height:140px;gap:8px}
+html body .wk-feature-top strong{font-weight:650;font-size:17px;letter-spacing:-.015em;color:var(--glass-tone-141,#253246)}
+html body .wk-feature-count{background:var(--glass-tone-142,#eef2f8);color:var(--glass-tone-143,#59687b);border-color:transparent;font-variant-numeric:tabular-nums}
+html body .wk-feature-desc{color:var(--glass-tone-93,#536176)}
+html body .wk-feature-open{color:var(--glass-tone-95,#0669d8)}
+html body #workshop .wk-feature-resource{background:linear-gradient(140deg,var(--glass-tone-144,#e4f0ff),var(--glass-tone-145,#f5f9ff))!important;border-color:var(--glass-tone-146,#c7def9)!important}
+html body #workshop .wk-feature-resource:hover{background:var(--glass-tone-147,#e1eeff)!important;border-color:var(--glass-tone-148,#89b8ee)!important}
+html body #workshop .wk-feature-star[aria-pressed=true]{color:var(--glass-tone-149,#b26b00)}
+html body :is(.wk-source-tabs,.wk-module-tabs,.character-tabs,.social-view-tabs,.reuse-tabs){gap:4px}
+html body :is(.wk-source-tabs,.wk-module-tabs,.character-tabs,.social-view-tabs,.reuse-tabs) button{border-color:transparent;background:var(--glass-tone-150,#e9edf4);color:var(--glass-tone-151,#526075);border-radius:10px;padding-block:7px}
+html body :is(.wk-source-tabs,.wk-module-tabs,.character-tabs,.social-view-tabs,.reuse-tabs) button.active{background:var(--glass-tone-102,#fff);color:var(--glass-tone-95,#0669d8);border-color:var(--glass-tone-152,#c4d9f2);box-shadow:0 1px 4px var(--glass-tone-153,#20385312)}
+html body :is(#wk-row-list button,#character-list button,.goal-list-card,.message-list-card,.social-post-list-item,.space-list-item){background:var(--glass-tone-154,#ffffffad);border-color:var(--glass-tone-155,#e0e6ee);color:var(--sg-text);border-radius:12px}
+html body :is(.idle-records button.active,.idle-lines>button.active,.idle-index nav button.active,#wk-row-list button.active,#character-list button.active,.goal-list-card.active,.message-list-card.active,.social-post-list-item.active,.space-list-item.active){background:var(--glass-tone-97,#e1edff)!important;border-color:var(--glass-tone-156,#a8c9ef);color:var(--glass-tone-157,#154b8c);box-shadow:inset 3px 0 var(--glass-tone-158,#0879ed)}
+html body :is(.wk-rows,.character-list-panel,.dialogue-sidebar,.messages-sidebar,.goal-list,.social-list,.space-list){background:var(--glass-tone-159,#edf1f7);border-color:var(--glass-tone-160,#dce3ec)}
+html body .wk-rows{padding:10px;border:1px solid var(--glass-tone-161,#ffffffc9);border-radius:16px}
+html body :is(#wk-form,.character-content,.messages-settings,.goal-settings,.space-form){scrollbar-gutter:stable}
+html body :is(.wk-array,.wk-object,.wk-command,.wk-advanced,.condition-card,.effect-card,.action-card){background:var(--glass-tone-87,#f0f3f8);border-color:var(--glass-tone-162,#d9e0ea)}
+html body :is(.wk-record-heading,.section-title){border-color:var(--glass-tone-160,#dce3ec)}
+/* Menus float above a clear page; large dialogs use a gentle scrim without page blur. */
+html body dialog:not(#story-history):not(#scene-modal):not(.goal-preview-zoom):not(.messages-preview-dialog){background:var(--glass-tone-163,#f7f9fdf5);color:var(--sg-text);border:1px solid var(--glass-tone-136,#fff);border-radius:24px;box-shadow:0 20px 80px var(--glass-tone-164,#233e6330),inset 0 1px var(--glass-tone-107,#fff)}
+html body dialog:not(#story-history)::backdrop{background:var(--glass-tone-165,#23334c28);backdrop-filter:none;-webkit-backdrop-filter:none}
+html body dialog.uc-popup{background:var(--glass)!important;color:var(--sg-text)!important;border:1px solid var(--glass-tone-136,#fff)!important;border-radius:18px!important;box-shadow:0 18px 55px var(--glass-tone-166,#213c6330),inset 0 1px var(--glass-tone-107,#fff)!important;-webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4)}
+html body dialog.uc-popup.uc-toolbar-popup::backdrop{background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+html body .uc-popup :is(.uc-popup-head,.uc-popup-foot){background:transparent}
+html body .uc-popup .uc-option{color:var(--glass-tone-167,#29384d)!important;border-radius:10px!important}
+html body .uc-popup .uc-option[aria-selected=true]{background:var(--glass-tone-168,#e0edff)!important;color:var(--glass-tone-169,#0757ac)!important}
+html body .uc-popup .uc-option:is(:hover,.uc-focused):not(:disabled){background:var(--glass-tone-170,#dceaff)!important;border-color:transparent!important}
+html body .uc-popup .uc-optgroup{color:var(--glass-tone-171,#68768a)}
+html body :is(.scene-context-menu,.talk-context-menu,.character-context,.studio-delete-menu,#studio-cache-details){background:var(--glass);color:var(--sg-text);border-color:var(--glass-tone-136,#fff);box-shadow:0 14px 40px var(--glass-tone-172,#20395926);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px)}
+html body :is(.toast,.progress-panel){background:var(--glass-tone-173,#f8fcfff2);border-color:var(--glass-tone-174,#c3d6e8);color:var(--glass-tone-175,#235140);box-shadow:0 8px 32px var(--glass-tone-176,#28466525);border-radius:16px}
+html body :is(.notice-panel,.wk-reference-note,.read-only-banner,.ap-notice,.events-notice){background:var(--glass-tone-177,#fff6e6);color:var(--glass-tone-178,#755015);border-color:var(--glass-tone-179,#e5d0a5)}
+html body #studio-cache-progress{background:radial-gradient(closest-side,var(--glass-tone-180,#f6faff) 80%,transparent 84%),conic-gradient(var(--glass-tone-181,#0879ed) var(--cache-progress,0%),var(--glass-tone-182,#d4e0ef) 0);color:var(--glass-tone-183,#075ebd);border-color:var(--glass-tone-136,#fff);box-shadow:0 3px 14px var(--glass-tone-184,#21508524);border-radius:50%}
+html body #studio-cache-details p{color:var(--glass-tone-93,#536176)}
+/* All five setup steps share the same glass window and a short, finite transition. */
+html body #studio-onboarding{background:var(--glass-tone-185,#eff3fa);color:var(--glass-tone-92,#1d2430)}
+html body #studio-onboarding::before{background:radial-gradient(ellipse at 8% 15%,var(--glass-tone-186,#cde3ff) 0,transparent 55%),radial-gradient(ellipse at 90% 85%,var(--glass-tone-187,#e6d9f4) 0,transparent 55%),radial-gradient(ellipse at 75% 5%,var(--glass-tone-188,#e0f4ef),transparent 45%)}
+html body .guide-shell{grid-template-columns:250px minmax(0,820px);background:var(--glass-tone-189,#ffffffc9);border:1px solid var(--glass-tone-136,#fff);border-radius:30px;box-shadow:0 30px 90px var(--glass-tone-190,#243b6024),inset 0 1px var(--glass-tone-107,#fff)}
+html body .guide-identity{background:linear-gradient(150deg,var(--glass-tone-191,#ffffffa6),var(--glass-tone-192,#e8f0fc99));border-color:var(--glass-tone-193,#d9e3ef);padding:38px 28px}
+html body .guide-identity h1{letter-spacing:-.03em;font-weight:700;color:var(--glass-tone-194,#243246)}
+html body .guide-identity>p,html body .guide-identity>small{color:var(--glass-tone-195,#5a6a7d)}
+html body .guide-version{color:var(--glass-tone-196,#096bd7);letter-spacing:.09em}
+html body .guide-identity li{color:var(--glass-tone-94,#647185);border-radius:12px;padding:10px 8px;gap:12px}
+html body .guide-identity li>span{background:var(--glass-tone-191,#ffffffa6);border-color:var(--glass-tone-197,#d0dce9);color:var(--glass-tone-198,#5b6b80)}
+html body .guide-identity li[aria-current]{color:var(--glass-tone-117,#075fc4);background:var(--glass-tone-199,#ffffffbd);box-shadow:0 2px 8px var(--glass-tone-200,#284e7910)}
+html body .guide-identity li[aria-current]>span{background:var(--glass-tone-181,#0879ed);border-color:var(--glass-tone-201,#0879ed);color:var(--glass-tone-123,#fff)}
+html body .guide-identity li.done{color:var(--glass-tone-99,#24734a)}
+html body .guide-identity li.done>span{background:var(--glass-tone-202,#e3f3eb);color:var(--glass-tone-99,#24734a);border-color:var(--glass-tone-203,#b8dccc)}
+html body .guide-page h2{font-size:30px;font-weight:700;letter-spacing:-.035em;color:var(--glass-tone-204,#1d2b3e)}
+html body .guide-eyebrow{color:var(--glass-tone-95,#0669d8);letter-spacing:.08em}
+html body :is(.guide-description,.guide-caption,.guide-preparation p,.guide-folder small,.guide-preference small,.guide-toolbar-map p){color:var(--glass-tone-205,#5a687b)}
+html body .guide-notice{color:var(--glass-tone-206,#8a580f)}
+html body :is(.guide-folder,.guide-preference,.guide-toolbar-map article,.guide-contacts>div){background:var(--glass-tone-207,#ffffffc4);border-color:var(--glass-tone-208,#d8e2ee);box-shadow:0 2px 5px var(--glass-tone-209,#28486705);border-radius:14px}
+html body #studio-onboarding :is(input:not([type=checkbox]),button:not(.primary)){background:var(--glass-tone-102,#fff);color:var(--glass-tone-210,#25364c);border:1px solid var(--glass-tone-211,#ced9e7)}
+html body .guide-footer{border-color:var(--glass-tone-208,#d8e2ee)}
+html body .guide-footer .primary{border-radius:12px}
+html body .guide-toolbar-map article>span{background:var(--glass-tone-212,#e6f0ff);color:var(--glass-tone-95,#0669d8)}
+html body .guide-contacts strong{color:var(--glass-tone-213,#174d8c)}
+html body .guide-contacts span{color:var(--glass-tone-94,#647185)}
+html body .guide-switch{background:var(--glass-tone-214,#ced5de)}
+html body .guide-switch::before,html body .guide-preference input:checked+.guide-switch::before{background:var(--glass-tone-102,#fff);box-shadow:0 1px 3px var(--glass-tone-215,#0002)}
+html body .guide-preference input:checked+.guide-switch{background:var(--glass-tone-216,#27a968)}
+html body .guide-preparation progress,html body .guide-preparation progress::-webkit-progress-bar{background:var(--glass-tone-217,#dee7f2);accent-color:var(--glass-tone-218,#0879ed)}
+html body .guide-preparation progress::-webkit-progress-value{background:linear-gradient(90deg,var(--glass-tone-219,#61acff),var(--glass-tone-181,#0879ed))}
+html body .guide-orbit img{animation:glass-welcome .7s cubic-bezier(.2,.8,.2,1) both;filter:drop-shadow(0 12px 16px #395a8520)}
+html body .guide-enter{animation:glass-step .28s cubic-bezier(.2,.8,.2,1) both}
+html body .startup-brand h1{letter-spacing:.06em;padding-left:.06em;font-weight:700;color:var(--glass-tone-194,#243246)}
+html body .startup-brand p{color:var(--glass-tone-205,#5a687b)}
+html body .startup-brand progress{accent-color:var(--glass-tone-218,#0879ed)}
+html body .cache-upgrade{background:var(--glass-tone-220,#ffffffd9);color:var(--glass-tone-194,#243246);border-color:var(--glass-tone-136,#fff);box-shadow:var(--glass-shadow)}
+@keyframes glass-welcome{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes glass-step{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+@media(max-width:850px){html body .guide-shell{grid-template-columns:180px minmax(0,1fr)}html body .guide-identity{padding:25px 20px}}
+@media(prefers-reduced-motion:reduce){html body #studio-onboarding *,html body button{animation:none!important;transition:none!important}}
+@media(prefers-reduced-transparency:reduce){html body :is(#studio-toolbar,dialog.uc-popup,.studio-delete-menu,#studio-cache-details){background:var(--glass-tone-221,#f7f9fc)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}html body .guide-shell{background:var(--glass-tone-102,#fff)}}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){html body :is(#studio-toolbar,dialog.uc-popup,.studio-delete-menu,#studio-cache-details){background:var(--glass-tone-221,#f7f9fc)!important}}
+/* A filter on a dialog itself would re-anchor the global fixed cache orb. Frost only
+   its decorative layer, so the orb continues to use viewport coordinates. */
+html body dialog.uc-popup{backdrop-filter:none;-webkit-backdrop-filter:none;isolation:isolate}
+html body dialog.uc-popup::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:linear-gradient(145deg,var(--glass-tone-135,#ffffffa8),var(--glass-tone-222,#f2f7ffc4));backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);pointer-events:none}
+html body #studio-corner-tools button.json-corner{background:linear-gradient(145deg,var(--glass-tone-223,#ffffffee),var(--glass-tone-224,#edf4ffd9));border:1px solid var(--glass-tone-136,#fff);color:var(--glass-tone-225,#076bd5);border-radius:50%;box-shadow:inset 0 1px var(--glass-tone-107,#fff),0 4px 18px var(--glass-tone-226,#2c4e781c)}
+html body #studio-corner-tools button.json-corner:hover{background:var(--glass-tone-102,#fff);border-color:var(--glass-tone-227,#92bff0)}
+html body #studio-corner-tools button.active{background:var(--glass-tone-228,#dcecff);border-color:var(--glass-tone-229,#8bb9ef)}
+@media(prefers-reduced-transparency:reduce){html body dialog.uc-popup::before{background:var(--glass-tone-221,#f7f9fc);backdrop-filter:none;-webkit-backdrop-filter:none}}
+/* Optical surfaces: shader output is the material; DOM labels stay above it. */
+html.liquid-gpu body,html.liquid-gpu body :is(#workshop,#story-events,#studio-help,#studio-empty-home,#studio-onboarding){background-image:var(--liquid-wallpaper)!important;background-size:100vw 100vh!important;background-position:0 0!important;background-attachment:fixed!important;background-color:var(--glass-tone-230,#d6e1ee)!important}
+html.liquid-gpu body #studio-onboarding::before{background:none}
+html body .liquid-relative{position:relative}
+html.liquid-gpu body .liquid-pane{isolation:isolate;background:transparent!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;box-shadow:inset 0 1px 0 var(--glass-tone-231,#ffffffc9),inset 1px 0 0 var(--glass-tone-232,#ffffff75),0 6px 22px var(--glass-tone-233,#26406918)!important;border-color:var(--glass-tone-234,#ffffff95)!important}
+html.liquid-gpu body #workshop .wk-feature-card.liquid-pane.liquid-ready,html.liquid-gpu body dialog.uc-popup.liquid-pane.liquid-ready{background:transparent!important}
+html body .liquid-optics{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;border-radius:inherit;z-index:-1;pointer-events:none!important;display:block}
+html:not(.liquid-gpu) .liquid-optics{display:none!important}
+html.liquid-gpu body dialog.uc-popup::before{display:none}
+html.liquid-gpu body :is(.guide-identity,.guide-folder,.guide-preference){background:transparent}
+html.liquid-gpu body #studio-toolbar{border-radius:0 0 20px 20px}
+html.liquid-gpu body #workshop .wk-feature-card{border-radius:22px!important}
+html.liquid-gpu body #workshop .wk-feature-resource{box-shadow:inset 0 0 0 1px var(--glass-tone-235,#72a7df),0 6px 22px var(--glass-tone-233,#26406918)!important}
+html.liquid-gpu body #workshop .wk-feature-resource .liquid-optics{filter:saturate(1.25)}
+html.liquid-gpu body :is(#wk-form,.event-parameter-panel){background:var(--glass-tone-236,#f8fbffab);border-radius:16px;padding:14px}
+html.liquid-gpu body .wk-home #wk-main{background:transparent!important}
+html.liquid-gpu body .wk-feature-top strong{color:var(--glass-tone-237,#152d4b)}
+html.liquid-gpu body .wk-feature-desc{color:var(--glass-tone-238,#304c6b)}
+html.liquid-gpu body .wk-feature-group>h3{color:var(--glass-tone-239,#30445f)}
+html.liquid-gpu body .guide-description{color:var(--glass-tone-240,#354d68)}
+html.liquid-gpu body :is(.guide-footer,.guide-identity){border-color:var(--glass-tone-241,#ffffff8c)}
+html.liquid-gpu body .guide-shell{box-shadow:0 28px 90px var(--glass-tone-242,#24416b38),inset 0 1px var(--glass-tone-107,#fff)!important}
+html.liquid-gpu body .guide-identity li[aria-current]{background:var(--glass-tone-243,#ffffff8a)}
+html.liquid-gpu body :is(.character-list-panel,.social-list,.space-list,.space-form,.messages-sidebar,.messages-settings,.goal-list,.goal-settings).liquid-pane{border-radius:18px}
+/* Geometry belongs to the HTML container. Optical canvases are decoration only:
+   no inherited borders, padding, minimum sizes or second rectangular outline. */
+html body canvas.liquid-optics{border:0!important;outline:0!important;box-shadow:none!important;padding:0!important;margin:0!important;min-width:0!important;min-height:0!important;box-sizing:border-box!important;clip-path:inset(0 round 18px)}
+html.liquid-gpu body .liquid-pane{border-color:transparent!important;outline:none;box-shadow:0 6px 22px var(--glass-tone-233,#26406918)!important}
+html.liquid-gpu body .liquid-pane:not(button):not(#studio-toolbar){border-radius:18px!important}
+html.liquid-gpu body .liquid-pane>canvas.liquid-optics{clip-path:inset(0 round 18px);border-radius:inherit}
+html.liquid-gpu body button.liquid-pane>canvas.liquid-optics{clip-path:circle(50%);border-radius:50%}
+html.liquid-gpu body #studio-toolbar>canvas.liquid-optics{clip-path:inset(0 round 0 0 20px 20px)}
+html.liquid-gpu body #workshop .wk-feature-card.liquid-pane{border-color:transparent!important;border-radius:18px!important}
+html.liquid-gpu body .guide-shell.liquid-pane,html.liquid-gpu body dialog.liquid-pane{border-radius:24px!important}
+html.liquid-gpu body :is(.guide-shell,dialog).liquid-pane>canvas.liquid-optics{clip-path:inset(0 round 24px)}
+/* Shared type scale and spacing. Game-rendered text and actor geometry keep their own styles. */
+html body :is(#workshop,#studio-help,#story-events,#studio-onboarding){font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.5}
+html body .character-workspace-layout{gap:14px}
+html body .character-list-panel{padding:14px;gap:12px;border-right:0}
+html body .character-tabs{padding:14px;gap:6px;align-items:center}
+html body .character-tabs button{font-size:13px;line-height:1.4;min-height:36px;padding:8px 10px}
+html body #character-form{padding:18px}
+html body #character-form fieldset{gap:16px}
+html body #character-form label{font-size:14px;gap:7px}
+html body .character-record-title{margin-bottom:16px;align-items:center}
+html body .character-record-title h2{font-size:21px;line-height:1.4}
+html body #character-list button{padding:12px 10px;line-height:1.5}
+html body #character-preview{padding:14px 0 14px 8px;min-width:0}
+html body .wk-home #wk-main{padding:24px 28px 44px}
+html body .wk-home-heading{margin-bottom:18px;gap:12px}
+html body .wk-home-heading h2{font-size:27px;line-height:1.35;letter-spacing:-.02em;margin:0 0 8px}
+html body .wk-home-heading p{font-size:13px;line-height:1.6}
+html body #workshop .wk-feature-main{min-height:144px;padding:18px 20px;gap:9px}
+html body #workshop .wk-feature-top{align-items:center;padding-right:26px;min-height:25px}
+html body #workshop .wk-feature-top strong{font-size:17px;line-height:1.45;letter-spacing:0}
+html body #workshop .wk-feature-desc{font-size:12px;line-height:1.65;margin:0}
+html body #workshop .wk-feature-open{display:flex;align-items:center;justify-content:space-between;line-height:1.4;margin-top:5px}
+html body #workshop .wk-feature-count{font-size:11px;line-height:1.4;padding:4px 9px}
+html body .wk-record-heading{align-items:center;margin-bottom:14px;padding-bottom:12px}
+html body .wk-record-heading h2{font-size:21px;line-height:1.4}
+html body .wk-field>label{font-size:13px;line-height:1.5;margin-bottom:6px}
+html body .wk-field :is(input,textarea,.uc-trigger){font-size:13px;line-height:1.5}
+html body .guide-page h2{line-height:1.35;font-size:28px;letter-spacing:-.02em}
+html body .guide-description{font-size:14px;line-height:1.7}
+@media(max-width:1100px){html body .character-workspace-layout{gap:10px;grid-template-columns:180px minmax(290px,1fr) 230px}html body .character-tabs{padding:10px;gap:4px}html body .character-tabs button{padding:7px 6px;font-size:12px}html body #character-form{padding:14px}html body .wk-home #wk-main{padding:18px 20px 36px}}
+
+/* Freeze native preview tokens too: inherited aliases must not pick up editor blue. */
+:is(.story-scene,#story-history,.goal-native-canvas,.message-native-phone,.social-feed-card,#space-preview,.model-art){
+--sg-bg:#101c19;
+--sg-surface:#15241e;
+--sg-raised:#1b2d24;
+--sg-field:#111e19;
+--sg-hover:#263c2e;
+--sg-line:#344b3c;
+--sg-line-soft:#293d32;
+--sg-text:#edf4ed;
+--sg-muted:#aebfb3;
+--sg-dim:#91a798;
+--sg-gold:#e6cb90;
+--sg-gold-hover:#f0dbac;
+--sg-selected:#344432;
+--sg-selected-line:#a58f61;
+--sg-success:#9ed1b3;
+--sg-danger:#f0b2a9;
+--sg-danger-bg:#492e2b;
+--sg-radius:14px;
+--sg-control-radius:10px;
+--bg:var(--sg-bg);
+--panel:var(--sg-surface);
+--panel-2:var(--sg-raised);
+--panel-3:var(--sg-hover);
+--line:var(--sg-line);
+--line-soft:var(--sg-line-soft);
+--text:var(--sg-text);
+--muted:var(--sg-muted);
+--dim:var(--sg-dim);
+--jade:var(--sg-gold);
+--jade-deep:var(--sg-selected);
+--amber:var(--sg-gold);
+--danger:var(--sg-danger);
+--shadow:0 18px 60px #0005;
+}
+/* Workspace composition: one context bar, grouped document tools, clear hierarchy. */
+html body #studio-toolbar{gap:10px;padding-inline:16px}
+html body #studio-toolbar .studio-context-group{display:grid;grid-template-columns:minmax(100px,1fr) minmax(100px,1fr) 32px;align-items:center;gap:8px;flex:1;min-width:270px}
+html body #studio-toolbar .studio-context-group .studio-project{width:100%;min-width:0;max-width:none;gap:6px}
+html body #studio-toolbar .studio-context-group .uc-trigger{background:var(--glass-tone-244,#ffffff75)!important;border-color:var(--glass-tone-245,#ffffffad)!important;box-shadow:inset 0 1px 0 var(--glass-tone-246,#fff8)}
+html body #studio-toolbar .studio-file-actions{display:flex;align-items:center;gap:2px;padding-right:8px;margin-right:3px;border-right:1px solid var(--glass-tone-247,#6c87a62b)}
+html body #studio-toolbar .studio-symbol-action{display:grid;place-items:center;width:32px;min-width:32px;min-height:34px;padding:6px;background:transparent;border-color:transparent}
+html body #studio-toolbar .studio-symbol-action::after{display:none}
+html body #studio-toolbar .studio-symbol-action svg{width:19px;height:19px}
+html body #studio-toolbar :is([data-nav=undo],[data-nav=redo],[data-nav=refresh]){background:transparent;border-color:transparent}
+html body #studio-toolbar [data-nav=home]{background:var(--glass-tone-248,#ffffff70);border-color:var(--glass-tone-249,#ffffff80);padding-inline:12px}
+html body #studio-toolbar #studio-auto-save{background:transparent;border-color:transparent;display:flex;align-items:center;gap:6px;padding-inline:6px}
+html body #studio-toolbar #studio-auto-save::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--glass-tone-250,#8996a5);flex-shrink:0}
+html body #studio-toolbar #studio-auto-save[aria-checked=true]::before{background:var(--glass-tone-251,#259666);box-shadow:0 0 0 3px var(--glass-tone-252,#25966615)}
+html body #studio-toolbar [data-display-ids]{border-color:transparent;background:var(--glass-tone-253,#ffffff55)}
+html body #studio-save-state{color:var(--glass-tone-254,#465d76);font-size:10px}
+@media(max-width:1180px){html body #studio-toolbar{gap:6px;padding-inline:10px}html body #studio-toolbar .studio-context-group{gap:5px;min-width:220px;grid-template-columns:minmax(75px,1fr) minmax(75px,1fr) 28px}html body #studio-toolbar .studio-file-actions{padding-right:4px;margin-right:0}html body #studio-toolbar .studio-symbol-action{width:28px;min-width:28px}html body #studio-toolbar [data-nav=home]{padding-inline:8px}}
+/* Settings now uses a persistent sidebar and one independently scrolling content area. */
+html body #game-locations[open]{display:grid;grid-template-columns:200px minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);gap:14px 22px;padding:20px;width:min(1080px,94vw);height:min(820px,90vh)}
+html body #game-locations>.workshop-settings-tabs{grid-column:1;grid-row:1/4;display:flex;flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:5px;padding:14px;min-height:0;overflow:auto;align-self:stretch;background:var(--glass-tone-255,#ffffff40);border-radius:18px}
+html body #game-locations>.location-heading{grid-column:2;grid-row:1;padding:8px 4px 0;align-items:center}
+html body #game-locations>.location-heading h2{font-size:23px;letter-spacing:-.02em}
+html body #game-locations>[data-notice]{grid-column:2;grid-row:2;background:var(--glass-tone-256,#ffffff66);font-size:12px;padding:10px 12px}
+html body #game-locations>.workshop-settings-body{grid-column:2;grid-row:3;padding:0 6px 2px 0;gap:14px}
+html body .settings-identity{display:grid;grid-template-columns:42px minmax(0,1fr);gap:1px 9px;align-items:center;margin-bottom:24px;padding:4px 0 10px}
+html body .settings-identity img{width:42px;height:42px;grid-row:1/3}
+html body .settings-identity strong{font-size:15px;color:var(--glass-tone-257,#23405d)}
+html body .settings-identity>span{font-size:11px;color:var(--glass-tone-258,#536d88)}
+html body .workshop-settings-tabs button{display:flex;align-items:center;gap:10px;min-height:42px;text-align:left;padding:9px 10px;background:transparent;border:0;font-size:13px;line-height:1.4;border-radius:10px}
+html body .workshop-settings-tabs button[aria-pressed=true]{background:var(--glass-tone-259,#ffffffa3);color:var(--glass-tone-260,#075bb7);box-shadow:0 2px 6px var(--glass-tone-261,#1838580f)}
+html body .settings-category-icon{display:grid;place-items:center;width:25px;height:25px;flex-shrink:0;border-radius:7px;color:var(--glass-tone-123,#fff);background:var(--glass-tone-262,#468bd7);font-size:16px}
+html body [data-settings-tab=storage] .settings-category-icon{background:var(--glass-tone-263,#8b78bc)}
+html body [data-settings-tab=preferences] .settings-category-icon{background:var(--glass-tone-264,#519a84)}
+html body [data-settings-tab=about] .settings-category-icon{background:var(--glass-tone-265,#bd879e)}
+html body #game-locations .location-section{padding:18px;border:0}
+html body #game-locations .location-section h3{font-size:17px;line-height:1.4;margin-bottom:10px}
+html body #game-locations .location-current{background:var(--glass-tone-266,#ffffff67);border:0;padding:12px;grid-template-columns:100px minmax(0,1fr);border-radius:12px}
+html body #game-locations [data-close]{display:grid;place-items:center;min-height:30px;width:30px;padding:0;border:0;border-radius:50%;background:var(--glass-tone-267,#ffffff91);color:var(--glass-tone-268,#52657b);font-size:23px;line-height:1}
+/* Secondary surfaces use compact headers, segmented sources and inset editor sections. */
+html body dialog :is(.ap-heading,.modal-header,.location-heading,.warehouse-editor>header){padding-block:16px;align-items:center}
+html body dialog :is(.ap-heading h2,.modal-header h2,.character-picker h2){font-size:23px;line-height:1.35;letter-spacing:-.015em}
+html body dialog :is(.ap-sources,.ap-category-filters,.condition-category-filter,.event-type-tabs,.model-reference-tabs){gap:6px;padding-block:10px}
+html body dialog :is(.ap-sources,.condition-category-filter,.event-type-tabs,.model-reference-tabs) button{background:var(--glass-tone-269,#ffffff4d);border:1px solid var(--glass-tone-249,#ffffff80);border-radius:10px;padding:8px 13px;font-size:13px}
+html body dialog :is(.ap-sources,.condition-category-filter,.event-type-tabs,.model-reference-tabs) button:is(.active,[aria-pressed=true]){background:var(--glass-tone-270,#ffffffcf);color:var(--glass-tone-260,#075bb7);border-color:var(--glass-tone-271,#90b7e3);box-shadow:0 1px 5px var(--glass-tone-272,#20416b0d)}
+html.liquid-gpu body dialog :is(.ap-controls,.ap-footer,.modal-footer,.event-type-footer){background:var(--glass-tone-273,#f2f7ff66);border-color:var(--glass-tone-274,#ffffff85)}
+html.liquid-gpu body dialog :is(.condition-browser-catalog,.condition-browser-selected,.event-parameter-panel){padding:16px;min-width:0}
+html.liquid-gpu body dialog :is(.ap-card,.condition-library-entry,.character-choice-grid>button).liquid-pane{border-radius:14px!important}
+html.liquid-gpu body dialog button.liquid-pane>canvas.liquid-optics{clip-path:inset(0 round 14px);border-radius:14px}
+html body dialog .ap-card{overflow:hidden}
+html body dialog :is(.condition-library-entry,.character-choice-grid>button){padding:14px;text-align:left;line-height:1.5}
+html body dialog .ap-folder{padding:12px;border:0;margin-bottom:10px}
+html body dialog .ap-search-row{gap:10px;align-items:center}
+html body dialog .ap-search-row>input{border-radius:11px!important}
+@media(max-width:850px){html body #game-locations[open]{grid-template-columns:160px minmax(0,1fr);gap:12px;padding:16px}html body #game-locations>.workshop-settings-tabs{padding:10px}html body .settings-identity{grid-template-columns:34px minmax(0,1fr);gap:4px 7px}html body .settings-identity img{width:34px;height:34px}html body .settings-identity strong{font-size:13px}html body #game-locations .location-current{grid-template-columns:1fr;gap:3px}html body #game-locations .location-path-row{grid-template-columns:minmax(0,1fr)}html body .workshop-settings-tabs button{padding:8px 6px;gap:7px;font-size:12px}}
+html body :is(.studio-brand img,.settings-identity img,.guide-logo,.startup-brand img,.guide-welcome-mark img,.guide-orbit img){border-radius:23%;object-fit:contain}
+
+/* Newly exposed/released cards retain material until the next settled draw. */
+.liquid-gpu .liquid-pane:not(.liquid-ready){background:var(--glass-tone-275,rgba(236,246,255,.72))!important}
+
+/* Every editor button shares the lens; nested surfaces receive denser material. */
+html.liquid-gpu body button.liquid-pane{border-radius:10px!important;box-shadow:inset 0 1px 0 #ffffff42,0 2px 5px #14283c18!important}
+html.liquid-gpu body button.liquid-pane>canvas.liquid-optics{clip-path:inset(0 round 10px);border-radius:10px}
+html.liquid-gpu body #studio-corner-tools button.liquid-pane{border-radius:50%!important}
+html.liquid-gpu body #studio-corner-tools button.liquid-pane>canvas.liquid-optics{clip-path:circle(50%);border-radius:50%}
+html.liquid-gpu body button.liquid-pane:is(.primary,[data-nav=save],.active,[aria-pressed=true],[aria-checked=true],[aria-selected=true]){color:#fff!important}
+html.liquid-gpu body #studio-cache-progress.liquid-pane{border-radius:50%!important}
+html.liquid-gpu body #studio-cache-progress.liquid-pane>canvas.liquid-optics{clip-path:circle(50%);border-radius:50%}
+
+/* One rounded mask for each pane; no competing fixed-radius canvas clips. */
+html.liquid-gpu body .liquid-pane>canvas.liquid-optics{clip-path:none!important;border-radius:inherit!important;transition:none!important;animation:none!important}
+html.liquid-gpu body .liquid-pane:not(.liquid-ready){background:var(--glass-tone-275,rgba(236,246,255,.72))!important}
+html.liquid-gpu body button.liquid-pane{border-radius:14px!important}
+html.liquid-gpu body #studio-corner-tools button.liquid-pane{border-radius:50%!important}
+/* Slim, quiet scroll thumbs: every long panel shows where you are without a heavy bar. The palette
+   thumb colour equals the panel background on dark themes, so it is overridden here. */
+html[data-theme^="glass"] body ::-webkit-scrollbar{width:6px;height:6px}
+html[data-theme^="glass"] body ::-webkit-scrollbar-track{background:transparent}
+html[data-theme^="glass"] body ::-webkit-scrollbar-thumb{background:var(--glass-scroll-thumb,rgba(58,78,108,.28))!important;border:0;border-radius:6px;background-clip:padding-box}
+html[data-theme^="glass"] body ::-webkit-scrollbar-thumb:hover{background:var(--glass-scroll-thumb-hover,rgba(58,78,108,.48))!important}
+html[data-theme="glass-dusk"],html[data-theme="glass-moon"]{--glass-scroll-thumb:rgba(255,255,255,.22);--glass-scroll-thumb-hover:rgba(255,255,255,.4)}
+html[data-theme^="glass"] body *{scrollbar-width:thin;scrollbar-color:var(--glass-scroll-thumb,rgba(58,78,108,.28)) transparent}
