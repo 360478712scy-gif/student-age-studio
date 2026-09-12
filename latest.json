@@ -1,9 +1,9 @@
 {
   "format": 1,
   "runtimeAbi": 1,
-  "version": "v1.3.0-beta.5",
-  "commit": "b77e76eda1b5b6f625349a5063d2803cdd1f5f97",
-  "sha256": "14e68fbae13fd674238c4fb69d469a4e2ff16ef95b1d888c08d16566c94b404a",
-  "size": 2435806,
+  "version": "v1.3.0-beta.6",
+  "commit": "ce744cbe9d44ca638fa36a31ea5f4ae3a740274d",
+  "sha256": "b91e6d48f54239105e3c4b83295a63bd3ad700916effdbe71e5ecc35c82c1db7",
+  "size": 2435854,
   "notes": "电话与人物图片、事件外对话、编号原地编辑、菜单外部关闭、ID 检测排除和静默缓存更新。"
 }
