@@ -62,8 +62,10 @@ def save(store,payload,api):
                 old_chat=current['interactions'].get(key,{})
                 cast_changed=chat.get('npc')!=old_chat.get('npc') or chat.get('talkId')!=old_chat.get('talkId')
                 if tid not in talks and not cast_changed and legacy_events.get(key) not in migrating:continue
-                line=copy.deepcopy(all_talks[tid]);speaker=0 if (line.get('roleIds') or [0])[0]==0 else npc
-                line['roleIds']=[speaker]
+                line=copy.deepcopy(all_talks[tid])
+                # NewTalkView accepts the authored cast, including phone anchors
+                # and narration. Do not coerce it back to the interaction owner.
+                if 'roleIds' not in line: line['roleIds']=[0]
                 line['roles']=[r for r in (line.get('roles') or []) if isinstance(r,list) and len(r)>1]
                 first=tid==str(chat.get('talkId'))
                 if first and npc:
