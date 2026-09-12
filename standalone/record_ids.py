@@ -44,14 +44,20 @@ class RecordIds:
             self.cache[path] = (stamp, {int(k) for k in rows if str(k).isdigit()})
         return self.cache[path][1]
 
-    def occupied(self, exclude=None):
+    def check_exclusions(self):
+        from storage_paths import preference_path
+        from user_preferences import load
+        saved = load(preference_path()).get('idCheckExcludedProjects', [])
+        return {v for v in saved if isinstance(v, str)} if isinstance(saved, list) else set()
+
+    def occupied(self, exclude=None, exclude_projects=()):
         catalog = self.store.catalog()
         names = set(catalog.get('tables', {})) | set(catalog.get('schemas', {})) | set(gameplay_features.NAMES)
         names.update(['EvtCfg', 'TalkCfg', 'OptionCfg', 'PersonCfg', POST, COMMENT, 'ModFaceCfg'])
         occupied = {n.removesuffix('.json'): {int(k) for k in self.store.catalog_rows(n.removesuffix('.json')) if str(k).isdigit()} for n in names}
         occupied.setdefault('TalkCfg', set()).update(int(k) for k in catalog.get('baseTalkIds', []) if str(k).isdigit())
         for project in self.store.projects():
-            if project.id == exclude: continue
+            if project.id == exclude or project.id in exclude_projects: continue
             for name, path in self.store.cfg_table_files(project).items():
                 try: occupied.setdefault(name[:-5], set()).update(self.keys(path))
                 except (self.b.ApiError, OSError): continue  # Only known, readable configurations participate.
@@ -108,7 +114,7 @@ class RecordIds:
                 new -= {int(k) for k in self.store.catalog_rows(table) if str(k).isdigit()}
                 if new: candidates[table] = new
             if not candidates: return []
-            occupied = self.occupied(exclude=project.id)
+            occupied = self.occupied(exclude=project.id, exclude_projects=self.check_exclusions())
             notes = []
             for table, ids in candidates.items():
                 conflict = sorted(ids & occupied.get(table, set()))
@@ -125,6 +131,7 @@ class RecordIds:
             related.update({child: 1 for child in CHILDREN.get(table, ())})
             tables = {table, *related}
             conflicts = []
+            excluded = self.check_exclusions()
 
             def collect(source, name, rows):
                 matches = ([ident] if ident in rows else []) if name == table else (
@@ -140,7 +147,7 @@ class RecordIds:
                 if name == 'TalkCfg': rows.update(int(k) for k in self.store.catalog().get('baseTalkIds', []) if str(k).isdigit())
                 collect({'projectId': None, 'name': '原版游戏', 'source': 'original'}, name, rows)
             for other in self.store.projects():
-                if other.id == project.id: continue
+                if other.id == project.id or other.id in excluded: continue
                 for filename, path in self.store.cfg_table_files(other).items():
                     name = filename.removesuffix('.json')
                     if name not in tables: continue
@@ -223,6 +230,10 @@ class RecordIds:
                     else: row[name] = self.remap(value, mappings[reference])
                 if table == 'TalkCfg' and name == 'screenEffect' and isinstance(value,list) and len(value)>1 and value[0]==4015:
                     value[1] = self.remap(value[1], mappings.get('CGCfg', {}))
+                if table=='TalkCfg' and name=='screenEffect' and isinstance(value,list) and len(value)>1:
+                    if value[0] in (4007,4018):value[1]=self.remap(value[1],mappings.get('BgCfg',{}))
+                    if value[0]==4004:value[1]=self.remap(value[1],mappings.get('ItemCfg',{}))
+                    if value[0]==4007:value[2:]=[self.remap(v,mappings.get('PersonCfg',{})) for v in value[2:]]
                 kind = str(f.get('editorType', '')).lower()
                 if kind not in templates:
                     kind = 'effect' if name in ('effect','effects','effect2','usingEffect','reward') else 'condition' if name in ('condition','conditions','cond','check','precondition') else None
@@ -268,6 +279,8 @@ class RecordIds:
                     for outfit in outfits.values():
                         outfit['backgrounds']=m('BgCfg',outfit.get('backgrounds',[]))
             elif filename=='editor-state.json':
+                for folder in data.get('externalDialogueFolders',{}).values():
+                    if 'talkIds' in folder:folder['talkIds']=m('TalkCfg',folder['talkIds'])
                 if 'talkOwners' in data:data['talkOwners']={str(m('TalkCfg',int(k))):m('EvtCfg',v) for k,v in data['talkOwners'].items()}
                 if 'order' in data: data['order']=m('TalkCfg',data['order'])
                 if 'lighting' in data:data['lighting']={str(m('TalkCfg',int(k))):{str(m('PersonCfg',int(role))):v for role,v in actors.items()} for k,actors in data['lighting'].items()}

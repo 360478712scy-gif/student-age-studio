@@ -370,8 +370,7 @@
       "TalkCfg"
     ],
     "entry": {
-      "kind": "table",
-      "table": "TalkCfg"
+      "kind": "external-dialogues"
     },
     "group": "剧情与互动",
     "native": true,
@@ -918,5 +917,56 @@
     "native": true,
     "module": true,
     "homeCategory": "extension"
+  },
+  {
+    "id": "minigames",
+    "label": "小游戏",
+    "description": "设置原版小游戏的名称、玩法提示和背景音乐",
+    "primaryTable": "MinigameCfg",
+    "tables": [
+      "MinigameCfg"
+    ],
+    "entry": {
+      "kind": "table",
+      "table": "MinigameCfg"
+    },
+    "group": "玩法与配置",
+    "native": true,
+    "homeCategory": "builtin",
+    "createLabel": "添加小游戏"
+  },
+  {
+    "id": "television",
+    "label": "电视节目",
+    "description": "编辑频道、节目、本集标题、观看条件和效果",
+    "primaryTable": "TVCfg",
+    "tables": [
+      "TVCfg"
+    ],
+    "entry": {
+      "kind": "table",
+      "table": "TVCfg"
+    },
+    "group": "玩法与配置",
+    "native": true,
+    "homeCategory": "builtin",
+    "createLabel": "添加电视节目"
+  },
+  {
+    "id": "photobooth",
+    "label": "大头贴",
+    "description": "编辑大头贴相框装饰；人物照片在人物图片页预览调整",
+    "primaryTable": "LovePhotoboothCfg",
+    "tables": [
+      "LovePhotoboothCfg"
+    ],
+    "entry": {
+      "kind": "table",
+      "table": "LovePhotoboothCfg"
+    },
+    "group": "玩法与配置",
+    "native": true,
+    "homeCategory": "builtin",
+    "createLabel": "添加大头贴"
   }
 ]

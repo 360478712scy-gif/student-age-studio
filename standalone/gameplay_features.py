@@ -19,7 +19,7 @@ def _read(game,stamp):
     with _lock:
         try:
             old=json.loads(cache.read_text('utf-8'))
-            if old.get('stamp')==[list(s) for s in stamp] and old.get('version')==2:return old['tables']
+            if old.get('stamp')==[list(s) for s in stamp] and old.get('version')==3:return old['tables']
         except (OSError,ValueError,KeyError):pass
         from extract_game_assets import UnityPy
         tables={n:{} for n in (*NAMES,*LOOKUPS)}
@@ -35,7 +35,7 @@ def _read(game,stamp):
                 if isinstance(rows,dict):tables[table].update(rows)
         from platform_support import replace_file
         cache.parent.mkdir(parents=True,exist_ok=True);stage=cache.with_name(cache.name+'.'+uuid.uuid4().hex+'.tmp')
-        stage.write_text(json.dumps({'version':2,'stamp':stamp,'tables':tables},ensure_ascii=False),'utf-8');replace_file(stage,cache)
+        stage.write_text(json.dumps({'version':3,'stamp':stamp,'tables':tables},ensure_ascii=False),'utf-8');replace_file(stage,cache)
         return tables
 
 def original_rows(game,name):

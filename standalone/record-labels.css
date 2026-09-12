@@ -4,3 +4,7 @@
 .talk-card-header>strong{flex:1;min-width:0;overflow-wrap:anywhere}
 .event-card-open>strong,.wk-record-heading h2,#wk-row-list strong,.ap-card>strong,.social-post-list-item strong,.space-list-item strong{overflow-wrap:anywhere}
 .social-post-list-item>span,.space-list-item>span{min-width:0}
+.record-id-editing{position:relative;display:inline-flex!important;overflow:visible!important;align-items:center;}
+.record-id-inline-input{font:inherit!important;color:var(--text,#243340)!important;background:var(--panel,#fff)!important;border:1px solid var(--accent,#397f8d)!important;border-radius:5px!important;padding:2px 5px!important;width:12ch!important;min-width:0!important;line-height:1.4!important;}
+.record-id-inline-error{position:absolute;top:100%;left:0;z-index:20;white-space:normal;width:max-content;max-width:260px;background:var(--panel,#fff);color:var(--danger,#b63d45);font-size:12px;box-shadow:0 3px 12px #0003;border-radius:6px;}
+.record-id-inline-error:not(:empty){padding:6px 9px;}

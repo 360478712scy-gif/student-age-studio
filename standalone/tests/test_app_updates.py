@@ -51,6 +51,28 @@ class UpdatesTest(unittest.TestCase):
             time.sleep(.01)
         self.assertEqual(status['status'],'ready',status)
 
+    def test_source_feed_download_uses_immutable_commit(self):
+        self.updater.config['sourceUpdates']=True
+        commit='a'*40
+        feed={'format':1,'runtimeAbi':1,'version':'v1.3.1-beta.1','commit':commit,'size':len(self.payload),'sha256':hashlib.sha256(self.payload).hexdigest()}
+        def opener(url):
+            self.calls.append(url)
+            if url.endswith('/updates/latest.json'):return io.BytesIO(json.dumps(feed).encode())
+            self.assertEqual(url,'https://raw.githubusercontent.com/owner/repo/'+commit+'/student-age-studio-update.zip')
+            return io.BytesIO(self.payload)
+        self.updater.opener=opener
+        self.stage()
+        self.assertFalse(any('/releases' in u for u in self.calls))
+        self.updater.activate();self.assertTrue(read_state(self.updater.root)['active'])
+
+    def test_source_feed_rejects_bad_commit_and_runtime(self):
+        self.updater.config['sourceUpdates']=True
+        feed={'format':1,'runtimeAbi':1,'version':'v1.3.1-beta.1','commit':'../main','size':10,'sha256':'a'*64}
+        self.updater.opener=lambda url:io.BytesIO(json.dumps(feed).encode())
+        self.assertEqual(self.updater.check()['status'],'error')
+        feed.update(commit='a'*40,runtimeAbi=200)
+        self.assertEqual(self.updater.check()['status'],'error')
+
     def test_newer_installer_cannot_be_downgraded_by_old_overlay(self):
         self.stage();self.updater.activate();(self.base/'error_logs.py').write_text("APP_VERSION='1.4.0'", encoding='utf-8')
         self.assertEqual(select_web(self.base,self.updater.root),self.base)

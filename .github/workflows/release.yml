@@ -3,7 +3,6 @@ on:
   push:
     branches: [main]
     paths: ['standalone/error_logs.py']
-    tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: write
@@ -12,6 +11,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   publish:
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +36,37 @@ jobs:
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: python -B tools/build_update.py --version "$RELEASE_TAG" --out release/student-age-studio-update.zip
-      - name: Publish GitHub Release
+      - name: Publish lightweight update channel
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git fetch origin updates; then
+            git worktree add /tmp/studio-feed FETCH_HEAD
+          else
+            git worktree add --detach /tmp/studio-feed HEAD
+            git -C /tmp/studio-feed checkout --orphan updates
+            git -C /tmp/studio-feed rm -rf .
+          fi
+          cp release/student-age-studio-update.zip /tmp/studio-feed/
+          git -C /tmp/studio-feed add student-age-studio-update.zip
+          git -C /tmp/studio-feed diff --cached --quiet || git -C /tmp/studio-feed commit -m "Code payload $RELEASE_TAG"
+          export PAYLOAD_COMMIT=$(git -C /tmp/studio-feed rev-parse HEAD)
+          python - <<'PYFEED'
+          import hashlib,json,os
+          from pathlib import Path
+          p=Path('/tmp/studio-feed/student-age-studio-update.zip');data=p.read_bytes()
+          feed={'format':1,'runtimeAbi':1,'version':os.environ['RELEASE_TAG'],'commit':os.environ['PAYLOAD_COMMIT'],'sha256':hashlib.sha256(data).hexdigest(),'size':len(data),'notes':'电话与人物图片、事件外对话、编号原地编辑、菜单外部关闭、ID 检测排除和静默缓存更新。'}
+          Path('/tmp/studio-feed/latest.json').write_text(json.dumps(feed,ensure_ascii=False,indent=2),encoding='utf-8')
+          PYFEED
+          git -C /tmp/studio-feed add latest.json
+          git -C /tmp/studio-feed diff --cached --quiet || git -C /tmp/studio-feed commit -m "Update channel $RELEASE_TAG"
+          git -C /tmp/studio-feed push origin HEAD:updates
+      - name: Publish one compatibility update for older clients
+        if: steps.version.outputs.tag == 'v1.3.0-beta.5'
+
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
@@ -47,4 +78,32 @@ jobs:
           fi
           flags=()
           if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
-          gh release create "$RELEASE_TAG" release/student-age-studio-update.zip release/student-age-studio-update.zip.sha256 --target "$GITHUB_SHA" --generate-notes "${flags[@]}"
+          gh release create "$RELEASE_TAG" release/student-age-studio-update.zip release/student-age-studio-update.zip.sha256 --target "$GITHUB_SHA" --notes-file docs/releases/beta5.md "${flags[@]}"
+
+  windows-launcher:
+    needs: publish
+    if: needs.publish.outputs.tag == 'v1.3.0-beta.5'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build small replacement launcher for beta.4
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.3.0-beta.4 --pattern 'StudentAgeStudio-Windows-x64-1.3.0-beta.4.zip' --dir "$env:RUNNER_TEMP"
+          if($LASTEXITCODE -ne 0){throw 'Original client download failed'}
+          $archive=Join-Path $env:RUNNER_TEMP 'StudentAgeStudio-Windows-x64-1.3.0-beta.4.zip'
+          if((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '8bd27e155f494089b73c532fe8d5ce345071a705ba71d3a9712059eccca283fd'){throw 'Original client checksum mismatch'}
+          Expand-Archive $archive -DestinationPath "$env:RUNNER_TEMP/client"
+          $package=Join-Path $env:RUNNER_TEMP 'client/StudentAgeStudio-Windows-x64-1.3.0-beta.4'
+          $manifest=Join-Path $env:RUNNER_TEMP 'runtime-sha256.txt'
+          Get-ChildItem "$package/runtime" -File -Recurse -Filter *.dll | Sort-Object FullName | ForEach-Object {((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())+'  '+$_.FullName.Substring($package.Length+1)} | Set-Content $manifest -Encoding ASCII
+          New-Item -ItemType Directory "$env:RUNNER_TEMP/launcher" | Out-Null
+          $csc=Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+          & $csc /nologo /target:winexe /reference:System.Windows.Forms.dll "/resource:$manifest,runtime-sha256.txt" "/out:$env:RUNNER_TEMP/launcher/拾光工坊.exe" desktop/windows/Launcher.cs
+          if($LASTEXITCODE -ne 0){throw 'Launcher compile failed'}
+          '仅用于官方 Windows x64 1.3.0-beta.4：关闭软件，将本文件夹内的拾光工坊.exe替换到已解压客户端的同名文件位置，runtime文件夹保留。启动器仅在校验DLL与原包一致后解除该DLL的下载标记；不修改系统防护。无需重装完整客户端。' | Set-Content "$env:RUNNER_TEMP/launcher/使用说明.txt" -Encoding utf8
+          Compress-Archive "$env:RUNNER_TEMP/launcher/*" "$env:RUNNER_TEMP/StudentAgeStudio-Windows-launcher-beta4.zip"
+          gh release upload v1.3.0-beta.5 "$env:RUNNER_TEMP/StudentAgeStudio-Windows-launcher-beta4.zip" --clobber
+          if($LASTEXITCODE -ne 0){throw 'Launcher upload failed'}

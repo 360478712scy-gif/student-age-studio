@@ -1591,6 +1591,11 @@ class StudioStore:
             if not isinstance(state, dict):
                 save_warnings.append("编辑记录格式无效，已重建。"); state = {}
             old_state = copy.deepcopy(state)
+            if 'externalDialogueFolders' in payload:
+                from external_dialogues import folders as external_folders
+                external_owners=self.load(project.id).get('talkOwners',{})
+                external_rows={k:v for k,v in all_maps.get('TalkCfg.json',{}).items() if not external_owners.get(k)}
+                state['externalDialogueFolders']=external_folders(payload['externalDialogueFolders'],external_rows,sys.modules[__name__])
             if "protagonistGender" in payload:
                 gender=payload["protagonistGender"]
                 if type(gender) is not int or gender not in (1,2): gender = 1
@@ -1878,6 +1883,7 @@ class StudioStore:
                 rows = commands.setdefault(kind, [])
                 existing = {signature(row) for row in rows if isinstance(row, dict)}
                 rows.extend(row for row in bundled if signature(row) not in existing)
+                if kind == 'effect': rows.sort(key=lambda row: row.get('label') != '直接成为恋人')
             state = read_json(safe_path(project.path, 'StudentAgeStudio/editor-state.json'), {})
             premises = state.get('premises', {}) if isinstance(state, dict) else {}
             for entry in named_entries(premises):
@@ -3109,11 +3115,16 @@ class StudioServer(ThreadingHTTPServer):
             if not isinstance(favorites, list): favorites = defaults
             favorites = list(dict.fromkeys(v for v in favorites if isinstance(v, str) and v in eligible))
             if payload is not None:
-                if not isinstance(payload, dict) or not any(key in payload for key in ('showRecordIds', 'autoSave', 'saveOnExit', 'onboardingComplete', 'favoriteFeature', 'theme')):
+                if not isinstance(payload, dict) or not any(key in payload for key in ('showRecordIds', 'autoSave', 'saveOnExit', 'onboardingComplete', 'favoriteFeature', 'theme', 'idCheckExcludedProjects')):
                     raise ApiError('请选择要修改的显示、保存或收藏设置。')
                 for key in ('showRecordIds', 'autoSave', 'saveOnExit', 'onboardingComplete'):
                     if key in payload and type(payload[key]) is not bool:
                         raise ApiError('保存设置必须为开启或关闭。')
+                if 'idCheckExcludedProjects' in payload:
+                    value = payload['idCheckExcludedProjects']
+                    if not isinstance(value, list) or len(value) > 1000 or any(not isinstance(v, str) or len(v) > 512 for v in value):
+                        raise ApiError('请选择要排除的模组。')
+                    saved['idCheckExcludedProjects'] = list(dict.fromkeys(value))
                 if 'theme' in payload:
                     if payload['theme'] not in ('classic', 'glass', 'glass-dusk', 'glass-moon'): raise ApiError('请选择经典主题或液态玻璃。')
                     saved['theme'] = payload['theme']
@@ -3128,7 +3139,7 @@ class StudioServer(ThreadingHTTPServer):
                     if key in payload: saved[key] = payload[key]
                 self.display_path.parent.mkdir(parents=True, exist_ok=True)
                 atomic_write(self.display_path, json_bytes(saved))
-            return {'theme': saved.get('theme') if saved.get('theme') in ('classic', 'glass', 'glass-dusk', 'glass-moon') else 'glass', 'showRecordIds': saved.get('showRecordIds') is not False, 'autoSave': saved.get('autoSave') is True, 'workshopFavorites': favorites, 'saveOnExit': saved.get('saveOnExit', saved.get('autoSave',False)) is True, 'onboardingComplete': saved.get('onboardingComplete') is True}
+            return {'idCheckExcludedProjects': saved.get('idCheckExcludedProjects', []), 'theme': saved.get('theme') if saved.get('theme') in ('classic', 'glass', 'glass-dusk', 'glass-moon') else 'glass', 'showRecordIds': saved.get('showRecordIds') is not False, 'autoSave': saved.get('autoSave') is True, 'workshopFavorites': favorites, 'saveOnExit': saved.get('saveOnExit', saved.get('autoSave',False)) is True, 'onboardingComplete': saved.get('onboardingComplete') is True}
 
     def server_close(self):
         if hasattr(self, 'media_warmup'): self.media_warmup.close()
@@ -3538,6 +3549,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                 from goal_ui import resources, resource_file
                 name = query.get("resource", [""])[0]
                 return self.send_file(resource_file(name, self.server.store.game)) if name else self.send_json(resources(self.server.store.game))
+            if route == '/api/external-dialogues':
+                import external_dialogues
+                return self.send_json(external_dialogues.load(self.server.store,query.get('projectId',[''])[0],sys.modules[__name__]))
             if route == "/api/characters":
                 import character_workbench
                 return self.send_json(character_workbench.load(self.server.store, query.get("projectId", [""])[0]))
@@ -3560,7 +3574,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 page = page.replace("</head>", bootstrap + "</head>", 1) if "</head>" in page else bootstrap + page
                 policy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval' 'nonce-" + nonce + "'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
                 return self.send_data(page.encode(), "text/html; charset=utf-8", extra={"Content-Security-Policy": policy})
-            if route in ("/app-updates.js", "/original-mode.js", "/event-ownership.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-ui.css", "/locations.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
+            if route in ("/character-images.js", "/external-dialogues.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-ui.css", "/locations.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
                 file = self.server.web_root / route.lstrip("/")
                 if file.is_file():
                     data = file.read_bytes()
@@ -3701,9 +3715,15 @@ class StudioHandler(BaseHTTPRequestHandler):
             if route == "/api/goals-save":
                 import goal_workbench
                 return self.send_json(save_review.perform(lambda value: goal_workbench.save(self.server.store, value, sys.modules[__name__]), payload, ApiError))
+            if route == '/api/external-dialogues-save':
+                import external_dialogues
+                return self.send_json(save_review.perform(lambda value: external_dialogues.save(self.server.store,value,sys.modules[__name__]),payload,ApiError))
             if route == "/api/characters-save":
                 import character_workbench
                 return self.send_json(save_review.perform(lambda value: character_workbench.save(self.server.store, value, sys.modules[__name__]), payload, ApiError))
+            if route == '/api/character-companion':
+                from character_images import import_companion
+                return self.send_json(import_companion(self.server.store,payload,sys.modules[__name__]))
             if route == "/api/character-image":
                 import character_workbench
                 return self.send_json(character_workbench.import_media(self.server.store, payload, sys.modules[__name__]))

@@ -1,5 +1,34 @@
 [
   {
+    "label": "直接成为恋人",
+    "template": [
+      20,
+      2,
+      3,
+      520
+    ],
+    "match": {
+      "0": 20,
+      "1": 2,
+      "3": 520
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "恋爱",
+    "categoryId": 52,
+    "description": "直接与所选人物建立恋人关系。",
+    "source": "RelationData.ChangeRelation relationId 520 -> LoveData.SetLover"
+  },
+  {
     "label": "增减属性",
     "template": [
       1.0,

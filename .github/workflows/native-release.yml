@@ -1,8 +1,5 @@
 name: Build desktop clients
 on:
-  push:
-    branches: [main]
-    paths: ['standalone/error_logs.py', '.github/workflows/native-release.yml']
   workflow_dispatch:
 permissions:
   contents: read

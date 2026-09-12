@@ -64,11 +64,13 @@ def save(store,payload,api):
                 if tid not in talks and not cast_changed and legacy_events.get(key) not in migrating:continue
                 line=copy.deepcopy(all_talks[tid]);speaker=0 if (line.get('roleIds') or [0])[0]==0 else npc
                 line['roleIds']=[speaker]
-                line['roles']=[r for r in line.get('roles',[]) if len(r)>1 and r[0] in (0,npc) and r[1] in (3000,3009)]
+                line['roles']=[r for r in (line.get('roles') or []) if isinstance(r,list) and len(r)>1]
                 first=tid==str(chat.get('talkId'))
-                if first and npc:line['roles']=[[0,1002,1,1,0],[npc,1002,1,2,0]]+line['roles']
+                if first and npc:
+                    entered={r[0] for r in line['roles'] if r[1] in (1001,1002,1003)}
+                    line['roles']=[r for r in [[0,1002,1,1,0],[npc,1002,1,2,0]] if r[0] not in entered]+line['roles']
                 # bg=0 inherits the native clicked location, including its grade-specific variant.
-                line['bg']=0;line['screenEffect']=[]
+                line['bg']=0  # Screen effects are executed by native NewTalkView for event-less dialogue too.
                 all_talks[tid]=line
         next_owned=interaction_talks(interactions,all_talks,current.get('options',{}))
         # Event-owned shared dialogue remains governed by its event.

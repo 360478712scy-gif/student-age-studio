@@ -1,1 +1,7 @@
-{"repository":"360478712scy-gif/student-age-studio","channel":"beta","runtimeAbi":1,"asset":"student-age-studio-update.zip"}
+{
+  "repository": "360478712scy-gif/student-age-studio",
+  "channel": "beta",
+  "runtimeAbi": 1,
+  "asset": "student-age-studio-update.zip",
+  "sourceUpdates": true
+}

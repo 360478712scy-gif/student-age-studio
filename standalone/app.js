@@ -343,7 +343,7 @@ function applyRenumber(result){
 // ---- Double-click an ID to open the shared draft-aware number editor. ----
 function inlineIdEdit(prefix,commit){
   const oldId=prefix.textContent.replace(/[\[\]\s]/g,'');
-  window.STUDIO_IDS.editDraft({oldId,title:'修改编号',commit});
+  window.STUDIO_IDS.inline(prefix,{oldId,commit});
 }
 // A hand-typed number is taken literally and pinned: it is never renumbered automatically. Another local row
 // already holding that number swaps IDs with this one; an original row's number may be taken (override).
@@ -384,8 +384,8 @@ document.addEventListener('click',e=>{
   const eventCard=prefix.closest('#story-events .event-card-open');if(eventCard){inlineIdEdit(prefix,v=>renameEvent(Number(eventCard.dataset.enterEvent),idInput(v)));return;}
   const title=prefix.closest('#talk-list .branch-folder-title');
   if(title){if(title.closest('.conditional-folder'))return;const key=title.dataset.folderKey;inlineIdEdit(prefix,v=>{const [parent,oid]=String(key).split(':');return setOptionId(Number(parent),Number(oid),v);});return;}
-  const scope=prefix.closest('.wk-record-heading,.character-record-heading,article,section,form,header');const button=prefix.closest('[data-record-table][data-record-id]')||scope?.querySelector('[data-record-table][data-record-id]');
-  if(button&&!button.disabled)button.click();
+  const scope=prefix.closest('.wk-record-heading,.character-record-heading,.character-record-title,article,section,form,header');const button=prefix.closest('[data-record-table][data-record-id]')||scope?.querySelector('[data-record-table][data-record-id]');
+  if(button&&!button.disabled)window.STUDIO_IDS.open(button.dataset.recordTable,button.dataset.recordId,prefix);
 },true);
 function renumberableEvent(){return S.event!=='all'&&S.doc?.events?.[S.event]&&!S.catalogIds?.events?.has(String(S.event))&&!S.project?.originalMode?Number(S.event):null;}
 // ---- Speakers: several people may speak one line; a custom name replaces the joined names. ----
@@ -1017,13 +1017,9 @@ function renderDialogue() {
 }
 function screenEffectControls(t){const effect=StudentAgeScreenEffects.entries.find(e=>e.id===Number(t.screenEffect?.[0]));return `<section class="screen-effect-controls"><h3>屏幕效果</h3><button data-action="screen-effect">${h(effect?.name|| (t.screenEffect?.length?'已有屏幕效果':'＋ 添加屏幕效果'))}</button>${t.screenEffect?.length?'<button data-action="screen-effect-clear">移除</button>':''}</section>`;}
 async function editScreenEffect(){const t=talk();if(!t||!editable())return;const id=t.id;
- const hasPaper=(t.roles||[]).some(r=>Number(r[1])===5001),entries=[...StudentAgeScreenEffects.entries,{id:'paper',name:hasPaper?'纸条（编辑）':'纸条'},...(t.screenEffect?.length?[{id:'clear',name:'移除本句屏幕效果'}]:[])];
- const picked=await StudentAgeCharacterUI.choices('添加屏幕效果',entries,{selected:t.screenEffect?.[0]});if(!picked||talk()?.id!==id)return;
- if(picked.id==='paper'){editPaper();return;}if(picked.id==='clear'){mutate('移除屏幕效果',()=>talk().screenEffect=[]);return;}
- const config=StudentAgeScreenEffects.entries.find(e=>e.id===picked.id);let row=[config.id];
- if(config.table){const data=await api('/api/table?'+new URLSearchParams({projectId:S.project.id,name:config.table}));S.conditionRefs[config.table]=data.rows;const choice=await StudentAgeCharacterUI.choices('选择'+config.label,Object.values(data.rows),{selected:t.screenEffect?.[1]});if(!choice||talk()?.id!==id)return;row.push(choice.id);}
- else if(config.value!==undefined){row.push(t.screenEffect?.[0]===config.id?t.screenEffect[1]??config.value:config.value);modal(config.name,`<label>${h(config.label)}<input id="screen-effect-value" type="range" min="${config.min}" max="${config.max}" step="${config.step}" value="${row[1]}"><output id="screen-effect-value-label">${row[1]}</output></label>`,[{label:'取消',run:closeModal},{label:'应用',primary:true,run:()=>{row[1]=Number($('#screen-effect-value').value);if(talk()?.id===id)mutate('设置屏幕效果',()=>talk().screenEffect=row);closeModal();}}]);$('#screen-effect-value').oninput=e=>$('#screen-effect-value-label').textContent=e.target.value;return;}
- mutate('设置屏幕效果',()=>talk().screenEffect=row);
+ const result=await StudentAgeScreenEffects.edit({projectId:S.project.id,api,talk:t,persons:S.doc.persons,allowPaper:true});
+ if(!result||talk()?.id!==id)return;if(result.paper){editPaper();return;}
+ mutate('设置屏幕效果',()=>Object.assign(talk(),result));
 }
 function slider(index,arg,label,min,max,step=0.1,unit='') {
   const row=talk().roles[index],v=row[arg]??0;

@@ -10502,6 +10502,151 @@
       "layout": "sections",
       "allowIncomplete": true,
       "gameplayModule": true
+    },
+    "MinigameCfg": {
+      "name": "MinigameCfg",
+      "label": "小游戏总配置",
+      "filename": "MinigameCfg.json",
+      "category": "玩法与配置",
+      "nativePage": true,
+      "allowIncomplete": true,
+      "fields": [
+        {
+          "name": "id",
+          "label": "编号",
+          "type": "int",
+          "default": 0,
+          "advanced": false,
+          "required": true
+        },
+        {
+          "name": "name",
+          "label": "名称",
+          "type": "string",
+          "default": "",
+          "advanced": false,
+          "required": false
+        },
+        {
+          "name": "tips",
+          "label": "玩法提示",
+          "type": "string",
+          "default": "",
+          "advanced": false,
+          "required": false
+        },
+        {
+          "name": "bgm",
+          "label": "背景音乐",
+          "type": "int",
+          "default": 0,
+          "advanced": false,
+          "required": false,
+          "range": {
+            "table": "AudioCfg"
+          }
+        }
+      ]
+    },
+    "TVCfg": {
+      "name": "TVCfg",
+      "label": "电视节目",
+      "filename": "TVCfg.json",
+      "category": "玩法与配置",
+      "nativePage": true,
+      "allowIncomplete": true,
+      "fields": [
+        {
+          "name": "id",
+          "label": "编号",
+          "type": "int",
+          "default": 0,
+          "advanced": false,
+          "required": true
+        },
+        {
+          "name": "name",
+          "label": "节目名称",
+          "type": "string",
+          "default": "",
+          "advanced": false,
+          "required": false
+        },
+        {
+          "name": "sub",
+          "label": "本集标题",
+          "type": "string",
+          "default": "",
+          "advanced": false,
+          "required": false
+        },
+        {
+          "name": "groupName",
+          "label": "频道",
+          "type": "string",
+          "default": "",
+          "advanced": false,
+          "required": false
+        },
+        {
+          "name": "talks",
+          "label": "观看感想",
+          "type": "list<string>",
+          "default": [],
+          "advanced": false,
+          "required": false
+        },
+        {
+          "name": "cond",
+          "label": "播放条件",
+          "type": "list<list<double>>",
+          "default": [],
+          "advanced": false,
+          "required": false
+        },
+        {
+          "name": "effect",
+          "label": "观看效果",
+          "type": "list<list<float>>",
+          "default": [],
+          "advanced": false,
+          "required": false
+        }
+      ]
+    },
+    "LovePhotoboothCfg": {
+      "name": "LovePhotoboothCfg",
+      "label": "大头贴相框",
+      "filename": "LovePhotoboothCfg.json",
+      "category": "玩法与配置",
+      "nativePage": true,
+      "allowIncomplete": true,
+      "fields": [
+        {
+          "name": "id",
+          "label": "相框编号",
+          "type": "int",
+          "default": 0,
+          "advanced": false,
+          "required": true
+        },
+        {
+          "name": "name",
+          "label": "相框名称",
+          "type": "string",
+          "default": "",
+          "advanced": false,
+          "required": false
+        },
+        {
+          "name": "itemPos",
+          "label": "装饰编号与位置",
+          "type": "list<list<int>>",
+          "default": [],
+          "advanced": false,
+          "required": false
+        }
+      ]
     }
   },
   "features": [
@@ -12316,6 +12461,35 @@
       }
     ],
     "effect": [
+      {
+        "label": "直接成为恋人",
+        "template": [
+          20,
+          2,
+          3,
+          520
+        ],
+        "match": {
+          "0": 20,
+          "1": 2,
+          "3": 520
+        },
+        "parameters": [
+          {
+            "index": 2,
+            "label": "人物",
+            "type": "int",
+            "range": {
+              "table": "PersonCfg",
+              "startId": 1
+            }
+          }
+        ],
+        "category": "恋爱",
+        "categoryId": 52,
+        "description": "直接与所选人物建立恋人关系。",
+        "source": "RelationData.ChangeRelation relationId 520 -> LoveData.SetLover"
+      },
       {
         "label": "增减属性",
         "template": [

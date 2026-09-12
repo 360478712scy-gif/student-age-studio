@@ -4,7 +4,7 @@ const entries=[
  {id:4001,name:'屏幕抖动',value:.15,label:'持续秒数',min:.01,max:5,step:.01},
  {id:4002,name:'背景模糊'},{id:4003,name:'清除背景效果'},
  {id:4004,name:'展示物品',table:'ItemCfg',label:'物品'},
- {id:4006,name:'稍后转场'}, {id:4009,name:'旧照片色调'},{id:4010,name:'背景反色'},
+ {id:4006,name:'稍后转场'}, {id:4007,name:'打电话'}, {id:4008,name:'挂断电话'}, {id:4009,name:'旧照片色调'},{id:4010,name:'背景反色'},
  {id:4011,name:'闭眼 / 睁眼',value:1,label:'闭合程度',min:0,max:1,step:.01},
  {id:4012,name:'闪白',value:1,label:'次数（0 为单次无震动）',min:0,max:10,step:1},
  {id:4013,name:'彩纸飘落'},{id:4018,name:'展示图片',table:'BgCfg',label:'图片'}
@@ -28,4 +28,24 @@ function draw(renderer,doc,scene,animate){const root=renderer.container;for(cons
  else if(tr?.kind==='mosaic'){const url=renderer.options.assetUrl(window.StudentAgeScene.backgroundPath(doc,{background:tr.from,roles:scene.roles})),W=root.clientWidth,H=root.clientHeight;for(let i=0;i<48;i++){const x=i%8,y=Math.floor(i/8),n=add('screen-transition-cell',{left:x*12.5+'%',top:y*100/6+'%',width:'12.6%',height:'16.8%',backgroundImage:`url("${url}")`,backgroundSize:`${W}px ${H}px`,backgroundPosition:`${-x*W/8}px ${-y*H/6}px`});n.animate([{clipPath:'inset(0)'},{clipPath:'inset(50%)'}],{duration:500,delay:(i*17%200),fill:'forwards'});}}
 }
 function duration(scene){const row=scene?.screen?.command||[],id=Number(row[0]);return Math.max(scene?.transition?.kind==='wipe'?1200:scene?.transition?750:0,id===4006?2800:id===4013?5000:id===4001?(row[1]||.15)*1000:id===4012?Math.max(1,row[1]||1)*200:id===4011?400:0);}
-window.StudentAgeScreenEffects={entries,state,draw,duration};})();
+async function edit({projectId,api,talk,persons={},allowPaper=false}){
+ const UI=StudentAgeCharacterUI,esc=UI.esc,current=structuredClone(talk),items=[...entries,...(allowPaper?[{id:'paper',name:'纸条'}]:[]),{id:'clear',name:'移除本句屏幕效果'}];
+ const selected=await UI.choices('屏幕效果',items,{selected:current.screenEffect?.[0]});if(!selected)return null;
+ if(selected.id==='paper')return {paper:true};if(selected.id==='clear')return {screenEffect:[]};
+ const config=entries.find(r=>r.id===selected.id),value=current.screenEffect?.[0]===config.id?current.screenEffect.slice():[config.id];
+ if(config.id===4007){
+  const [bgData,personData]=await Promise.all([api('/api/table?'+new URLSearchParams({projectId,name:'BgCfg'})),Object.keys(persons).length?{rows:persons}:api('/api/table?'+new URLSearchParams({projectId,name:'PersonCfg'}))]);
+  const backgrounds=bgData.rows||{},people=personData.rows||{};let background=Number(value[1])||0,remote=new Set(value.slice(2).map(Number)),anchor=Number(current.highlights?.[0]??current.roleIds?.[0]??0);
+  return new Promise(resolve=>{const d=document.createElement('dialog');d.className='character-picker screen-phone-editor';let closed=false;const end=v=>{closed=true;d.close();d.remove();resolve(v);};
+   const personName=id=>people[id]?.name||(id===0?'白雨':'人物 '+id);
+   const paint=()=>{d.innerHTML=`<header><h2>打电话</h2><button data-phone-cancel>关闭</button></header><div class="character-picker-body"><label>对方所在背景<button data-phone-bg>${esc(backgrounds[background]?.name||'选择背景')}</button></label><label>本地画面人物<button data-phone-anchor>${esc(personName(anchor))}</button></label><h3>电话另一端的人物</h3><div class="screen-phone-people">${[...remote].map(id=>`<button data-phone-remove="${id}">${esc(personName(id))} ×</button>`).join('')}<button data-phone-add>＋ 添加人物</button></div><p class="helper">通话背景与本地背景分屏。另一端可添加多个人物；后续对话沿用通话，选择“挂断电话”结束。本地画面人物决定双方站位。</p><p role="status"></p><button data-phone-apply class="primary">应用</button></div>`;};
+   d.onclick=async e=>{const b=e.target.closest('button');if(!b)return;try{if(b.hasAttribute('data-phone-cancel'))return end(null);if(b.hasAttribute('data-phone-bg')){const r=await UI.choices('对方所在背景',Object.values(backgrounds),{selected:background});if(closed)return;if(r)background=Number(r.id);paint();}if(b.hasAttribute('data-phone-anchor')){const r=await UI.choices('本地画面人物',Object.values(people),{selected:anchor});if(closed)return;if(r){anchor=Number(r.id);remote.delete(anchor);}paint();}if(b.hasAttribute('data-phone-add')){const r=await UI.choices('电话另一端的人物',Object.values(people).filter(r=>Number(r.id)!==anchor&&!remote.has(Number(r.id))));if(closed)return;if(r)remote.add(Number(r.id));paint();}if(b.dataset.phoneRemove!==undefined){remote.delete(Number(b.dataset.phoneRemove));paint();}if(b.hasAttribute('data-phone-apply')){if(!backgrounds[background]||!people[anchor]||!remote.size){d.querySelector('[role=status]').textContent='请选择有效背景、本地人物和至少一位电话另一端人物。';return;}end({screenEffect:[4007,background,...remote],highlights:[anchor,...(current.highlights||[]).filter(id=>id!==anchor&&!remote.has(id))],roleIds:[anchor,...(current.roleIds||[]).filter(id=>id!==anchor&&!remote.has(id))]});}}catch(error){if(!closed)d.querySelector('[role=status]').textContent=error.message;}};
+   d.oncancel=e=>{e.preventDefault();end(null);};paint();document.body.append(d);d.showModal();
+  });
+ }
+ if(config.table){const data=await api('/api/table?'+new URLSearchParams({projectId,name:config.table}));const r=await UI.choices('选择'+config.label,Object.values(data.rows),{selected:value[1]});return r?{screenEffect:[config.id,Number(r.id)]}:null;}
+ if(config.value!==undefined)return new Promise(resolve=>{const d=document.createElement('dialog');d.className='character-picker';const end=v=>{d.close();d.remove();resolve(v);};d.innerHTML=`<header><h2>${esc(config.name)}</h2><button data-screen-cancel>取消</button></header><div class="character-picker-body"><label>${esc(config.label)}<input data-screen-value type="range" min="${config.min}" max="${config.max}" step="${config.step}" value="${value[1]??config.value}"><output>${value[1]??config.value}</output></label><button data-screen-apply class="primary">应用</button></div>`;d.oninput=e=>{if(e.target.matches('input'))d.querySelector('output').textContent=e.target.value;};d.onclick=e=>{if(e.target.closest('[data-screen-cancel]'))end(null);if(e.target.closest('[data-screen-apply]'))end({screenEffect:[config.id,Number(d.querySelector('input').value)]});};d.oncancel=e=>{e.preventDefault();end(null);};document.body.append(d);d.showModal();});
+ return {screenEffect:[config.id]};
+}
+
+window.StudentAgeScreenEffects={entries,state,draw,duration,edit};})();

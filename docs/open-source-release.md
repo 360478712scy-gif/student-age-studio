@@ -19,13 +19,10 @@ py -3.12 -m venv "$env:STUDIO_BUILD_ROOT\venv"
 
 ## 发布常规更新
 
-1. 更新 `standalone/error_logs.py` 的 `APP_VERSION`，例如 `1.3.0-beta.4`。
-2. 测试后将版本改动提交并推送到 main，工作流会为该版本生成标签并发布；也可手动推送匹配的 `v1.3.0-beta.4` 标签，或在 Actions 页面运行 `Publish code update`。
-3. 工作流验证版本、运行更新器测试，生成 `student-age-studio-update.zip` 和 SHA-256 文本，并创建对应 GitHub Release。预发布后缀标为 prerelease；已有 Release 保持不变，修复时递增版本号。
-4. 客户端通过发布列表寻找版本号更高的版本，包括 beta 通道的 prerelease；不能用仅返回正式版的 latest 接口。客户端强制检查 GitHub 附件的 `sha256:` digest、大小、下载仓库路径与包内逐文件清单。
-5. 原生宿主、Python 或第三方依赖变化时，提升内置更新引导程序的 `RUNTIME_ABI`，先提供相应新客户端；旧客户端拒绝安装不兼容代码更新。
-
-GitHub API 参考：[Releases](https://docs.github.com/en/rest/releases/releases)、[Release assets](https://docs.github.com/en/rest/releases/assets)。
+1. 完成回归，递增 standalone/error_logs.py 的 APP_VERSION 并提交 main。
+2. Publish code update 运行更新器测试，生成约 2.4 MB 的代码包。将代码包提交到 updates 分支后，用该提交的完整 SHA 写入 latest.json，再推送分支；客户端从固定仓库、固定提交读取，验证版本、ABI、大小和 SHA-256 及包内逐文件清单。
+3. v1.3.0-beta.5 额外创建一次兼容 Release，让旧客户端能够拿到新更新器；后续常规版本只发布 updates 分支。本次额外编译小型 Windows 启动器补丁，不重建 Python 或完整客户端。
+4. 新版启动后自动检查和后台下载；激活前保存草稿，再重启。运行环境／ABI 变化仍需提供相应完整客户端。
 
 ## 更新边界与回退
 
@@ -43,4 +40,4 @@ GitHub API 参考：[Releases](https://docs.github.com/en/rest/releases/releases
 
 ## 自动打包客户端
 
-`Build desktop clients` 在版本变更时使用 GitHub 的 Windows x64 与 macOS 14 arm64 环境构建。两端先检查打包后端启动、首页静态文件及在线更新接口，再压缩上传；Mac 另验证代码签名。Mac 使用 uv 管理的可搬移 Python 3.12，Windows 使用 PyInstaller 与原生启动器。Release 顶部提供两端下载入口，代码更新 ZIP 保留供程序读取。原生窗口完整交互和游戏联调需另行验收。
+`Build desktop clients` 仅在维护者手动触发时使用 GitHub 的 Windows x64 与 macOS 14 arm64 环境构建。两端先检查打包后端启动、首页静态文件及在线更新接口，再压缩上传；Mac 另验证代码签名。Mac 使用 uv 管理的可搬移 Python 3.12，Windows 使用 PyInstaller 与原生启动器。Release 顶部提供两端下载入口，代码更新 ZIP 保留供程序读取。原生窗口完整交互和游戏联调需另行验收。

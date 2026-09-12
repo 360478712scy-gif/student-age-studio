@@ -32,8 +32,13 @@ New-Item -ItemType Directory -Force "$package\runtime\_internal\archspec\cpu" | 
 $audioLib="$root\venv\Lib\site-packages\fmod_toolkit\libfmod\Windows\x64"
 New-Item -ItemType Directory -Force "$package\runtime\_internal\fmod_toolkit\libfmod\Windows" | Out-Null
 Copy-Item $audioLib "$package\runtime\_internal\fmod_toolkit\libfmod\Windows\x64" -Recurse -Force
+$runtimeManifest=Join-Path $root 'runtime-sha256.txt'
+Get-ChildItem "$package\runtime" -Recurse -File -Filter *.dll | Sort-Object FullName | ForEach-Object {
+ $relative=$_.FullName.Substring($package.Length+1)
+ ((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())+'  '+$relative
+} | Set-Content -LiteralPath $runtimeManifest -Encoding ASCII
 $csc=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-& $csc /nologo /target:winexe "/win32icon:$source\desktop\windows\studio.ico" /reference:System.Windows.Forms.dll "/out:$package\拾光工坊.exe" "$source\desktop\windows\Launcher.cs"
+& $csc /nologo /target:winexe "/win32icon:$source\desktop\windows\studio.ico" /reference:System.Windows.Forms.dll "/resource:$runtimeManifest,runtime-sha256.txt" "/out:$package\拾光工坊.exe" "$source\desktop\windows\Launcher.cs"
 if($LASTEXITCODE -ne 0){throw 'Launcher failed'}
 & $python -m pip freeze | Out-File "$package\dependencies.txt" -Encoding utf8
 Copy-Item "$source\desktop\windows\使用说明.txt" $package -Force

@@ -35,7 +35,7 @@ def code_name(name):
 class HTTPSRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,req,fp,code,msg,headers,newurl):
         host=urllib.parse.urlsplit(newurl)
-        if host.scheme!='https' or host.hostname not in ('github.com','api.github.com','release-assets.githubusercontent.com','objects.githubusercontent.com'):
+        if host.scheme!='https' or host.hostname not in ('github.com','api.github.com','raw.githubusercontent.com','release-assets.githubusercontent.com','objects.githubusercontent.com'):
             raise ValueError('更新下载跳转到了未经允许的地址。')
         return super().redirect_request(req,fp,code,msg,headers,newurl)
 
@@ -48,7 +48,7 @@ def tls_context():
 
 def open_url(url):
     parsed=urllib.parse.urlsplit(url)
-    if parsed.scheme!='https' or parsed.hostname not in ('github.com','api.github.com'):raise ValueError('更新地址无效。')
+    if parsed.scheme!='https' or parsed.hostname not in ('github.com','api.github.com','raw.githubusercontent.com'):raise ValueError('更新地址无效。')
     req=urllib.request.Request(url,headers={'User-Agent':'StudentAgeStudio-Updater/1','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10'})
     return urllib.request.build_opener(HTTPSRedirect(),urllib.request.HTTPSHandler(context=tls_context())).open(req,timeout=30)
 
@@ -101,6 +101,9 @@ class AppUpdates:
             if self.state['status'] in ('checking','downloading','ready','activating'):return self.status()
             self.state.update(status='checking',message='正在检查 GitHub 发布…')
         try:
+            if self.config.get('sourceUpdates',self.config['repository']=='360478712scy-gif/student-age-studio'):
+                result=self.check_source_feed()
+                if result is not None:return result
             url='https://api.github.com/repos/'+self.config['repository']+'/releases?per_page=30'
             with self.opener(url) as response:
                 data=response.read(2*1024*1024+1)
@@ -126,6 +129,30 @@ class AppUpdates:
         except Exception as error:
             with self.lock:self.state.update(status='error',message=self.error_text(error))
             return self.status()
+
+    def check_source_feed(self):
+        prefix='https://raw.githubusercontent.com/'+self.config['repository']+'/'
+        try:
+            with self.opener(prefix+'updates/latest.json') as response:data=response.read(32769)
+        except urllib.error.HTTPError as error:
+            if error.code==404:return None
+            raise
+        if len(data)>32768:raise ValueError('更新清单超过限制。')
+        feed=json.loads(data)
+        if not isinstance(feed,dict) or feed.get('format')!=1:raise ValueError('更新清单格式错误。')
+        version=feed.get('version');key=version_key(version)
+        if self.config.get('channel')!='beta' and '-' in version:return None
+        if feed.get('runtimeAbi')!=RUNTIME_ABI:raise ValueError('此版本需要升级完整客户端运行环境。')
+        commit=feed.get('commit','');digest=feed.get('sha256','');size=feed.get('size')
+        if not re.fullmatch(r'[0-9a-f]{40}',commit) or not re.fullmatch(r'[0-9a-f]{64}',digest) or type(size)!=int or not 0<size<=MAX_ARCHIVE:raise ValueError('更新清单校验信息无效。')
+        with self.lock:
+            self.asset=None;self.release=None;self.staged=None
+            if key<=version_key(self.current):self.state={'status':'current','message':'当前已经是最新版本。','progress':0}
+            else:
+                self.release={'tag_name':version}
+                self.asset={'size':size,'digest':'sha256:'+digest,'browser_download_url':prefix+commit+'/'+self.config['asset']}
+                self.state={'status':'available','version':version,'notes':str(feed.get('notes') or '')[:12000],'message':'发现新版本，可以下载。','progress':0}
+        return self.status()
 
     @staticmethod
     def error_text(error):

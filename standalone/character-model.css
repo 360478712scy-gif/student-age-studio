@@ -2,3 +2,5 @@
 
 .model-values label{display:grid;grid-template-columns:1fr auto;gap:8px}.model-values input[type=range]{grid-column:1/-1;width:100%;padding:0;accent-color:#91d4b6}.model-values output{grid-row:1;grid-column:2;font-variant-numeric:tabular-nums;color:#e4cf95}
 #character-form .model-values label{display:grid;grid-template-columns:1fr auto;gap:8px}
+
+.model-switches{align-items:center}.model-switches label{display:flex;align-items:center;gap:8px}.model-values[hidden],.model-tools[hidden],.model-size-handle[hidden]{display:none!important}.model-booth:after{content:"大头贴合影示意";position:absolute;inset:12% 18%;border:3px solid var(--glass-tone-12,#d9c590);border-radius:20px;pointer-events:none;color:var(--text);padding:10px;text-align:center;font-size:12px}.screen-phone-editor .character-picker-body{display:grid;gap:16px}.screen-phone-editor label{display:grid;gap:8px}.screen-phone-people{display:flex;gap:8px;flex-wrap:wrap}

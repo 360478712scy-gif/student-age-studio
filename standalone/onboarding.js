@@ -40,25 +40,21 @@ cacheDetails.querySelector('[data-cache-close]').onclick=()=>{cacheDetails.hidde
 cacheDetails.querySelector('[data-cache-retry]').onclick=()=>prepare();
 const cacheTasks=new Map();
 function summarizeCache(){
- const running=[...cacheTasks.values()].filter(s=>s.status==='running');
- if(running.length){const percent=Math.floor(running.reduce((v,s)=>v+(Number(s.percent)||0),0)/running.length);paintCache({status:'running',phase:running.map(s=>s.phase).join('；'),percent,warnings:[],abandoned:running.flatMap(s=>s.abandoned||[])});}
- else{const problem=[...cacheTasks.values()].find(s=>s.status==='error'||s.warnings?.length);paintCache(problem||{status:'complete',phase:'后台缓存完成',percent:100,warnings:[]});}
+ // Only the first complete preparation owns the corner indicator. On-demand
+ // previews, catalog scans and subsequent warmups never make it reappear.
+ const state=cacheTasks.get('startup');
+ if(state?.showProgress===true)paintCache(state);
+ else{clearTimeout(cacheHideTimer);cacheBall.hidden=true;cacheDetails.hidden=true;}
 }
-function showCache(state){if(state.status==='running'||state.status==='error'||state.warnings?.length)cacheTasks.set('startup',state);else cacheTasks.delete('startup');summarizeCache();}
+function showCache(state){cacheTasks.set('startup',state);summarizeCache();}
 window.STUDIO_CACHE_TASKS={
- update(key,phase,percent=0){cacheTasks.set(key,{status:'running',phase,percent,warnings:[]});summarizeCache();},
- finish(key){if(cacheTasks.delete(key))summarizeCache();}
+ update(){},
+ finish(){}
 };
 // Native modal dialogs occupy the top layer, above every ordinary z-index.
 // Move the same small indicator into the latest open dialog, keeping it visible.
 function placeCache(){const dialogs=[...document.querySelectorAll('dialog[open]')],parent=dialogs.at(-1)||document.body;for(const node of [cacheBall,cacheDetails])if(node.parentNode!==parent)parent.append(node);}
 new MutationObserver(placeCache).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});
-async function watchBackground(){
- try{if(!document.hidden){const result=await api('background-status'),seen=new Set();for(const task of result.tasks||[]){const key='server:'+task.id;seen.add(key);cacheTasks.set(key,{status:task.status||'running',phase:task.phase,percent:task.percent,warnings:task.warnings||[],abandoned:task.abandoned||[]});summarizeCache();}for(const key of [...cacheTasks.keys()])if(key.startsWith('server:')&&!seen.has(key))window.STUDIO_CACHE_TASKS.finish(key);}}
- catch{/* Poll again without blocking an editor or discarding existing progress. */}
- setTimeout(watchBackground,1500);
-}
-watchBackground();
 function paintCache(state){
  clearTimeout(cacheHideTimer);
  const running=state.status==='running',issue=state.status==='error'||!!state.warnings?.length;
@@ -89,7 +85,7 @@ function prepare(){
      await pause(700);state=await api('startup-preparation');
    }
  }catch(e){
-   const state={status:'error',editorReady:true,phase:'缓存暂时中断',percent:prepared?.percent||0,warnings:[e.message]};
+   const state={status:'error',editorReady:true,phase:'缓存暂时中断',percent:prepared?.percent||0,warnings:[e.message],showProgress:prepared?.showProgress===true};
    updateProgress(state);showCache(state);release(state);
  }finally{cachePromise=null;}})();
  return readyPromise;

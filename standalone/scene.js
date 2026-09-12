@@ -149,7 +149,7 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
   for(const role of Object.values(state.roles)){const cloth=outfitCloth(role.id);if(cloth!==null&&state.background!==prior.background){role.cloth=cloth;delete role.manualCloth;}}
   const defaultCloth=id=>{const outfit=outfitCloth(id);if(outfit!==null)return outfit;if(!state.useCloth?.length)state.useCloth=[0];return state.useCloth[id===1?1:id===5?2:0]||0;};
   const screen=talk.screenEffect||[];
-  if(screen.length){const code=Number(screen[0]);if(code===4015)state.cg=Number(screen[1]);else if(code===4017){state.cg=0;state.nativeComic=false;}else if(code===4016){state.nativeComic=true;state.warnings.push('漫画画面需在游戏中预演。');}else if(code===4007){state.phone={left:Number(screen[1])||100,right:state.background||201011,caller:Number(screen[2])||0};}else if(code===4008)state.phone=null;else if(!window.StudentAgeScreenEffects?.entries.some(e=>e.id===code))state.warnings.push('这段包含额外屏幕效果，最终效果请在游戏中确认。');}
+  if(screen.length){const code=Number(screen[0]);if(code===4015)state.cg=Number(screen[1]);else if(code===4017){state.cg=0;state.nativeComic=false;}else if(code===4016){state.nativeComic=true;state.warnings.push('漫画画面需在游戏中预演。');}else if(code===4007){state.phone={left:Number(screen[1])||100,right:state.background||201011,caller:Number(screen[2])||0,remote:screen.slice(2).map(Number),local:[...new Set([...(talk.highlights||[]),...(talk.roleIds||[])].map(Number))]};}else if(code===4008){for(const id of state.phone?.remote||[state.phone?.caller])if(state.roles[id])state.roles[id].visible=false;state.phone=null;}else if(!window.StudentAgeScreenEffects?.entries.some(e=>e.id===code))state.warnings.push('这段包含额外屏幕效果，最终效果请在游戏中确认。');}
   if(talk.effect?.length||talk.effect2?.length||talk.miniGame?.length)state.warnings.push('此段的数值变化、奖励或小游戏交由游戏执行。');
   // Native NewTalkView implicitly brings in a new speaker when there are no explicit actions.
   let actions=nativeRoleOrder((talk.roles||[]).filter(Array.isArray));
@@ -232,9 +232,9 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
   for(const role of Object.values(state.roles))if(role.emoji!==undefined){role.emojiDelay=nativeDelays[role.id]||0;for(const m of state.motions)if(m.id===role.id&&m.code===3009){m.delay=role.emojiDelay;m.duration=.5;}}
   if(state.phoneEvent){const e=state.phoneEvent;state.phone={left:Number(e.studioPhoneBackground)||state.phone?.left||100,right:doc.backgrounds?.[201011]?201011:100,caller:Number(e.npc)||state.phone?.caller||0};}
   if(state.phone){
-    const {caller}=state.phone,allowed=new Set([0,...(caller>0?[caller]:[])]);
+    const {caller}=state.phone,remote=new Set(state.phone.remote||[caller]),local=(state.phone.local?.length?state.phone.local:[0]).filter(id=>!remote.has(id)),allowed=new Set([...local,...remote]);state.phone.local=local;const localRight=state.phone.localRight??(state.roles[local[0]]?.axis!==1);state.phone.localRight=localRight;
     for(const role of Object.values(state.roles))if(!allowed.has(role.id))role.visible=false;
-    for(const id of allowed){const role=state.roles[id]||{id,face:0,cloth:defaultCloth(id),hair:0,flip:false,shadow:false,grade};Object.assign(role,{visible:true,x:id===0?800:-800,y:0,scale:1,axis:id===0?2:1,layer:1,slot:0});state.roles[id]=role;}
+    for(const id of allowed){const role=state.roles[id]||{id,face:0,cloth:defaultCloth(id),hair:0,flip:false,shadow:false,grade},slot=(remote.has(id)?[...remote]:local).indexOf(id),offset=slot===0?0:slot%2?-(slot+1)/2*300:slot/2*300;Object.assign(role,{visible:true,x:((remote.has(id)===localRight)?-800:800)+offset,y:0,scale:1,axis:(remote.has(id)===localRight)?1:2,layer:1,slot});state.roles[id]=role;}
     state.motions=state.motions.filter(m=>allowed.has(m.id)&&![1001,1002,1003,2001,2002,3003,3004,3008].includes(m.code));
     state.background=state.phone.right;
   }
@@ -427,6 +427,7 @@ class Renderer {
     this.container.querySelector('.scene-guides').hidden=!edit||!!state.phone;
     this.container.classList.toggle('scene-phone',!!state.phone);
     const phoneBackdrop=this.container.querySelector('.scene-phone-backdrop');phoneBackdrop.hidden=!state.phone;this.container.querySelector('.scene-phone-divider').hidden=!state.phone;
+    phoneBackdrop.style.left=state.phone?.localRight===false?'50%':'0';
     const phonePath=state.phone?backgroundPath(doc,{...state,background:state.phone.left}):null;
     if(phonePath!==this.phoneBackground){this.phoneBackground=phonePath;this.image(phoneBackdrop,phonePath?[phonePath]:[],'','通话对象的场景');}
     const bgPath=backgroundPath(doc,state),backdrop=this.container.querySelector('.scene-backdrop'),bgLabel=this.container.querySelector('.scene-background-label');
@@ -514,7 +515,7 @@ class Renderer {
     const signature=JSON.stringify([width,height,!!this.state.phone,...rows.map(r=>[r.img.dataset.castFrameId,r.img.src,r.shade,r.x,r.y,r.w,r.h,r.flip,r.opacity,r.layer])]);
     if(resized||signature!==this.rasterSignature){
       this.rasterSignature=signature;const ctx=this.castContext;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,stage.width,stage.height);
-      for(const row of rows){if(!row.opacity||Math.abs(row.flip)<.00001)continue;ctx.save();if(this.state.phone){ctx.beginPath();ctx.rect(row.id===0?stage.width/2:0,0,stage.width/2,stage.height);ctx.clip();}ctx.globalAlpha=row.opacity;ctx.translate(row.x,row.y);ctx.scale(row.flip,1);ctx.drawImage(this.shadeImage(row.img,row.shade),-row.w/2,-row.h,row.w,row.h);ctx.restore();}
+      for(const row of rows){if(!row.opacity||Math.abs(row.flip)<.00001)continue;ctx.save();if(this.state.phone){ctx.beginPath();ctx.rect((this.state.phone.local?.includes(row.id)!==(this.state.phone.localRight===false))?stage.width/2:0,0,stage.width/2,stage.height);ctx.clip();}ctx.globalAlpha=row.opacity;ctx.translate(row.x,row.y);ctx.scale(row.flip,1);ctx.drawImage(this.shadeImage(row.img,row.shade),-row.w/2,-row.h,row.w,row.h);ctx.restore();}
     }
     // Delayed animations are 'running' as well. Static scenes consume no RAF loop.
     if(nodes.some(([,node])=>node.getAnimations?.({subtree:true}).some(a=>a.playState==='running')))this.queueCast();

@@ -2,6 +2,8 @@
 import copy
 import threading
 import time
+import json
+from storage_paths import game_cache
 
 
 class StartupPreparation:
@@ -28,8 +30,21 @@ class StartupPreparation:
             if self.state['status'] == 'running':
                 return self.get()
             self.state = self.initial_state('running')
+            self.state['showProgress'] = not folders_only and not self.cache_completed()
         threading.Thread(target=self.run, args=(preferred, folders_only), daemon=True).start()
         return self.get()
+
+    def cache_completed(self):
+        root = game_cache(self.server.store.game)
+        try:
+            return json.loads((root/'initial-cache-complete.json').read_text()).get('complete') is True
+        except (OSError, ValueError, AttributeError):
+            # Older clients persisted this checkpoint after their first full UI pass.
+            try:
+                saved = json.loads((root/'warmup-ui-v2.json').read_text())
+                return isinstance(saved, dict) and 'signature' in saved and not saved.get('warnings')
+            except (OSError, ValueError):
+                return False
 
     def run(self, preferred, folders_only):
         app = self.server
@@ -75,6 +90,7 @@ class StartupPreparation:
                     if state['status'] == 'error' or state.get('failures'):
                         notices.append(state.get('message', label+'部分内容未能读取'))
             if not schemas:
+                self.update(showProgress=False)
                 notices.append('尚未找到可用的原版游戏数据，可进入工坊后在“工坊设置”选择游戏。')
             if media_warmup and not getattr(getattr(media_warmup,'stop',None),'is_set',lambda:False)():
                 state = media_warmup.start()
@@ -82,6 +98,10 @@ class StartupPreparation:
                     self.update(phase=state.get('phase','缓存全部素材'),percent=50+int(state.get('percent',0)*.49),done=state.get('done',0),total=state.get('total',0))
                     time.sleep(.3);state=media_warmup.get()
                 notices.extend(state.get('warnings',[]))
+            if schemas and not folders_only and (not media_warmup or state.get('status') != 'cancelled'):
+                # Completion means the bounded full pass finished, including optional failures.
+                # Retries and later changed assets remain background work across app restarts.
+                store.asset_catalog.api.atomic_write(game_cache(store.game)/'initial-cache-complete.json', b'{"complete":true}')
             self.update(status='complete', editorReady=True, percent=100 if not notices else self.get()['percent'], phase='后台缓存完成' if not notices else '部分缓存未完成',
                         warnings=list(dict.fromkeys(notices))[:12])
         except Exception as error:

@@ -58,6 +58,16 @@ function connectWindowsFolders(){
 connectWindowsFolders();window.addEventListener('pywebviewready',connectWindowsFolders);
 
 if(window.StudentAgeUIControls)return;
+// Route outside clicks through the owner's cancel handler, including when a top-layer
+// shield receives them. Choice cancellation must resolve promises and release resources.
+document.addEventListener('click',event=>{
+ const top=window.STUDIO_LAYERING?.topmost()||[...document.querySelectorAll('dialog[open]')].at(-1);
+ if(!top?.matches('.uc-popup,[data-dismiss-outside],.social-emoji-dialog,.character-calendar,.wk-picker'))return;
+ const rect=top.getBoundingClientRect(),outside=!top.contains(event.target)||(event.target===top&&(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom));
+ if(!outside)return;
+ event.preventDefault();event.stopImmediatePropagation();
+ if(top.dispatchEvent(new Event('cancel',{cancelable:true})))top.close();
+},true);
 // Keep Chinese IME text in its existing input until the candidate is committed.
 // Rebuilding a search result panel during composition can discard the candidate.
 const composingSearches=new WeakSet(),searchInput=node=>node?.matches?.('input[type="search"],input[id*="search"],input[placeholder*="搜索"]');
