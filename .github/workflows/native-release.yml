@@ -125,7 +125,7 @@ jobs:
           - **[Windows 64 位客户端]({base}StudentAgeStudio-Windows-x64-{version}.zip)**：完整解压后打开“拾光工坊.exe”。需要 WebView2 Runtime。
           - **[Mac Apple Silicon 客户端（M1/M2/M3/M4 等）]({base}StudentAgeStudio-Mac-arm64-{version}.zip)**：macOS 14 或以上，解压后把“拾光工坊.app”拖入“应用程序”。当前未做 Apple 公证。
 
-          客户端自带 Python，无需自行安装开发环境。首次打开请选择自己的《学生时代》游戏目录；所需游戏界面素材在本机准备。公开版本不附带原游戏数据或可选 Live2D SDK。
+          客户端自带 Python，无需自行安装开发环境。首次打开请选择自己的《学生时代》游戏目录；所需游戏界面素材在本机准备。公开版本不附带原游戏数据。Live2D 动态预览暂时停用，保留静态立绘和原有模型配置，并修复关闭预览后的资源回调残留。
 
           ## 应用内更新
 

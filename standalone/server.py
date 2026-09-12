@@ -3407,13 +3407,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                     except ApiError as error: result['resourceStatus'] = {'status': 'error', 'message': error.message}
                 else: result['resourceStatus'] = self.server.resources.get()
                 return self.send_json(result)
-            if route == '/api/live-model-file':
-                from live_model import resource
-                return self.send_file(resource(self.server.store.game, query.get('key',[''])[0], query.get('file',[''])[0]))
-            if route.startswith('/ui-assets/live2d/'):
-                name = route.rsplit('/',1)[-1]
-                if name not in ('live2dcubismcore.min.js','pixi.min.js','pixi-csp.min.js','cubism4.js'): raise ApiError('资源不存在',404)
-                return self.send_file(self.server.web_root/'ui-assets/live2d'/name)
+            if route == '/api/live-model-file' or route.startswith('/ui-assets/live2d/'):
+                raise ApiError('Live2D 动态预览暂时停用，请使用静态立绘。', 410)
             if route == '/api/model-idle-image':
                 from model_idle import destination
                 role,grade,gender=[int(query.get(k,[d])[0]) for k,d in [('role','0'),('grade','1'),('gender','1')]]
@@ -3659,8 +3654,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                     except (ApiError,OSError,ValueError):pass
                 return self.send_json(result)
             if route == '/api/live-model':
-                from live_model import request
-                return self.send_json(request(self.server.store.game, payload.get('role'), payload.get('grade'), payload.get('gender',1)))
+                raise ApiError('Live2D 动态预览暂时停用，请使用静态立绘。', 410)
             if route == '/api/model-idle':
                 self.server.store.project(payload.get('projectId'))
                 from model_idle import request

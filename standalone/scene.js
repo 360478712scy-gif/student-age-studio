@@ -321,6 +321,8 @@ function bubbleAssets(urls,onReady){
  }
  return state;
 }
+// A closed preview must not be retained by an unfinished/failed shared request.
+function releaseBubbleAssets(onReady){if(onReady)for(const state of bubbleAssetStates.values())state.listeners.delete(onReady);}
 // CfgExtension.GetBubblePos + TalkRoleItem.SetData; missing female slot is 1080, not the male slot.
 function bubbleY(person,grade,female){
  if(!person.bubbleParm?.length&&!person.bubbleParm2?.length)return 1150;
@@ -674,7 +676,7 @@ class Renderer {
   }
 
   invalidateAssets(force=false){if(force)this.assetEpoch++;this.background=undefined;this.cg=undefined;this.assetWarnings.clear();for(const node of this.actors.values())node.dataset.asset='';}
-  dispose(){this.cancelDrag(false);for(const animation of this.screenShakeAnimations||[])animation.cancel();this.screenShakeAnimations=[];this.disposed=true;cancelAnimationFrame(this.rasterFrame);this.resizeObserver?.disconnect();for(const remove of this.listeners)remove();for(const exit of this.exitAnimations.values())exit.animation.cancel();this.exitAnimations.clear();this.container.innerHTML='';this.actors.clear();}
+  dispose(){releaseBubbleAssets(this.bubbleReady);this.cancelDrag(false);for(const animation of this.screenShakeAnimations||[])animation.cancel();this.screenShakeAnimations=[];this.disposed=true;cancelAnimationFrame(this.rasterFrame);this.resizeObserver?.disconnect();for(const remove of this.listeners)remove();for(const exit of this.exitAnimations.values())exit.animation.cancel();this.exitAnimations.clear();this.container.innerHTML='';this.actors.clear();}
 }
 
 class Player {
@@ -765,5 +767,5 @@ class AudioPlayer {
   resume(){if(this.bgm&&!this.bgm.ended)this.bgm.play()?.catch?.(()=>{});for(const audio of this.sfx)if(!audio.ended)audio.play()?.catch?.(()=>{});if(this.desiredMusic){const {key,track}=this.desiredMusic;this.switchMusic(key,track);}}
   stop(){this.pause();this.bgm=null;this.sfx=[];this.group=null;this.nativeBgm=null;this.activeGroup=null;this.lastTalk=null;this.desiredMusic=null;this.failedMusic=null;}
 }
-window.StudentAgeScene={planSceneDrag,nativePositionPlayer,nativePositionFrames,nativeRoleOrder,normalizeNativeMoves,staticPortraitSize,bubbleAssets,bubbleY,bubbleGlyph,portraitBox,portraitCacheKey,portraitFrames,portraitSizes,protagonistGender,portraitIdentity,routes,pathTo,blank,apply,reconstruct,portraitCandidates,backgroundPath,Renderer,Player,AudioPlayer};
+window.StudentAgeScene={planSceneDrag,nativePositionPlayer,nativePositionFrames,nativeRoleOrder,normalizeNativeMoves,staticPortraitSize,bubbleAssets,releaseBubbleAssets,bubbleY,bubbleGlyph,portraitBox,portraitCacheKey,portraitFrames,portraitSizes,protagonistGender,portraitIdentity,routes,pathTo,blank,apply,reconstruct,portraitCandidates,backgroundPath,Renderer,Player,AudioPlayer};
 })();

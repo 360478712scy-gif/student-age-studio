@@ -29,7 +29,7 @@ python -B standalone/server.py
 Mac 原生源码窗口：`python -B desktop/run-source.py`。
 Windows 原生源码窗口：`python -B desktop/windows/main.py`。
 
-公开源码不包含原游戏图片、字体和 Live2D SDK。`tools/prepare_game_ui.py --game 游戏目录` 可从本机游戏准备界面素材；这些文件保留在本机，勿提交到仓库。缺少可选 SDK 时，部分动态立绘功能不可用。参见 [第三方说明](THIRD_PARTY_NOTICES.md)。
+公开源码不包含原游戏图片、字体和 Live2D SDK。`tools/prepare_game_ui.py --game 游戏目录` 可从本机游戏准备界面素材；这些文件保留在本机，勿提交到仓库。Live2D 动态预览暂时停用以减少资源占用，静态立绘与已有模型配置保留。参见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
 ## 在线更新
 

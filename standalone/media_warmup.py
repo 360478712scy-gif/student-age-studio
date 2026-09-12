@@ -324,11 +324,11 @@ class MediaWarmup:
                 logger=getattr(self.server,'error_logs',None)
                 if logger:logger.write(error,operation='后台清理无归属对话')
         warnings=[];self.update(abandoned=[])
-        # Ordinary assets must be ready before lengthy model rasterization.
-        # A second incremental pass picks up UI/portraits generated afterwards.
+        # Live2D preview and model prewarming are temporarily paused.
+        # Static portrait rendering remains available on demand.
         self.scan_media(store,projects,warnings)
         if self.stop.is_set(): return
-        for name,label,stage in (('ui','原版界面与小游戏配图',self.ui_assets),('models','人物模型与表情',self.native_models)):
+        for name,label,stage in (('ui','原版界面与小游戏配图',self.ui_assets),):
             if self.stop.is_set(): return
             self.run_stage(store,name,label,stage,warnings)
         if self.stop.is_set(): return
