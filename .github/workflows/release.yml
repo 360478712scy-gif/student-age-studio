@@ -2,7 +2,7 @@ name: Publish code update
 on:
   push:
     branches: [main]
-    paths: ['standalone/error_logs.py']
+    paths: ['standalone/error_logs.py', '.github/workflows/release.yml']
   workflow_dispatch:
 permissions:
   contents: write
@@ -101,7 +101,7 @@ jobs:
           Get-ChildItem "$package/runtime" -File -Recurse -Filter *.dll | Sort-Object FullName | ForEach-Object {((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())+'  '+$_.FullName.Substring($package.Length+1)} | Set-Content $manifest -Encoding ASCII
           New-Item -ItemType Directory "$env:RUNNER_TEMP/launcher" | Out-Null
           $csc=Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-          & $csc /nologo /target:winexe /reference:System.Windows.Forms.dll "/resource:$manifest,runtime-sha256.txt" "/out:$env:RUNNER_TEMP/launcher/拾光工坊.exe" desktop/windows/Launcher.cs
+          & $csc /nologo /target:winexe /reference:System.Windows.Forms.dll "/resource:$manifest,runtime-sha256.txt" "/out:$env:RUNNER_TEMP/launcher/拾光工坊.exe" "$(Join-Path $env:GITHUB_WORKSPACE 'desktop\windows\Launcher.cs')"
           if($LASTEXITCODE -ne 0){throw 'Launcher compile failed'}
           '仅用于官方 Windows x64 1.3.0-beta.4：关闭软件，将本文件夹内的拾光工坊.exe替换到已解压客户端的同名文件位置，runtime文件夹保留。启动器仅在校验DLL与原包一致后解除该DLL的下载标记；不修改系统防护。无需重装完整客户端。' | Set-Content "$env:RUNNER_TEMP/launcher/使用说明.txt" -Encoding utf8
           Compress-Archive "$env:RUNNER_TEMP/launcher/*" "$env:RUNNER_TEMP/StudentAgeStudio-Windows-launcher-beta4.zip"
