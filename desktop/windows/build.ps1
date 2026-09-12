@@ -4,7 +4,7 @@ $source=if($env:STUDIO_SOURCE_ROOT){$env:STUDIO_SOURCE_ROOT}else{(Resolve-Path (
 $root=if($env:STUDIO_BUILD_ROOT){$env:STUDIO_BUILD_ROOT}else{Join-Path $env:LOCALAPPDATA 'StudentAgeStudioBuild'}
 $python=Join-Path $root 'venv\Scripts\python.exe'
 if(-not $env:STUDIO_REUSE_BUILD_DEPS){
- & $python -m pip install --disable-pip-version-check imageio-ffmpeg numpy
+ & $python -m pip install --disable-pip-version-check imageio-ffmpeg numpy 'certifi>=2026.2.25'
  if($LASTEXITCODE -ne 0){throw 'ffmpeg failed'}
 }
 $stage=Join-Path $root 'source'
@@ -19,7 +19,7 @@ Copy-Item "$source\desktop\windows\child_processes.py" "$stage\child_processes.p
 Set-Location $stage
 $out=Join-Path $root 'dist'
 $cleanArgs=@();if(-not $env:STUDIO_INCREMENTAL_BUILD){$cleanArgs=@('--clean')}
-& $python -m PyInstaller --noconfirm @cleanArgs --name StudioEngine --console --icon "$source\desktop\windows\studio.ico" --distpath $out --workpath "$root\work" --specpath $root --paths "$stage\standalone" --add-data "$stage\standalone;standalone" --collect-all webview --collect-all UnityPy --collect-data archspec --collect-all imageio_ffmpeg --hidden-import server --hidden-import platform_support --hidden-import game_locator --hidden-import PIL.Image --hidden-import numpy --exclude-module PyQt5 --exclude-module PySide6 "$stage\main.py"
+& $python -m PyInstaller --noconfirm @cleanArgs --name StudioEngine --console --icon "$source\desktop\windows\studio.ico" --distpath $out --workpath "$root\work" --specpath $root --paths "$stage\standalone" --add-data "$stage\standalone;standalone" --collect-data certifi --collect-all webview --collect-all UnityPy --collect-data archspec --collect-all imageio_ffmpeg --hidden-import server --hidden-import platform_support --hidden-import game_locator --hidden-import PIL.Image --hidden-import numpy --exclude-module PyQt5 --exclude-module PySide6 "$stage\main.py"
 if($LASTEXITCODE -ne 0){throw 'Freezing failed'}
 $version=& $python -c "import sys;sys.path.insert(0,sys.argv[1]);from error_logs import APP_VERSION;print(APP_VERSION)" "$stage\standalone"
 if($LASTEXITCODE -ne 0){throw 'Version read failed'}

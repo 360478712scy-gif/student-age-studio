@@ -6,7 +6,7 @@ using System.Windows.Forms;
 [assembly: System.Reflection.AssemblyFileVersion("1.3.0.0")]
 [assembly: System.Reflection.AssemblyTitle("拾光工坊") ]
 [assembly: System.Reflection.AssemblyProduct("拾光工坊·模组编辑器-beta-1.3.0") ]
-[assembly: System.Reflection.AssemblyInformationalVersion("1.3.0-beta.1") ]
+[assembly: System.Reflection.AssemblyInformationalVersion("1.3.0-beta.2") ]
 class Launcher {
  [STAThread] static void Main() {
   try {

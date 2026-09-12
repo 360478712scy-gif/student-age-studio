@@ -1,5 +1,7 @@
 """GitHub release updates: stage verified code beside the install, then activate at restart."""
 import ast
+import certifi
+import ssl
 import hashlib
 import json
 import os
@@ -38,11 +40,17 @@ class HTTPSRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req,fp,code,msg,headers,newurl)
 
 
+def tls_context():
+    context=ssl.create_default_context()
+    context.load_verify_locations(cafile=certifi.where())
+    return context
+
+
 def open_url(url):
     parsed=urllib.parse.urlsplit(url)
     if parsed.scheme!='https' or parsed.hostname not in ('github.com','api.github.com'):raise ValueError('更新地址无效。')
     req=urllib.request.Request(url,headers={'User-Agent':'StudentAgeStudio-Updater/1','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10'})
-    return urllib.request.build_opener(HTTPSRedirect()).open(req,timeout=30)
+    return urllib.request.build_opener(HTTPSRedirect(),urllib.request.HTTPSHandler(context=tls_context())).open(req,timeout=30)
 
 
 def unpack_archive(archive, destination, expected_version):

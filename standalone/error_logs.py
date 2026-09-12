@@ -12,7 +12,7 @@ import traceback
 from game_locator import settings_path
 from platform_support import lock_file, unlock_file
 
-APP_VERSION = '1.3.0-beta.1'
+APP_VERSION = '1.3.0-beta.2'
 KEEP = 20
 _lock = threading.RLock()
 _filename = re.compile(r'error-\d{8}T\d{12}Z-[0-9a-f]{12}\.log\Z')

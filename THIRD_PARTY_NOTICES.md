@@ -7,3 +7,5 @@ StudentAge Studio's original editor code is licensed under GPL-3.0-only.
 - StudentAge game images, fonts, original tables, story data, extracted bundles and user Mods are **not included** in the public repository or code-update ZIP. Resource layout descriptions and extraction code are provided so users can work with their own local game installation.
 - Optional Live2D Cubism Core binaries, proprietary SDK runtimes, native compiled helpers and bundled third-party JavaScript distributions are not included. Obtain optional SDKs from their respective vendors and follow their licenses. The editor's GPL does not grant rights to those components or to game assets.
 - The name of the game identifies compatibility. This is an independent community editor.
+
+- certifi 提供 Mozilla 根证书集合，按其 MPL-2.0 许可分发；客户端同时保留系统信任根并校验 HTTPS 证书与主机名。

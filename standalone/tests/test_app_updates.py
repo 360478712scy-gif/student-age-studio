@@ -85,6 +85,14 @@ class UpdatesTest(unittest.TestCase):
         self.assertEqual((destination/'LICENSE').read_bytes(),b'license notice')
         self.assertEqual((destination/'THIRD_PARTY_NOTICES.md').read_bytes(),b'credit')
 
+    def test_tls_context_keeps_verification_and_has_trust_roots(self):
+        import ssl
+        from app_updates import tls_context
+        context=tls_context()
+        self.assertEqual(context.verify_mode,ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
+        self.assertGreater(context.cert_store_stats()['x509_ca'],0)
+
     def test_versions(self):
         self.assertLess(version_key('beta-1.2.3'),version_key('v1.3.0-beta.1'))
         self.assertLess(version_key('1.3.0-beta.2'),version_key('1.3.0-rc.1'))

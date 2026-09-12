@@ -2,7 +2,7 @@
 
 ## 首次客户端
 
-1. 使用 Python 3.12 准备依赖，按照 README 从自己的游戏安装目录提取本地界面素材。可选 SDK 需按其自身许可另行准备。
+1. 使用 Python 3.12 准备 requirements.txt 中的依赖（含 certifi 根证书集合），按照 README 从自己的游戏安装目录提取本地界面素材。可选 SDK 需按其自身许可另行准备。
 2. Windows：`desktop/windows/build.ps1` 使用 `$env:STUDIO_BUILD_ROOT` 下的 `venv\Scripts\python.exe` 和 PyInstaller 打包，输出 WebView2 客户端。启动器需使用新 `Launcher.cs`：它在后端以退出码 42 结束时重启，并为客户端启用更新。直接运行旧版 `StudioEngine.exe` 不支持在线重启。
 3. Mac：`desktop/package.py` 需要 `STUDIO_MAC_PYTHON_ROOT`、`STUDIO_MAC_DEPENDENCIES` 和新的 `STUDIO_APP_PATH`，生成 Apple Silicon 应用。WKWebView 宿主通过内置的 `update_bootstrap.py` 启动后端。运行环境升级时另建完整客户端，不复用旧客户端的 ABI。
 4. 完整客户端含本机准备的第三方组件及游戏素材。公开仓库的 GPL 只覆盖原创编辑器代码；未经相应权利人许可，不应将这些私有素材随公开安装包再分发。当前自动发布仅上传纯代码更新包。

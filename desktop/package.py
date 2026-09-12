@@ -35,7 +35,7 @@ shutil.copytree(python_root/'lib/python3.12',runtime/'lib/python3.12',ignore=shu
 shutil.copytree(dependencies,runtime/'lib/python3.12/site-packages',ignore=ignore)
 # The copied runtime is independent of the developer's Python and user packages.
 env={k:v for k,v in os.environ.items() if k not in ('PYTHONHOME','PYTHONPATH')};env['PYTHONNOUSERSITE']='1'
-subprocess.run([str(runtime/'bin/python3'),'-B','-c','import ssl,sqlite3,ctypes,PIL,numpy,UnityPy,imageio_ffmpeg,fmod_toolkit; print("MAC_RUNTIME_OK")'],env=env,check=True)
+subprocess.run([str(runtime/'bin/python3'),'-B','-c','import ssl,sqlite3,ctypes,PIL,numpy,UnityPy,imageio_ffmpeg,fmod_toolkit,certifi; ssl.create_default_context().load_verify_locations(certifi.where()); print("MAC_RUNTIME_OK")'],env=env,check=True)
 info={'CFBundleName':'拾光工坊','CFBundleDisplayName':'拾光工坊·模组编辑器-'+version,'CFBundleIconFile':'studio.icns','CFBundleIdentifier':'local.shiguang.workshop','CFBundleVersion':numeric,'CFBundleShortVersionString':numeric,'StudioVersion':version,'CFBundleExecutable':'StudentAgeStudio','CFBundlePackageType':'APPL','LSMinimumSystemVersion':'14.0','NSHighResolutionCapable':True,'NSAppTransportSecurity':{'NSAllowsLocalNetworking':True},'NSPrincipalClass':'NSApplication'}
 shutil.copy2(root/'desktop/studio.icns',resources/'studio.icns')
 with (contents/'Info.plist').open('wb') as f:plistlib.dump(info,f)
