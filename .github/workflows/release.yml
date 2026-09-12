@@ -26,7 +26,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          tag="$(python -c 'import sys; sys.path.insert(0,"standalone"); from error_logs import APP_VERSION; print("v"+APP_VERSION)')"
+          tag="$(python -c 'import sys; sys.path.insert(0,"standalone"); from error_logs import APP_VERSION; print(APP_VERSION if APP_VERSION.startswith("beta-") else "v"+APP_VERSION)')"
           if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "$tag" ]]; then
             echo "Version tag must match APP_VERSION" >&2
             exit 1
@@ -64,6 +64,26 @@ jobs:
           git -C /tmp/studio-feed add latest.json
           git -C /tmp/studio-feed diff --cached --quiet || git -C /tmp/studio-feed commit -m "Update channel $RELEASE_TAG"
           git -C /tmp/studio-feed push origin HEAD:updates
+      - name: Restore beta-1.3.1 update compatibility
+        if: steps.version.outputs.tag == 'beta-1.3.1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          # Existing, tested code payload only; preserve both full client archives.
+          expected=76d873715f0003f18d37ae3ddb26e9f74750fbf4afe42465718a2546661cdbaa
+          echo "$expected  release/student-age-studio-update.zip" | sha256sum --check
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > release/existing-assets.json
+          present=$(python -c 'import json; print(next((a.get("digest", "") for a in json.load(open("release/existing-assets.json"))["assets"] if a["name"] == "student-age-studio-update.zip"), "missing"))')
+          if [[ "$present" == "sha256:$expected" ]]; then
+            echo "The verified compatibility asset is already published."
+          elif [[ "$present" == missing ]]; then
+            gh release upload "$RELEASE_TAG" release/student-age-studio-update.zip
+          else
+            echo "Existing compatibility asset differs; refusing to replace it." >&2
+            exit 1
+          fi
       - name: Publish one compatibility update for older clients
         if: steps.version.outputs.tag == 'v1.3.0-beta.5'
 
