@@ -19,6 +19,8 @@ def warm(game,skip=()):
     from character_rules import native_rules
     from minigame_assets import image_file
     jobs=[('剧情界面',lambda:preview(game)),('人物空间',lambda:space(game)),('动态表情',lambda:emoji_atlas(game)),('纸条',lambda:base_papers(game)),('礼物',lambda:base_papers(game,'GiftEvtCfg'))]
+    from ui_resources import resource_manifest
+    jobs.extend(('编辑器界面 '+kind,lambda kind=kind:resource_manifest(kind,game)) for kind in ('phone','goal','talk','cg'))
     rules=native_rules(game)
     paths={r['url'] for r in rules.get('GuideCfg',{}).values() if r.get('url')}
     paths.update('puzzle/'+r['url'] for r in rules.get('PuzzleMinigameCfg',{}).values() if r.get('url'))

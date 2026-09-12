@@ -1,6 +1,7 @@
 """Build an Apple Silicon application with its own relocatable Python runtime."""
 from pathlib import Path
 import ast
+import importlib.metadata
 import os
 import plistlib
 import re
@@ -33,6 +34,15 @@ shutil.copy2(python,runtime/'bin/python3.12');(runtime/'bin/python3').symlink_to
 shutil.copy2(python_root/'lib/libpython3.12.dylib',runtime/'lib/libpython3.12.dylib')
 shutil.copytree(python_root/'lib/python3.12',runtime/'lib/python3.12',ignore=shutil.ignore_patterns('site-packages','__pycache__','*.pyc','test','tests','idlelib','tkinter','turtledemo','ensurepip'))
 shutil.copytree(dependencies,runtime/'lib/python3.12/site-packages',ignore=ignore)
+notices=resources/'ThirdPartyNotices';notices.mkdir()
+for distribution in importlib.metadata.distributions(path=[str(dependencies)]):
+    name=distribution.metadata.get('Name','unknown')
+    for item in distribution.files or []:
+        filename=Path(str(item)).name
+        if any(word in filename.lower() for word in ('license','copying','notice')):
+            origin=Path(distribution.locate_file(item))
+            if origin.is_file():
+                target=notices/name;target.mkdir(exist_ok=True);shutil.copy2(origin,target/filename)
 # The copied runtime is independent of the developer's Python and user packages.
 env={k:v for k,v in os.environ.items() if k not in ('PYTHONHOME','PYTHONPATH')};env['PYTHONNOUSERSITE']='1'
 subprocess.run([str(runtime/'bin/python3'),'-B','-c','import ssl,sqlite3,ctypes,PIL,numpy,UnityPy,imageio_ffmpeg,fmod_toolkit,certifi; ssl.create_default_context().load_verify_locations(certifi.where()); print("MAC_RUNTIME_OK")'],env=env,check=True)

@@ -3525,24 +3525,24 @@ class StudioHandler(BaseHTTPRequestHandler):
                 from ui_resources import resource_manifest, resource_path
                 name = query.get("resource", [""])[0]
                 try:
-                    return self.send_file(resource_path('talk', name)) if name else self.send_json(resource_manifest('talk'))
+                    return self.send_file(resource_path('talk', name, self.server.store.game)) if name else self.send_json(resource_manifest('talk', self.server.store.game))
                 except (FileNotFoundError, OSError, ValueError):
                     raise ApiError("原版气泡素材尚未提取。", 404)
             if route == "/api/cg-ui":
                 from ui_resources import resource_manifest, resource_path
                 name = query.get("resource", [""])[0]
-                return self.send_file(resource_path('cg', name)) if name else self.send_json(resource_manifest('cg'))
+                return self.send_file(resource_path('cg', name, self.server.store.game)) if name else self.send_json(resource_manifest('cg', self.server.store.game))
             if route == "/api/phone-ui":
                 from phone_ui import resources, resource_file
                 name = query.get("resource", [""])[0]
-                return self.send_file(resource_file(name)) if name else self.send_json(resources())
+                return self.send_file(resource_file(name, self.server.store.game)) if name else self.send_json(resources(self.server.store.game))
             if route == "/api/goals":
                 import goal_workbench
                 return self.send_json(goal_workbench.load(self.server.store, query.get("projectId", [""])[0], sys.modules[__name__]))
             if route == "/api/goal-ui":
                 from goal_ui import resources, resource_file
                 name = query.get("resource", [""])[0]
-                return self.send_file(resource_file(name)) if name else self.send_json(resources())
+                return self.send_file(resource_file(name, self.server.store.game)) if name else self.send_json(resources(self.server.store.game))
             if route == "/api/characters":
                 import character_workbench
                 return self.send_json(character_workbench.load(self.server.store, query.get("projectId", [""])[0]))
@@ -3767,7 +3767,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             route = urllib.parse.urlsplit(self.path).path
             independent = method == 'GET' and (
                 (not route.startswith('/api/') and route not in ('/', '/index.html'))
-                or route in {'/api/assets', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image'})
+                or route in {'/api/assets', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui'})
             with nullcontext() if independent else self.server.location_lock:
                 with original_mode.scope(self.headers.get("X-Studio-Original-Project")):
                     self.dispatch(method)

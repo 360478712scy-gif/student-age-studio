@@ -1,0 +1,141 @@
+name: Build desktop clients
+on:
+  push:
+    branches: [main]
+    paths: ['standalone/error_logs.py', '.github/workflows/native-release.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: desktop-clients-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        shell: bash
+        run: |
+          version="$(python -c 'import sys;sys.path.insert(0,"standalone");from error_logs import APP_VERSION;print(APP_VERSION)')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Build Windows x64 client
+        shell: pwsh
+        env:
+          STUDIO_PACKAGE_NAME: StudentAgeStudio-Windows-x64-${{ needs.version.outputs.version }}
+        run: |
+          $env:STUDIO_SOURCE_ROOT=$env:GITHUB_WORKSPACE
+          $env:STUDIO_BUILD_ROOT=Join-Path $env:RUNNER_TEMP 'studio-build'
+          python -m venv "$env:STUDIO_BUILD_ROOT\venv"
+          $python="$env:STUDIO_BUILD_ROOT\venv\Scripts\python.exe"
+          & $python -m pip install -r requirements.txt pyinstaller
+          if($LASTEXITCODE -ne 0){throw 'Dependencies failed'}
+          & ./desktop/windows/build.ps1
+          & $python "$env:GITHUB_WORKSPACE\desktop\windows\package-notices.py"
+          $package=Join-Path $env:STUDIO_BUILD_ROOT $env:STUDIO_PACKAGE_NAME
+          & $python "$env:GITHUB_WORKSPACE\tools\check_native_package.py" $package
+          if($LASTEXITCODE -ne 0){throw 'Packaged runtime check failed'}
+          Set-Location $env:GITHUB_WORKSPACE
+          New-Item -ItemType Directory -Force release | Out-Null
+          & $python -c "import shutil,sys;shutil.make_archive(sys.argv[1],'zip',sys.argv[2],sys.argv[3])" "release/$env:STUDIO_PACKAGE_NAME" $env:STUDIO_BUILD_ROOT $env:STUDIO_PACKAGE_NAME
+          if($LASTEXITCODE -ne 0){throw 'Archive failed'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-client
+          path: release/StudentAgeStudio-Windows-*.zip
+          if-no-files-found: error
+  mac:
+    needs: version
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare relocatable Python
+        shell: bash
+        run: |
+          test "$(uname -m)" = arm64
+          python -m pip install uv
+          uv python install 3.12
+          python_path="$(uv python find --managed-python 3.12)"
+          python_root="$(dirname "$(dirname "$python_path")")"
+          echo "STUDIO_MAC_PYTHON_ROOT=$python_root" >> "$GITHUB_ENV"
+          echo "STUDIO_MAC_DEPENDENCIES=$RUNNER_TEMP/studio-deps" >> "$GITHUB_ENV"
+          uv pip install --python "$python_path" --target "$RUNNER_TEMP/studio-deps" -r requirements.txt
+      - name: Build and verify Mac Apple Silicon client
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir -p release
+          export STUDIO_APP_PATH="$RUNNER_TEMP/拾光工坊.app"
+          python -B desktop/package.py
+          python -B tools/check_native_package.py "$STUDIO_APP_PATH"
+          codesign --verify --deep --strict "$STUDIO_APP_PATH"
+          ditto -c -k --sequesterRsrc --keepParent "$STUDIO_APP_PATH" "release/StudentAgeStudio-Mac-arm64-$VERSION.zip"
+          unzip -tq "release/StudentAgeStudio-Mac-arm64-$VERSION.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-client
+          path: release/StudentAgeStudio-Mac-*.zip
+          if-no-files-found: error
+  publish:
+    needs: [version, windows, mac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Publish client downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        shell: bash
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --title "拾光工坊 $VERSION" --notes "正在上传客户端。"
+          fi
+          gh release upload "$TAG" release/StudentAgeStudio-*.zip
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          version=os.environ['VERSION'];tag=os.environ['TAG'];repo=os.environ['GITHUB_REPOSITORY']
+          base=f'https://github.com/{repo}/releases/download/{tag}/'
+          text=f'''## 下载客户端
+
+          - **[Windows 64 位客户端]({base}StudentAgeStudio-Windows-x64-{version}.zip)**：完整解压后打开“拾光工坊.exe”。需要 WebView2 Runtime。
+          - **[Mac Apple Silicon 客户端（M1/M2/M3/M4 等）]({base}StudentAgeStudio-Mac-arm64-{version}.zip)**：macOS 14 或以上，解压后把“拾光工坊.app”拖入“应用程序”。当前未做 Apple 公证。
+
+          客户端自带 Python，无需自行安装开发环境。首次打开请选择自己的《学生时代》游戏目录；所需游戏界面素材在本机准备。公开版本不附带原游戏数据或可选 Live2D SDK。
+
+          ## 应用内更新
+
+          本版已带在线更新。启动后自动检查新版本，在“工坊设置 → 版本与反馈”下载并保存重启。
+          `student-age-studio-update.zip` 和 `.sha256` 是供程序使用的更新附件，首次使用请下载上面的 Windows 或 Mac 客户端。
+
+          ## 验证范围
+
+          两端打包运行环境的启动和更新接口检查、Mac 签名完整性及 ZIP 校验通过。原生窗口完整交互和游戏联调尚未全部验收。
+          '''
+          Path('release-notes.md').write_text(text,encoding='utf-8')
+          PY
+          gh release edit "$TAG" --title "拾光工坊 $VERSION" --notes-file release-notes.md

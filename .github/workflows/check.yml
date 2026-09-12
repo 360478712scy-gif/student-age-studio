@@ -15,4 +15,5 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install 'certifi>=2026.2.25'
       - run: python -B -m unittest discover -s standalone/tests -p test_app_updates.py
+      - run: python -B -m unittest discover -s standalone/tests -p test_ui_resources.py
       - run: python -B tools/build_update.py --out release/student-age-studio-update.zip
