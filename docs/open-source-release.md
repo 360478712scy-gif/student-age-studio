@@ -5,7 +5,7 @@
 1. 使用 Python 3.12 准备 requirements.txt 中的依赖（含 certifi 根证书集合），按照 README 从自己的游戏安装目录提取本地界面素材。可选 SDK 需按其自身许可另行准备。
 2. Windows：`desktop/windows/build.ps1` 使用 `$env:STUDIO_BUILD_ROOT` 下的 `venv\Scripts\python.exe` 和 PyInstaller 打包，输出 WebView2 客户端。启动器需使用新 `Launcher.cs`：它在后端以退出码 42 结束时重启，并为客户端启用更新。直接运行旧版 `StudioEngine.exe` 不支持在线重启。
 3. Mac：`desktop/package.py` 需要 `STUDIO_MAC_PYTHON_ROOT`、`STUDIO_MAC_DEPENDENCIES` 和新的 `STUDIO_APP_PATH`，生成 Apple Silicon 应用。WKWebView 宿主通过内置的 `update_bootstrap.py` 启动后端。运行环境升级时另建完整客户端，不复用旧客户端的 ABI。
-4. 完整客户端含本机准备的第三方组件及游戏素材。公开仓库的 GPL 只覆盖原创编辑器代码；未经相应权利人许可，不应将这些私有素材随公开安装包再分发。公开自动构建使用不含这些素材的源码；客户端在用户选定游戏后于本机缓存准备界面素材。Releases 同时提供 Windows x64、Mac arm64 完整运行环境客户端与代码更新包。
+4. 完整客户端含本机准备的第三方组件及游戏素材。公开仓库的 GPL 只覆盖原创编辑器代码；未经相应权利人许可，不应将这些私有素材随公开安装包再分发。公开自动构建使用不含这些素材的源码；客户端在用户选定游戏后于本机缓存准备界面素材。新的完整版本 Release 仅提供 Windows x64、Mac arm64 客户端；轻量更新包放在 updates 分支。
 
 首次 Windows 构建可在源码目录用 PowerShell 准备运行环境：
 
@@ -40,4 +40,4 @@ py -3.12 -m venv "$env:STUDIO_BUILD_ROOT\venv"
 
 ## 自动打包客户端
 
-`Build desktop clients` 仅在维护者手动触发时使用 GitHub 的 Windows x64 与 macOS 14 arm64 环境构建。两端先检查打包后端启动、首页静态文件及在线更新接口，再压缩上传；Mac 另验证代码签名。Mac 使用 uv 管理的可搬移 Python 3.12，Windows 使用 PyInstaller 与原生启动器。Release 顶部提供两端下载入口，代码更新 ZIP 保留供程序读取。原生窗口完整交互和游戏联调需另行验收。
+用户明确要求完整打包时，维护者更新 `.github/desktop-release.json` 的 version 并提交 main；`Build desktop clients` 校验其与 APP_VERSION 一致后，使用 GitHub 的 Windows x64 与 macOS 14 arm64 环境调用现有打包脚本构建。也可手动触发。两端先检查打包后端启动、首页静态文件及在线更新接口，再压缩上传；Mac 另验证代码签名。Mac 使用 uv 管理的可搬移 Python 3.12，Windows 使用 PyInstaller 与原生启动器。Windows 额外验证启动器能校验并解除官方 DLL 下载标记，且 Python.Runtime.Loader.Initialize 可加载。Release 顶部提供两端下载入口，只上传两份完整 ZIP；轻量代码包仍只在 updates 分支。原生窗口完整交互和游戏联调需另行验收。

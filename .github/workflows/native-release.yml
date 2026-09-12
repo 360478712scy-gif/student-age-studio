@@ -1,6 +1,9 @@
 name: Build desktop clients
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/desktop-release.json']
 permissions:
   contents: read
 concurrency:
@@ -18,8 +21,11 @@ jobs:
         shell: bash
         run: |
           version="$(python -c 'import sys;sys.path.insert(0,"standalone");from error_logs import APP_VERSION;print(APP_VERSION)')"
+          requested="$(python -c 'import json;print(json.load(open(".github/desktop-release.json"))["version"])')"
+          test "$requested" = "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == beta-* ]]; then tag="$version"; else tag="v$version"; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
   windows:
     needs: version
     runs-on: windows-latest
@@ -29,6 +35,7 @@ jobs:
         with:
           python-version: '3.12'
           architecture: x64
+          cache: pip
       - name: Build Windows x64 client
         shell: pwsh
         env:
@@ -43,6 +50,8 @@ jobs:
           & ./desktop/windows/build.ps1
           & $python "$env:GITHUB_WORKSPACE\desktop\windows\package-notices.py"
           $package=Join-Path $env:STUDIO_BUILD_ROOT $env:STUDIO_PACKAGE_NAME
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:GITHUB_WORKSPACE\tools\check_windows_launcher.ps1" -Package $package
+          if($LASTEXITCODE -ne 0){throw 'Launcher runtime check failed'}
           & $python "$env:GITHUB_WORKSPACE\tools\check_native_package.py" $package
           if($LASTEXITCODE -ne 0){throw 'Packaged runtime check failed'}
           Set-Location $env:GITHUB_WORKSPACE
@@ -124,10 +133,15 @@ jobs:
 
           客户端自带 Python，无需自行安装开发环境。首次打开请选择自己的《学生时代》游戏目录；所需游戏界面素材在本机准备。公开版本不附带原游戏数据。Live2D 动态预览暂时停用，保留静态立绘和原有模型配置，并修复关闭预览后的资源回调残留。
 
+          ## 本版新增
+
+          - “版本与反馈”加入爱发电赞助入口。
+          - 设置新增“素材文件夹”，可随时调整首次引导中的六类素材目录。
+          - 包含此前电话、人物图片、事件外对话、编号原位编辑及缓存优化；Windows 启动器已整合下载来源标记修复。
+
           ## 应用内更新
 
-          本版已带在线更新。启动后自动检查新版本，在“工坊设置 → 版本与反馈”下载并保存重启。
-          `student-age-studio-update.zip` 和 `.sha256` 是供程序使用的更新附件，首次使用请下载上面的 Windows 或 Mac 客户端。
+          启动后自动检查并后台下载轻量更新，保存并重启后生效。本页仅提供完整客户端，不附加更新补丁。
 
           ## 验证范围
 

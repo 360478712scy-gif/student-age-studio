@@ -3,7 +3,8 @@
   document.querySelector('.app-header').append(button);
   document.addEventListener('click',event=>{if(event.target.closest('[data-game-location]'))button.click()});
   const dialog=document.createElement('dialog');dialog.id='game-locations';dialog.setAttribute('aria-labelledby','game-locations-title');document.body.append(dialog);
-  let current,timer,preparing=false,tab='directories';
+  let current,timer,preparing=false,tab='directories',folderSaving=false;
+  const folderDrafts={},folderKinds=[['portrait','人物立绘'],['background','场景背景'],['cg','CG 插画'],['audio','音乐与音效'],['social','动态配图'],['avatar','人物头像']];
   dialog.addEventListener('cancel',event=>{if(preparing)event.preventDefault()});
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   async function api(path,data){const r=await fetch('/api/'+path,{method:data?'POST':'GET',headers:{'X-Studio-Token':window.STUDIO_TOKEN,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});const v=await r.json();if(!r.ok)throw Error(v.error);return v}
@@ -11,6 +12,34 @@
   function setCurrent(state){current=state;window.STUDIO_MODS_STATUS=state.modsStatus;}
   function busy(value){preparing=value;dialog.querySelectorAll('button,input').forEach(e=>e.disabled=value);}
   function canSwitch(){if(window.STUDIO_HAS_UNSAVED_CHANGES?.()){message('请先关闭此窗口，保存当前模组，再切换目录。');return false}return !preparing}
+  function mountFolders(body){
+    const section=document.createElement('section');section.className='location-section';section.dataset.settingsGroup='folders';
+    section.innerHTML='<h3>素材文件夹</h3><p class="location-help">与首次引导共用同一份设置。可选择文件夹或粘贴路径；读取时包含子文件夹，保存后后台更新素材缓存。清空路径并保存即可取消该目录。</p><div data-settings-folders>正在读取素材文件夹…</div>';
+    body.append(section);
+    (async()=>{try{
+      let state=await api('asset-folders');if(!section.isConnected)return;
+      const list=section.querySelector('[data-settings-folders]');
+      list.innerHTML=folderKinds.map(([kind,label])=>`<div class="settings-asset-folder"><label class="location-path-label" for="settings-folder-${kind}">${label}</label><div class="location-path-row"><input id="settings-folder-${kind}" data-settings-folder="${kind}" value="${esc(folderDrafts[kind]??state.folders[kind]?.path??'')}" placeholder="尚未设置 · 可粘贴完整路径"><button data-settings-folder-browse="${kind}">选择文件夹</button></div><div class="location-actions"><button data-settings-folder-save="${kind}">保存目录</button><span class="location-help" data-settings-folder-status="${kind}" role="status">${esc(state.folders[kind]?.message||'')}</span></div></div>`).join('');
+      list.querySelectorAll('button,input').forEach(n=>n.disabled=folderSaving);
+      list.oninput=e=>{if(e.target.matches('[data-settings-folder]'))folderDrafts[e.target.dataset.settingsFolder]=e.target.value;};
+      list.onclick=async e=>{
+        const b=e.target.closest('button');if(!b||folderSaving)return;
+        const kind=b.dataset.settingsFolderBrowse||b.dataset.settingsFolderSave,input=list.querySelector(`[data-settings-folder="${kind}"]`),status=list.querySelector(`[data-settings-folder-status="${kind}"]`);
+        if(!kind)return;
+        folderSaving=true;list.querySelectorAll('button,input').forEach(n=>n.disabled=true);
+        try{
+          if(b.hasAttribute('data-settings-folder-browse')){
+            const choose=window.pywebview?.api?.choose_folder||window.STUDIO_CHOOSE_ASSET_FOLDER;
+            if(!choose){input.focus();status.textContent='请粘贴文件夹的完整路径，然后保存目录。';return;}
+            const path=await choose(kind);if(path&&section.isConnected){input.value=path;folderDrafts[kind]=path;status.textContent='点击“保存目录”后生效。';}return;
+          }
+          folderSaving=true;list.querySelectorAll('button,input').forEach(n=>n.disabled=true);status.textContent='正在保存…';
+          const path=input.value;state=await api('asset-folders');state=await api('asset-folders',{kind,path,settingsRevision:state.revision});
+          delete folderDrafts[kind];input.value=state.folders[kind]?.path||'';status.textContent=input.value?'已保存，后台更新素材缓存。':'已取消此素材目录。';
+        }catch(error){status.textContent=error.message;}finally{folderSaving=false;dialog.querySelectorAll('[data-settings-folders] button,[data-settings-folders] input').forEach(n=>n.disabled=preparing);}
+      };
+    }catch(error){if(section.isConnected)section.querySelector('[data-settings-folders]').textContent=error.message;}})();
+  }
   function render(){
     const s=current,mods=s.modsStatus||{},workshop=s.workshopStatus||{},gameInput=dialog.querySelector('[data-path]')?.value,modsInput=dialog.querySelector('[data-mods-path]')?.value;
     const backups=s.backups||{};
@@ -27,13 +56,14 @@
     const categories=['directories','storage','preferences','storage','storage','directories','directories'];
     const body=document.createElement('div');body.className='workshop-settings-body';
     sections.forEach((section,i)=>{section.dataset.settingsGroup=categories[i];body.append(section);});
+    mountFolders(body);
     const appearance=document.createElement('section');appearance.className='location-section';appearance.dataset.settingsGroup='preferences';appearance.innerHTML=`<h3>界面主题</h3><label class="location-path-label" for="studio-theme-choice">外观</label><select id="studio-theme-choice"><option value="classic">经典主题 · 深绿</option><option value="glass">液态玻璃 · 晴昼</option><option value="glass-dusk">液态玻璃 · 暮色</option><option value="glass-moon">液态玻璃 · 月夜</option></select><p class="location-help">切换立即生效，下次启动继续使用。经典主题关闭玻璃动态效果，更节省性能。</p>`;body.prepend(appearance);
     const themeChoice=appearance.querySelector('select');themeChoice.value=window.STUDIO_THEME||'glass';themeChoice.onchange=async()=>{themeChoice.disabled=true;try{await window.STUDIO_SET_THEME(themeChoice.value);message('主题已保存，下次启动继续使用。');}catch(e){themeChoice.value=window.STUDIO_THEME;message(e.message);}finally{themeChoice.disabled=false;}};
     const idChecks=document.createElement('section');idChecks.className='location-section';idChecks.dataset.settingsGroup='preferences';idChecks.innerHTML='<h3>ID 重复检测</h3><p class="location-help">勾选要排除的模组，例如旧副本或未启用的作品。填写编号和保存时不再提示这些模组的重复编号；原版和当前模组仍会检查。</p><div data-id-check-mods>正在读取模组…</div>';body.append(idChecks);
     (async()=>{try{const [preferences,projects]=await Promise.all([api('display-settings'),api('projects')]);if(!idChecks.isConnected)return;const rows=Array.isArray(projects)?projects:projects.projects||[];let excluded=new Set(preferences.idCheckExcludedProjects||[]);const list=idChecks.querySelector('[data-id-check-mods]');list.innerHTML=rows.map(p=>`<label class="location-backup-setting"><input type="checkbox" data-id-check-exclude="${esc(p.id)}" ${excluded.has(p.id)?'checked':''}>排除 ${esc(p.name)}${p.readOnly?'（订阅）':''}</label>`).join('')||'<p>尚未发现模组。</p>';list.onchange=async e=>{const n=e.target;if(!n.matches('[data-id-check-exclude]'))return;const next=new Set(excluded);if(n.checked)next.add(n.dataset.idCheckExclude);else next.delete(n.dataset.idCheckExclude);list.querySelectorAll('input').forEach(v=>v.disabled=true);try{const saved=await api('display-settings',{idCheckExcludedProjects:[...next]});excluded=new Set(saved.idCheckExcludedProjects||[]);message('ID 检测范围已保存。');}catch(error){n.checked=excluded.has(n.dataset.idCheckExclude);message(error.message);}finally{list.querySelectorAll('input').forEach(v=>v.disabled=false);}};}catch(error){if(idChecks.isConnected)idChecks.querySelector('[data-id-check-mods]').textContent=error.message;}})();
-    const contact=document.createElement('section');contact.className='location-section';contact.dataset.settingsGroup='about';contact.innerHTML='<h3>拾光工坊 · beta 公测</h3><p>反馈问题、交流模组制作，欢迎联系我们。</p><dl class="location-current"><dt>测试与讨论 QQ 群</dt><dd>1121725122</dd><dt>反馈邮箱</dt><dd>360478712scy@gmail.com</dd></dl>';body.append(contact);
+    const contact=document.createElement('section');contact.className='location-section';contact.dataset.settingsGroup='about';contact.innerHTML='<h3>拾光工坊 · beta 公测</h3><p>反馈问题、交流模组制作，欢迎联系我们。</p><dl class="location-current"><dt>测试与讨论 QQ 群</dt><dd>1121725122</dd><dt>反馈邮箱</dt><dd>360478712scy@gmail.com</dd></dl><h3>支持拾光工坊</h3><p>如果您觉得编辑器的做的还不错，不妨支持一下！我将在未来加入更多更新！</p><a class="settings-sponsor-link" data-sponsor-link href="https://afdian.com/a/stundet-age-studio" target="_blank" rel="noopener noreferrer">前往爱发电赞助 ↗</a>';body.append(contact);contact.querySelector('[data-sponsor-link]').onclick=async e=>{e.preventDefault();try{await api('open-sponsor',{});}catch(error){message(error.message);}};
     const update=document.createElement('section');update.className='location-section';update.dataset.settingsGroup='about';body.prepend(update);window.STUDIO_UPDATES?.mount(update);
-    const nav=document.createElement('nav');nav.className='workshop-settings-tabs';nav.setAttribute('aria-label','工坊设置分类');nav.innerHTML='<div class="settings-identity"><img src="/icon.png" alt=""><strong>拾光工坊</strong><span>工坊设置</span></div>'+[['directories','游戏与模组'],['storage','数据与维护'],['preferences','外观与偏好'],['about','版本与反馈']].map(([id,label])=>`<button data-settings-tab="${id}"><span class="settings-category-icon" aria-hidden="true">${({directories:"▣",storage:"▤",preferences:"✓",about:"◇"})[id]}</span><span>${label}</span></button>`).join('');
+    const nav=document.createElement('nav');nav.className='workshop-settings-tabs';nav.setAttribute('aria-label','工坊设置分类');nav.innerHTML='<div class="settings-identity"><img src="/icon.png" alt=""><strong>拾光工坊</strong><span>工坊设置</span></div>'+[['directories','游戏与模组'],['folders','素材文件夹'],['storage','数据与维护'],['preferences','外观与偏好'],['about','版本与反馈']].map(([id,label])=>`<button data-settings-tab="${id}"><span class="settings-category-icon" aria-hidden="true">${({directories:"▣",folders:"▧",storage:"▤",preferences:"✓",about:"◇"})[id]}</span><span>${label}</span></button>`).join('');
     const selectTab=()=>{body.querySelectorAll('[data-settings-group]').forEach(section=>section.hidden=section.dataset.settingsGroup!==tab);nav.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.settingsTab===tab)));body.scrollTop=0;};
     nav.onclick=e=>{const b=e.target.closest('[data-settings-tab]');if(b){tab=b.dataset.settingsTab;selectTab();}};
     dialog.append(nav,body);selectTab();

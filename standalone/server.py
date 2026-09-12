@@ -3567,6 +3567,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 nonce = secrets.token_urlsafe(18)
                 preferences = self.server.display_settings()
                 bootstrap = '<script nonce="' + nonce + '">window.STUDIO_TOKEN=' + json.dumps(self.server.token) + ';window.STUDIO_BOOTSTRAPPING=true;window.STUDIO_DISPLAY_IDS=' + json.dumps(preferences['showRecordIds']) + ';window.STUDIO_AUTO_SAVE=' + json.dumps(preferences['autoSave']) + ';window.STUDIO_SAVE_ON_EXIT='+json.dumps(preferences['saveOnExit'])+';window.STUDIO_ONBOARDING_COMPLETE='+json.dumps(preferences['onboardingComplete'])+';window.STUDIO_WORKSHOP_FAVORITES=' + json.dumps(preferences['workshopFavorites']) + ";</script>"
+                from error_logs import APP_VERSION
+                bootstrap = bootstrap.replace('</script>', ';window.STUDIO_VERSION='+json.dumps(APP_VERSION)+';</script>')
                 bootstrap = bootstrap.replace('</script>', ';window.STUDIO_THEME='+json.dumps(preferences['theme'])+';document.documentElement.dataset.theme=window.STUDIO_THEME;</script>')
                 if preferences['theme'] == 'classic':
                     for sheet in ('glass-palette.css', 'glass-theme.css'):
@@ -3608,6 +3610,11 @@ class StudioHandler(BaseHTTPRequestHandler):
                 result = self.server.store.asset_catalog.set_folder(payload)
                 self.server.media_warmup.request_scan()
                 return self.send_json(result)
+            if route == '/api/open-sponsor':
+                import webbrowser
+                if not webbrowser.open('https://afdian.com/a/stundet-age-studio', new=2):
+                    raise ApiError('无法打开系统浏览器，请访问 https://afdian.com/a/stundet-age-studio 。')
+                return self.send_json({'ok': True})
             if route == '/api/open-storage':
                 from storage_paths import user_data_root, cache_root
                 from platform_support import open_directory

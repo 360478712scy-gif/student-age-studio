@@ -610,3 +610,11 @@ html body .speaker-menu button[data-speaker-toggle=narrator]{margin-top:4px;bord
 .speaker-chip button{flex-shrink:0}
 
 html body .condition-browser>header,html body .condition-browser>.condition-browser-actions{background:transparent}
+
+/* Settings reuse the same colors and controls in all four themes. */
+.settings-asset-folder + .settings-asset-folder{margin-top:22px;padding-top:18px;border-top:1px solid var(--sg-line-soft)}
+.settings-asset-folder .location-actions{flex-wrap:wrap;align-items:center}
+.settings-asset-folder .location-actions .location-help{flex:1;min-width:180px;overflow-wrap:anywhere}
+.settings-sponsor-link{display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border:1px solid var(--sg-selected-line);border-radius:12px;color:var(--sg-gold);background:var(--sg-selected);text-decoration:none;font-weight:600}
+.settings-sponsor-link:hover{filter:brightness(1.08)}
+.settings-sponsor-link:focus-visible{outline:2px solid var(--sg-gold);outline-offset:3px}
