@@ -1431,14 +1431,8 @@ function setProtagonistGender(value){
 }
 function portraitPath() {
   const p=S.doc?.persons[S.previewRole];if(!p)return {path:null,note:'选择人物后，可以预览已有的本地立绘。'};
-  const young=(S.grade===0&&p.url?.length)||(S.grade===1&&!p.url2?.length);
-  const face=S.doc.faces[Number(S.previewRole)*1000+S.cloth*100+S.face];
-  const exact=face&&(young?face.icon_xx:face.icon);
-  const urls=young?p.url:p.url2,index=Number(S.previewRole)===0?protagonistGender()-1:0;const path=exact||urls?.[index]||p.url?.[index]||p.url2?.[index];
-  const hasModel=(S.grade===0?p.l2d:p.l2d2)?.length;
-  let note=exact?'原版或导入的表情图片':S.face?'正在读取所选表情，暂时保留默认外观。':'人物立绘';
-  if(!path)note=hasModel?'正在读取原版人物模型…':'这个人物还没有可读取的立绘，可以导入一张。';
-  return {path,note,exact:!!exact,hasModel:!!hasModel};
+  const source=StudentAgeScene.portraitSource(S.doc,{id:Number(S.previewRole),grade:S.grade,cloth:S.cloth,face:S.face});
+  return {...source,note:source.missing?'此服装或学段缺少所选表情图片，按游戏备用规则显示。':'人物立绘'};
 }
 const portraitRequests=new Map(),portraitAvailability=new Map(),scenePortraitRequests=new Set(),scenePortraitStamps=new Map();
 function refreshSceneAssets(){
@@ -1514,12 +1508,10 @@ function renderInspector() {
   $('#preview-controls').innerHTML=S.doc?`<select data-reference-table="PersonCfg" id="preview-person" data-no-search="true" aria-label="预览人物">${personOptions(S.previewRole)}</select><div class="row"><select id="preview-cloth" aria-label="预览服装">${Array.from({length:10},(_,n)=>`<option value="${n}" ${n===S.cloth?'selected':''}>${n===0?'默认服装':'服装 '+(n+1)}</option>`).join('')}</select></div>`:'';
   if(!S.doc){$('#expression-grid').innerHTML='';return;}
   const asset=portraitPath();
-  const cachePath=`portrait-cache/${portraitIdentity(S.previewRole)}-${S.grade}-${S.cloth}-${S.face}.png`;
-  const customPortrait=asset.path&&/^(Mods|Textures|StudentAgeStudio)[\\/]/i.test(asset.path);
-  const previewPaths=customPortrait?[asset.path,cachePath]:[cachePath,`portrait-cache/${portraitIdentity(S.previewRole)}-${S.grade}-${S.cloth}-0.png`,...(asset.path?[asset.path]:[])];
-  const inspector=$('#portrait-inspector'),note=$('#portrait-note'),caption=p?faceName():'';note.textContent=caption;
+  const previewPaths=p?StudentAgeScene.portraitCandidates(S.doc,{id:Number(S.previewRole),grade:S.grade,cloth:S.cloth,face:S.face}):[];
+  const inspector=$('#portrait-inspector'),note=$('#portrait-note'),caption=p?faceName():'',description=asset.missing?caption+' · '+asset.note:caption;note.textContent=description;
   const empty=()=>{const node=document.createElement('div');node.className='empty-portrait';node.innerHTML=`<span class="frame-glyph">⌑</span><strong>${p?h(p.name||'人物'):'选择一个人物'}</strong><p>${p?(asset.hasModel?'正在读取原版人物模型…':'这张图片尚未在本地找到'):'暂无本地立绘'}</p>`;inspector.replaceChildren(node);};
-  if(p){ensureScene();largeScene.image(inspector,previewPaths,'preview-character',(p.name||'人物')+' · '+caption,empty,()=>{inspector.querySelector('img')?.setAttribute('data-preview-character','');note.textContent=caption;});}
+  if(p){ensureScene();largeScene.image(inspector,previewPaths,'preview-character',(p.name||'人物')+' · '+caption,empty,()=>{inspector.querySelector('img')?.setAttribute('data-preview-character','');note.textContent=description;});}
   else if(largeScene)largeScene.image(inspector,[],'','',empty);else empty();
   const availability=portraitAvailability.get(portraitMetadataKey(S.previewRole,S.grade,S.cloth));
   const choices=window.StudentAgeExpressions.choices({person:p,faces:S.doc.faces,roleId:S.previewRole,grade:S.grade,cloth:S.cloth,metadata:availability});

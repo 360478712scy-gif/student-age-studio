@@ -88,7 +88,7 @@ function pathTo(doc,target,roots) {
   const draft=search(starts);if(draft)return {...draft,inferred:true};
   return {path:doc.talks?.[target]?[target]:[],found:false};
 }
-function blank(reference=[2560,1440]) {return {background:0,cg:0,paperId:0,phone:null,phoneEvent:null,roles:{},motionStarts:{},talkId:null,speaker:'',speakerIds:[],speakerGender:0,highlightIds:[],content:'',warnings:[],motions:[],reference,trace:[],routeChoices:[],talkingAxis:2,useCloth:null};}
+function blank(reference=[2560,1440]) {return {background:0,cg:0,paperId:0,phone:null,phoneEvent:null,roles:{},roleCloths:{},motionStarts:{},talkId:null,speaker:'',speakerIds:[],speakerGender:0,highlightIds:[],content:'',warnings:[],motions:[],reference,trace:[],routeChoices:[],talkingAxis:2,useCloth:null};}
 // Match the native List<T>.Sort introsort, including its unstable equal-key
 // ordering. JavaScript Array.sort is stable and produces different cast slots.
 function nativeRoleOrder(input){
@@ -125,6 +125,8 @@ function nativePositionFrames(track){
 }
 function apply(doc,prior,talk,grade=1,recordTrace=true) {
   const state=copy({...prior,trace:[]});state.motionStarts=copy(prior.roles);state.motions=[];state.positionTracks={};state.paperId=0;state.talkId=talk.id;state.trace=recordTrace?[...prior.trace,talk.id]:[];
+  // NewTalkView retains roleCloths independently of the visible cast.
+  state.roleCloths??={};
   // Exit records are retained for this line's rendering only. Native removes
   // the actor after its sequence, so the next line must create a fresh record.
   for(const [id,role] of Object.entries(state.roles)){if(!role.visible){delete state.roles[id];delete state.motionStarts[id];}else delete role.emoji;}
@@ -147,7 +149,7 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
   if(Number(talk.bg)>0){state.background=Number(talk.bg);if(!state.useCloth?.length){state.useCloth=list(doc.backgrounds?.[state.background]?.cloth);if(!state.useCloth.length)state.useCloth=[0];}}
   const outfitCloth=id=>{const outfits=doc.characterOutfits?.[id];if(!outfits)return null;return Number(Object.entries(outfits).find(([slot,o])=>(o.backgrounds||[]).includes(state.background))?.[0]||0);};
   for(const role of Object.values(state.roles)){const cloth=outfitCloth(role.id);if(cloth!==null&&state.background!==prior.background){role.cloth=cloth;delete role.manualCloth;}}
-  const defaultCloth=id=>{const outfit=outfitCloth(id);if(outfit!==null)return outfit;if(!state.useCloth?.length)state.useCloth=[0];return state.useCloth[id===1?1:id===5?2:0]||0;};
+  const defaultCloth=id=>{if(state.roleCloths[id]!=null)return state.roleCloths[id];const outfit=outfitCloth(id);if(outfit!==null)return outfit;if(!state.useCloth?.length)state.useCloth=[0];const special=id===1?1:id===5?2:0;if(special&&doc.backgrounds?.[state.background])return list(doc.backgrounds[state.background].cloth)[special]||0;return state.useCloth[0]||0;};
   const screen=talk.screenEffect||[];
   if(screen.length){const code=Number(screen[0]);if(code===4015)state.cg=Number(screen[1]);else if(code===4017){state.cg=0;state.nativeComic=false;}else if(code===4016){state.nativeComic=true;state.warnings.push('漫画画面需在游戏中预演。');}else if(code===4007&&!(talk.roleIds||[]).length){state.warnings.push('本句没有说话人，原版不会启动电话。');}else if(code===4007){state.phone={left:Number(screen[1])||100,right:state.background||201011,caller:Number(screen[2])||0,remote:screen.slice(2).map(Number),local:[...new Set([...(talk.highlights||[]),...(talk.roleIds||[])].map(Number))]};}else if(code===4008){for(const id of state.phone?.remote||[state.phone?.caller])if(state.roles[id])state.roles[id].visible=false;state.phone=null;}else if(!window.StudentAgeScreenEffects?.entries.some(e=>e.id===code))state.warnings.push('这段包含额外屏幕效果，最终效果请在游戏中确认。');}
   if(talk.effect?.length||talk.effect2?.length||talk.miniGame?.length)state.warnings.push('此段的数值变化、奖励或小游戏交由游戏执行。');
@@ -194,6 +196,7 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
     if(!role){
       if(code===2001||code===2002)continue;
       role={id,visible:false,x:0,y:0,axis:defaultAxis,layer:1,face:0,cloth:defaultCloth(id),hair:0,scale:1,flip:false,shadow:false,grade};role.depth=-10*(Object.keys(prior.roles||{}).length+Math.max(0,creationOrder.indexOf(id)));Object.assign(role,initial.get(id)||{});state.roles[id]=role;
+      state.roleCloths[id]=role.cloth;
       if(code>=3000){place(role,declaredAxes.get(id)||defaultAxis,1);state.motionStarts[id]=copy(role);role.visible=true;state.motions.push({id,code:1001,delay:0,fromAxis:defaultAxis});}
     }
     const delay=Math.max(0,Number(row[movementDelays[code]])||0);
@@ -214,7 +217,7 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
       state.motions.push({id,code,delay:Number(row[code===2001?3:2])||0,toAxis});
     }
     else if(code===3000)role.face=Number(row[2])||0;
-    else if(code===3006){role.cloth=Number(row[2])||0;role.manualCloth=true;}
+    else if(code===3006){role.cloth=Number(row[2])||0;role.manualCloth=true;state.roleCloths[id]=role.cloth;}
     else if(code===3014){role.hair=Number(row[2])||0;state.warnings.push(label(doc,id)+' 的发型变更需在游戏中确认，截图缓存可能不含该发型。');}
     else if(code===3004||code===3008){role[code===3004?'x':'y']+=Number(row[2])||0;state.motions.push({id,code,delay:Number(row[3])||0,duration:code===3004&&Number(row[5])>0?Number(row[5]):.4,shake:Number(row[4])||0});}
     else if(code===3003){role.scale*=row.length>2&&Number(row[2])===0?0:1.1;state.motions.push({id,code,delay:Number(row[3])||0});}
@@ -295,11 +298,21 @@ function reconstruct(doc,target,options={}) {
   if(!options.trace&&route.path.some((id,index)=>index<route.path.length-1&&routes(doc,doc.talks[id]).filter(r=>r.available).length>1))state.warnings.push('这句之前有分支；当前按可到达的路线还原。播放时可选择另一条路线。');
   return state;
 }
-function portraitCandidates(doc,role) {
-  const person=doc.persons?.[role.id];if(!person)return [];
+function portraitSource(doc,role) {
+  const person=doc.persons?.[role.id];if(!person)return {path:null,exact:false,missing:false};
   const index=Number(role.id)===0?protagonistGender(doc)-1:0;
   const young=(role.grade===0&&person.url?.length)||(role.grade===1&&!person.url2?.length);
-  const face=doc.faces?.[role.id*1000+role.cloth*100+role.face],base=doc.faces?.[role.id*1000+role.cloth*100],image=(face&&(young?face.icon_xx:face.icon))||(base&&(young?base.icon_xx:base.icon))||(young?person.url?.[index]:person.url2?.[index])||person.url?.[index]||person.url2?.[index];
+  const face=doc.faces?.[role.id*1000+role.cloth*100+role.face],base=doc.faces?.[role.id*1000+role.cloth*100];
+  // Match RoleMgr.GetExpressionIcon exactly: an existing row with an empty
+  // grade image goes straight to PersonCfg. Its missing-row fallback uses
+  // the opposite grade field; do not silently substitute a different image.
+  const exact=face&&(young?face.icon_xx:face.icon),expression=face?exact:base&&(young?base.icon:base.icon_xx);
+  const models=role.grade===0?person.l2d:person.l2d2,hasModel=!!models?.some(value=>typeof value==='string'&&value.trim());
+  return {path:expression||(young?person.url?.[index]:person.url2?.[index])||null,exact:!!exact,hasModel,missing:!hasModel&&!exact&&(!!face||!!base||role.face!==0)};
+}
+function portraitCandidates(doc,role) {
+  const person=doc.persons?.[role.id];if(!person)return [];
+  const image=portraitSource(doc,role).path;
   const models=role.grade===0?person.l2d:person.l2d2;
   if(!models?.some(value=>typeof value==='string'&&value.trim()))return image?[image]:[];
   const cache=`portrait-cache/${portraitIdentity(doc,role.id)}-${role.grade}-${role.cloth}-${role.face}.png`;
@@ -540,7 +553,7 @@ class Renderer {
         this.image(art,candidates,'',label(doc,role.id),retained=>{scheduleRetry();if(retained){setAssetNote(label(doc,role.id)+' 的所选外观暂未读取，已保留原立绘。','点击重试');return;}const missing=document.createElement('div');missing.className='scene-missing-person';missing.textContent=label(doc,role.id)+'\n立绘未缓存';art.append(missing);setAssetNote(label(doc,role.id)+' 的立绘尚未读取，可以重试。','点击重试');},path=>{
           node.sceneRetryCount=0;node.querySelector('.scene-asset-note').onclick=null;
           const person=doc.persons?.[role.id],face=doc.faces?.[role.id*1000+role.cloth*100+role.face],young=(role.grade===0&&person?.url?.length)||(role.grade===1&&!person?.url2?.length),exact=face&&(young?face.icon_xx:face.icon);
-          if(!path.startsWith('portrait-cache/')&&path!==exact&&(role.face!==0||role.cloth!==0))setAssetNote(label(doc,role.id)+' 当前显示默认立绘；正在读取所选表情或服装。','默认立绘');else setAssetNote('','');const current=this.state?.roles[role.id];if(current)this.position(node,current,this.state.reference);this.queueCast();
+          if(portraitSource(doc,role).missing)setAssetNote(label(doc,role.id)+' 的所选服装或学段缺少这张表情图片，当前按游戏备用规则显示。','表情图片缺失');else if(!path.startsWith('portrait-cache/')&&path!==exact&&(role.face!==0||role.cloth!==0))setAssetNote(label(doc,role.id)+' 当前显示默认立绘；正在读取所选表情或服装。','默认立绘');else setAssetNote('','');const current=this.state?.roles[role.id];if(current)this.position(node,current,this.state.reference);this.queueCast();
         });
       }
   }
@@ -774,5 +787,5 @@ class AudioPlayer {
   resume(){if(this.bgm&&!this.bgm.ended)this.bgm.play()?.catch?.(()=>{});for(const audio of this.sfx)if(!audio.ended)audio.play()?.catch?.(()=>{});if(this.desiredMusic){const {key,track}=this.desiredMusic;this.switchMusic(key,track);}}
   stop(){this.pause();this.bgm=null;this.sfx=[];this.group=null;this.nativeBgm=null;this.activeGroup=null;this.lastTalk=null;this.desiredMusic=null;this.failedMusic=null;}
 }
-window.StudentAgeScene={planSceneDrag,nativePositionPlayer,nativePositionFrames,nativeRoleOrder,normalizeNativeMoves,staticPortraitSize,bubbleAssets,releaseBubbleAssets,bubbleY,bubbleGlyph,portraitBox,portraitCacheKey,portraitFrames,portraitSizes,protagonistGender,portraitIdentity,routes,pathTo,blank,apply,reconstruct,portraitCandidates,backgroundPath,Renderer,Player,AudioPlayer};
+window.StudentAgeScene={planSceneDrag,nativePositionPlayer,nativePositionFrames,nativeRoleOrder,normalizeNativeMoves,staticPortraitSize,bubbleAssets,releaseBubbleAssets,bubbleY,bubbleGlyph,portraitBox,portraitCacheKey,portraitFrames,portraitSizes,protagonistGender,portraitIdentity,routes,pathTo,blank,apply,reconstruct,portraitSource,portraitCandidates,backgroundPath,Renderer,Player,AudioPlayer};
 })();

@@ -51,6 +51,11 @@ class UpdatesTest(unittest.TestCase):
             time.sleep(.01)
         self.assertEqual(status['status'],'ready',status)
 
+    def test_beta135_hotfix_sorts_after_installed_beta135(self):
+        self.assertGreater(version_key('v1.3.5-beta.1'), version_key('beta-1.3.5'))
+        self.assertLess(version_key('v1.3.5-beta.1'), version_key('beta-1.3.6'))
+        self.assertEqual(version_key('v1.3.5-beta.1'), version_key('1.3.5-beta.1'))
+
     def test_source_feed_download_uses_immutable_commit(self):
         self.updater.config['sourceUpdates']=True
         commit='a'*40
