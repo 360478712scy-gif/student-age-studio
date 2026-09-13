@@ -3,17 +3,36 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+_STRIP_H = 256
+
+
 class Raster:
     def __init__(self, textures, bounds, width, height):
-        self.textures = []
-        for path in textures:
-            with Image.open(path) as image:
-                self.textures.append(np.asarray(image.convert('RGBA'), dtype=np.float32) / 255)
+        # Lazy per-texture decode: identical float32 pixels as eager load,
+        # but models using a subset never pay for the rest. Cache keeps
+        # byte-identical arrays for repeated faces.
+        self._texture_paths = list(textures)
+        self._textures = {}
         self.bounds = np.asarray(bounds, dtype=np.float32)
         self.width, self.height = width, height
 
+    @property
+    def textures(self):
+        # Back-compat accessor: materializes all (same values as before).
+        for index in range(len(self._texture_paths)):
+            self._texture(index)
+        return [self._textures[index] for index in range(len(self._texture_paths))]
+
+    def _texture(self, index):
+        cached = self._textures.get(index)
+        if cached is None:
+            with Image.open(self._texture_paths[index]) as image:
+                cached = np.asarray(image.convert('RGBA'), dtype=np.float32) / 255
+            self._textures[index] = cached
+        return cached
+
     def mesh(self, row):
-        if not row['indices'] or not 0 <= row['texture'] < len(self.textures): return None
+        if not row['indices'] or not 0 <= row['texture'] < len(self._texture_paths): return None
         vertices = np.asarray(row['vertices'], dtype=np.float32)
         xy = (vertices[:, :2] - self.bounds[:2]) / self.bounds[2:]
         xy[:, 0] *= self.width
@@ -22,7 +41,7 @@ class Raster:
         right, bottom = np.minimum(np.ceil(xy.max(axis=0)), [self.width, self.height]).astype(int)
         if right <= left or bottom <= top: return None
         pixels = np.zeros((bottom-top, right-left, 4), dtype=np.float32)
-        texture = self.textures[row['texture']]
+        texture = self._texture(row['texture'])
         th, tw = texture.shape[:2]
         for tri in np.asarray(row['indices']).reshape(-1, 3):
             a, b, c = xy[tri]
@@ -31,21 +50,28 @@ class Raster:
             if np.any(hi <= lo): continue
             den = (b[1]-c[1])*(a[0]-c[0]) + (c[0]-b[0])*(a[1]-c[1])
             if abs(den) < 1e-8: continue
-            xx, yy = np.meshgrid(np.arange(lo[0], hi[0], dtype=np.float32)+.5, np.arange(lo[1], hi[1], dtype=np.float32)+.5)
-            w0 = ((b[1]-c[1])*(xx-c[0]) + (c[0]-b[0])*(yy-c[1])) / den
-            w1 = ((c[1]-a[1])*(xx-c[0]) + (a[0]-c[0])*(yy-c[1])) / den
-            w2 = 1-w0-w1
-            inside = (w0 >= -1e-6) & (w1 >= -1e-6) & (w2 >= -1e-6)
-            if not inside.any(): continue
+            # Same per-pixel math as before, evaluated in horizontal strips so
+            # a large triangle never materializes full-bbox float grids at once.
+            # Windows (CPU raster, no Metal GPU) OOMs/thrashes without this;
+            # decoded pixels are bit-identical, only peak RAM changes.
             uvs = vertices[tri, 2:]
-            uv = w0[inside,None]*uvs[0] + w1[inside,None]*uvs[1] + w2[inside,None]*uvs[2]
-            u = np.clip(uv[:,0]*tw-.5, 0, tw-1)
-            v = np.clip((1-uv[:,1])*th-.5, 0, th-1)
-            x, y = u.astype(int), v.astype(int)
-            x1, y1 = np.minimum(x+1, tw-1), np.minimum(y+1, th-1)
-            fx, fy = (u-x)[:,None], (v-y)[:,None]
-            color = (texture[y,x]*(1-fx)+texture[y,x1]*fx)*(1-fy) + (texture[y1,x]*(1-fx)+texture[y1,x1]*fx)*fy
-            pixels[lo[1]-top:hi[1]-top, lo[0]-left:hi[0]-left][inside] = color
+            xs = np.arange(lo[0], hi[0], dtype=np.float32) + .5
+            for y0 in range(lo[1], hi[1], _STRIP_H):
+                y1 = min(hi[1], y0 + _STRIP_H)
+                xx, yy = np.meshgrid(xs, np.arange(y0, y1, dtype=np.float32) + .5)
+                w0 = ((b[1]-c[1])*(xx-c[0]) + (c[0]-b[0])*(yy-c[1])) / den
+                w1 = ((c[1]-a[1])*(xx-c[0]) + (a[0]-c[0])*(yy-c[1])) / den
+                w2 = 1-w0-w1
+                inside = (w0 >= -1e-6) & (w1 >= -1e-6) & (w2 >= -1e-6)
+                if not inside.any(): continue
+                uv = w0[inside,None]*uvs[0] + w1[inside,None]*uvs[1] + w2[inside,None]*uvs[2]
+                u = np.clip(uv[:,0]*tw-.5, 0, tw-1)
+                v = np.clip((1-uv[:,1])*th-.5, 0, th-1)
+                x, y = u.astype(int), v.astype(int)
+                x1, y1b = np.minimum(x+1, tw-1), np.minimum(y+1, th-1)
+                fx, fy = (u-x)[:,None], (v-y)[:,None]
+                color = (texture[y,x]*(1-fx)+texture[y,x1]*fx)*(1-fy) + (texture[y1b,x]*(1-fx)+texture[y1b,x1]*fx)*fy
+                pixels[y0-top:y1-top, lo[0]-left:hi[0]-left][inside] = color
         return (left, top, right, bottom), pixels
 
     def render(self, rows, target):

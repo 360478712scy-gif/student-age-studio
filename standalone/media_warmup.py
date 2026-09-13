@@ -66,8 +66,14 @@ class MediaWarmup:
             self.attempts=data if isinstance(data, dict) else {}
         return self.attempts
 
+    @staticmethod
+    def _index_write(api, path, data):
+        # Recomputable warmup indexes skip fsync; same eventual bytes.
+        try: api.atomic_write(path, data, fsync=False)
+        except TypeError: api.atomic_write(path, data)
+
     def save_attempts(self, store):
-        try: store.asset_catalog.api.atomic_write(self.attempts_path(), store.asset_catalog.api.json_bytes(self.load_attempts()))
+        try: self._index_write(store.asset_catalog.api, self.attempts_path(), store.asset_catalog.api.json_bytes(self.load_attempts()))
         except OSError: pass
 
     def abandoned(self, key, signature):
@@ -118,18 +124,39 @@ class MediaWarmup:
 
     def files(self, roots, excluded):
         found = {}
+        # Reuse resolved paths within this scan. Exclusions must compare real
+        # paths: an ancestor alias can give the same directory another spelling.
+        _cache = {}
+        def _resolved(p):
+            try:
+                key = os.path.normcase(os.path.abspath(p))
+            except (OSError, ValueError):
+                key = str(p)
+            hit = _cache.get(key)
+            if hit is not None:
+                return hit
+            try:
+                value = Path(p).resolve()
+            except (OSError, ValueError):
+                value = Path(p)
+            if len(_cache) < 32768:
+                _cache[key] = value
+            return value
+        excluded_resolved = {_resolved(item) for item in excluded}
+        def _is_excluded(p):
+            return _resolved(p) in excluded_resolved
         for root in roots:
-            if not root.is_dir() or root.is_symlink() or root.resolve() in excluded: continue
+            if not root.is_dir() or root.is_symlink() or _is_excluded(root): continue
             for directory, dirs, files in os.walk(root, followlinks=False):
                 if self.stop.is_set(): return found
                 base = Path(directory)
                 dirs[:] = [n for n in dirs if not n.startswith('.') and n not in {'Backups','ModBackups','Exports','node_modules','__pycache__'}
-                           and not (base/n).is_symlink() and not (hasattr(base/n,'is_junction') and (base/n).is_junction()) and (base/n).resolve() not in excluded]
+                           and not (base/n).is_symlink() and not (hasattr(base/n,'is_junction') and (base/n).is_junction()) and not _is_excluded(base/n)]
                 for name in files:
                     p = base/name
                     if p.suffix.lower() not in MEDIA or p.is_symlink(): continue
                     try:
-                        s = p.stat(); found[str(p.resolve())] = [s.st_size, s.st_mtime_ns, s.st_ctime_ns]
+                        s = p.stat(); found[str(_resolved(p))] = [s.st_size, s.st_mtime_ns, s.st_ctime_ns]
                     except OSError: pass
         return found
 
@@ -146,7 +173,7 @@ class MediaWarmup:
                 return saved.get('warnings',[])
             return None
         saved={'signature':signature,'warnings':warnings,'retryAt':time.time()+300 if warnings else 0}
-        store.asset_catalog.api.atomic_write(path,store.asset_catalog.api.json_bytes(saved))
+        self._index_write(store.asset_catalog.api,path,store.asset_catalog.api.json_bytes(saved))
         self.checkpoints[str(path)]=saved
         return warnings
 
@@ -427,5 +454,5 @@ class MediaWarmup:
                 if output not in live_outputs and p.resolve().parent==preview_root: p.unlink(missing_ok=True)
         if entries!=previous:
             manifest.parent.mkdir(parents=True,exist_ok=True)
-            store.asset_catalog.api.atomic_write(manifest,store.asset_catalog.api.json_bytes(entries))
+            self._index_write(store.asset_catalog.api,manifest,store.asset_catalog.api.json_bytes(entries))
         return len(entries)

@@ -54,7 +54,9 @@ class AssetCatalog:
         self.store, self.api = store, backend
         self.settings_path = Path(settings_path or backend.settings_path().with_name('asset-folders.json'))
         self.cache = OrderedDict()
-        self.validation = {}
+        # Bounded LRU: evicted entries recompute byte-identical results.
+        self.validation = OrderedDict()
+        self._validation_cap = 5000
         self.image_hashes = {}
         self.hash_index = None
         self._hash_guard = threading.RLock()
@@ -162,7 +164,9 @@ class AssetCatalog:
         self._check_path(path, root)
         fingerprint = stamp(path)
         key = (str(path), fingerprint, "audio" if kind == "audio" else "image")
-        if key in self.validation: return self.validation[key]
+        if key in self.validation:
+            self.validation.move_to_end(key)
+            return self.validation[key]
         if fingerprint[1] <= 0 or fingerprint[1] > (48 if kind == 'audio' else 24) * 1024 * 1024:
             self.error('素材为空或超过大小限制（图片 24 MB、音频 48 MB）。', 413)
         if kind == 'audio':
@@ -183,7 +187,15 @@ class AssetCatalog:
                         frames, rate = audio.getnframes(), audio.getframerate()
                         if frames <= 0 or rate <= 0: raise ValueError()
                         expected = frames * audio.getnchannels() * audio.getsampwidth()
-                        if len(audio.readframes(frames)) != expected: raise ValueError()
+                        # Chunked read: same total-length verdict as one-shot
+                        # readframes(frames) but without a full-PCM transient.
+                        total, remaining = 0, frames
+                        while remaining > 0:
+                            chunk = audio.readframes(min(4096, remaining))
+                            if not chunk: break
+                            total += len(chunk)
+                            remaining -= min(4096, remaining)
+                        if total != expected: raise ValueError()
                         info['duration'] = frames / rate
                 except (wave.Error, EOFError, ValueError): self.error('WAV 音频不完整或无法解码。', 422)
         else:
@@ -192,17 +204,24 @@ class AssetCatalog:
             try:
                 with warnings.catch_warnings():
                     warnings.simplefilter('error', self.api.Image.DecompressionBombWarning)
-                    with self.api.Image.open(path) as image:
+                    # Single disk read; two decodes over identical bytes so the
+                    # accept/reject set matches the old double-open sequence
+                    # while halving Defender-scanned reads on Windows.
+                    data = path.read_bytes()
+                    with self.api.Image.open(io.BytesIO(data)) as image:
                         if image.format not in {'PNG', 'JPEG', 'WEBP'}:
                             self.error('图片实际格式必须为 PNG、JPEG 或 WebP。', 422)
                         info = {'width': image.width, 'height': image.height, 'size': fingerprint[1]}
                         image.verify()
-                    with self.api.Image.open(path) as image: image.load()
+                    with self.api.Image.open(io.BytesIO(data)) as image: image.load()
             except self.api.ApiError: raise
             except Exception: self.error('图片损坏或无法解码。', 422)
         if stamp(path) != fingerprint: self.error('读取时素材发生变化，请刷新列表。', 409, 'conflict')
         info['_fingerprint'] = fingerprint
         self.validation[key] = info
+        self.validation.move_to_end(key)
+        while len(self.validation) > self._validation_cap:
+            self.validation.popitem(last=False)
         return info
 
     def _resource(self, project, resource, kind, validate=False):
@@ -430,8 +449,15 @@ class AssetCatalog:
                 if not self._hash_pending:
                     self._hash_running = False
                     self._hash_generation += 1
-                    if len(self.image_hashes) > 20000: self.image_hashes.clear()
-                    try: self.api.atomic_write(self.hash_index_path, self.api.json_bytes(self.hash_index))
+                    if len(self.image_hashes) > 20000:
+                        # Insertion-order trim: drop oldest quarter
+                        # to avoid recompute stampedes; values recompute identically.
+                        for old in list(self.image_hashes)[:5000]:
+                            self.image_hashes.pop(old, None)
+                    try: self.api.atomic_write(self.hash_index_path, self.api.json_bytes(self.hash_index), fsync=False)
+                    except TypeError:
+                        try: self.api.atomic_write(self.hash_index_path, self.api.json_bytes(self.hash_index))
+                        except OSError: pass
                     except OSError: pass
                     return
                 (path, version), _ = self._hash_pending.popitem(last=False)
@@ -445,9 +471,16 @@ class AssetCatalog:
                 if valid: self.hash_index[str(path)] = {'stamp':list(version), 'hash':key}
                 self._hash_done += 1
                 self._hash_active = None
-                if self._hash_done % 16 == 0:
-                    try: self.api.atomic_write(self.hash_index_path, self.api.json_bytes(self.hash_index))
+                # Windows: fewer fsyncs, same final index content.
+                _interval = 64 if os.name == 'nt' else 16
+                if self._hash_done % _interval == 0:
+                    try: self.api.atomic_write(self.hash_index_path, self.api.json_bytes(self.hash_index), fsync=False)
+                    except TypeError:
+                        try: self.api.atomic_write(self.hash_index_path, self.api.json_bytes(self.hash_index))
+                        except OSError: pass
                     except OSError: pass
+            # Retain the existing yield interval; avoid adding fixed latency
+            # to every image before foreground responsiveness is measured.
             time.sleep(.01)
 
     def _deduplicate_backgrounds(self, items):

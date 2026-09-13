@@ -1,5 +1,6 @@
 """Extract Unity's original Live2D models and evaluate their expression animations without starting the game."""
 from storage_paths import game_cache, auxiliary_cache
+import gc
 import json
 import hashlib
 import os
@@ -12,9 +13,21 @@ from extract_game_assets import UnityPy,bundle_members,connect_dependencies
 from native_core import Model
 
 class Reader:
+ _MAX_ENVS=2
  def __init__(self,game):
   self.game=Path(game);self.home=game_cache(self.game);self.cache=self.home/'native-models-v1';self.cache.mkdir(parents=True,exist_ok=True)
-  self.bundles=sorted([p for folder in (self.game/'StudentAge_Data/StreamingAssets',self.game/'DLC') for p in folder.rglob('*.bundle')]);self.environments={};self.scripts={};self.config={}
+  self.bundles=sorted([p for folder in (self.game/'StudentAge_Data/StreamingAssets',self.game/'DLC') for p in folder.rglob('*.bundle')]);self.environments={};self.scripts={};self.config={};self._member_index=None
+ def _members(self):
+  # Reuse bundle headers when an environment is loaded or reloaded.
+  if self._member_index is None:
+   members={}
+   for p in self.bundles:
+    if 'l2d' in p.name:
+     try:
+      for name in bundle_members(p):members[name]=p
+     except (ValueError,OSError):pass
+   self._member_index=members
+  return self._member_index
  def configs(self):
   if self.config:return self.config
   for path in sorted((p for p in self.bundles if 'cfgs' in p.name),key=lambda p:('dlc' in str(p).lower(),str(p))):
@@ -27,12 +40,16 @@ class Reader:
     self.config.setdefault(key,{}).update(data)
   return self.config
  def environment(self,path):
-  if path not in self.environments:
-   env=UnityPy.load(str(path));members={}
-   for p in self.bundles:
-    if 'l2d' in p.name:
-     for name in bundle_members(p):members[name]=p
-   connect_dependencies(env,members);self.environments[path]=env
+  if path in self.environments:
+   self.environments[path]=self.environments.pop(path)
+   return self.environments[path]
+  env=UnityPy.load(str(path))
+  connect_dependencies(env,self._members());self.environments[path]=env
+  while len(self.environments)>self._MAX_ENVS:
+   self.environments.pop(next(iter(self.environments)))
+   # Script keys contain object identities; evicted environments can release
+   # those identities for reuse by a later bundle.
+   self.scripts.clear();gc.collect()
   return self.environments[path]
  def model_asset(self,name):
   for path in sorted((p for p in self.bundles if 'l2dmodels' in p.name),key=lambda p:('dlc' not in str(p).lower(),str(p))):
