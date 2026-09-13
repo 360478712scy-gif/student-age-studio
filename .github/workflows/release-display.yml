@@ -1,0 +1,43 @@
+name: Set latest full-client release
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/release-display.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: full-client-release-display
+  cancel-in-progress: false
+jobs:
+  display:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set verified full-client download as Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          repo=os.environ['GITHUB_REPOSITORY']
+          version=json.loads(Path('.github/desktop-release.json').read_text())['version']
+          tag=version if version.startswith('beta-') else 'v'+version
+          def api(path, payload=None):
+              args=['gh','api',f'repos/{repo}/'+path]
+              if payload is not None: args+=['--method','PATCH','--input','-']
+              return json.loads(subprocess.check_output(args,input=json.dumps(payload).encode() if payload is not None else None))
+          release=api('releases/tags/'+tag)
+          expected={f'StudentAgeStudio-Windows-x64-{version}.zip',f'StudentAgeStudio-Mac-arm64-{version}.zip'}
+          assert not release['draft'] and expected <= {a['name'] for a in release['assets'] if a['state']=='uploaded' and a['size']>0}, 'Both complete clients must already be published'
+          assets=lambda r: sorted((a['id'],a['name'],a['size'],a.get('digest'),a['browser_download_url']) for a in r['assets'])
+          intro=f'> 当前完整安装包：{version}。安装后可在软件内获取最新轻量更新。\n\n'
+          body=release.get('body') or ''
+          if not body.startswith(intro): body=intro+body
+          changed=api('releases/'+str(release['id']),{'prerelease':False,'make_latest':'true','name':f'拾光工坊 {version} · 完整客户端','body':body})
+          assert assets(changed)==assets(release), 'Download assets must remain unchanged'
+          latest=api('releases/latest')
+          assert latest['id']==release['id'] and latest['tag_name']==tag
+          print(json.dumps({'latest':tag,'assetsUnchanged':True,'url':latest['html_url']},ensure_ascii=False))
+          PY

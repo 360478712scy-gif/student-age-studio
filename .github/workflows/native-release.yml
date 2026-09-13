@@ -149,4 +149,4 @@ jobs:
           '''
           Path('release-notes.md').write_text(text,encoding='utf-8')
           PY
-          gh release edit "$TAG" --title "拾光工坊 $VERSION" --notes-file release-notes.md
+          gh release edit "$TAG" --title "拾光工坊 $VERSION · 完整客户端" --notes-file release-notes.md --prerelease=false --latest
