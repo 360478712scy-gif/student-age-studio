@@ -169,11 +169,14 @@ function addTalk(duplicate=false,options={}) {
   if(!editable())return;if(S.activeFolder)return addFolderTalk(S.activeFolder,duplicate,S.selected,options);const current=talk();if(!duplicate&&ids(current?.option).length){if(current.miniGame?.length){toast('这句带小游戏，请在对应对话夹里添加后续内容。','note');return;}return addAfterBranches(current,options);}
   const previousStage=current?currentStage():null;
   mutate(options.cgId?'添加 CG':options.blank?'添加空白对话':duplicate?'复制对话':'添加对话',()=>{
-    const id=newTalkId(),item=duplicate&&current?normalizeTalk(clone(current)):continuationTalk(id,current,previousStage,options.blank);item.id=id;if(options.cgId){item.screenEffect=[4015,Number(options.cgId)];item.roleIds=[];item.roleName='';item.highlights=[];}
+    const roots=!current?ids(S.doc.events[S.event]?.talkId).filter(id=>id>0):[],entry=roots[0];
+    const adopted=entry!==undefined&&!S.deleted.includes(entry)&&!roots.some(id=>S.doc.talks[id])&&STUDIO_IDS.claim('TalkCfg',entry,S.doc.talks);
+    const id=adopted?entry:newTalkId(),item=duplicate&&current?normalizeTalk(clone(current)):continuationTalk(id,current,previousStage,options.blank);item.id=id;if(options.cgId){item.screenEffect=[4015,Number(options.cgId)];item.roleIds=[];item.roleName='';item.highlights=[];}
+    if(roots.length)S.pinned.talks.add(id);
     if(duplicate && current){item.check=[];item.nextTalk2=[];item.option=[];for(const oid of ids(current.option)){const old=S.doc.options[oid];if(!old)continue;const newId=nextId(S.doc.options,eventForTalk()*100+1);S.doc.options[newId]={...clone(old),id:newId};item.option.push(newId);}}
     item.nextTalk=current?Timeline.next(S.doc,S.branchFolders,current.id):[];
     if(current)Timeline.setNext(S.doc,S.branchFolders,current.id,[id]);
-    else if(S.event!=='all'&&S.doc.events[S.event]){const e=S.doc.events[S.event];e.talkId=[...ids(e.talkId),id];}
+    else if(S.event!=='all'&&S.doc.events[S.event]){const e=S.doc.events[S.event];e.talkId=adopted?[...new Set(roots)]:[id,...ids(e.talkId).filter(old=>old>0&&old!==id)];}
     S.doc.talks[id]=item;if(phoneEvent()&&ids(phoneEvent().talkId)[0]===id)configurePhone(phoneEvent());const index=current?blockEnd(current.id):S.order.indexOf(S.selected);S.order.splice(index<0?S.order.length:index+1,0,id);if(options.cgId)closeCGBeforeFollowing(item);S.selected=id;S.search='';$('#talk-search').value='';
   });
   setTimeout(()=>$('#scene-dialogue-content')?.focus(),0);
@@ -250,7 +253,8 @@ function renumberPlan(eventId){
   const localTalks=localStoryIds('talks'),localOptions=localStoryIds('options');
   // Hand-set IDs are never touched; sequential numbers skip anything a pinned row or another local row holds.
   // An original (catalogue) row with the same number is allowed: the mod row overrides it and the card says so.
-  const talkMap={},domain=new Set(talksInOrder),takenTalks=new Set([...S.pinned.talks,...Object.keys(S.doc.talks).map(Number).filter(id=>localTalks.has(id)&&!domain.has(id))]);
+  const missingEntries=values(S.doc.events).flatMap(e=>ids(e.talkId)).filter(id=>id>0&&!S.doc.talks[id]);
+  const talkMap={},domain=new Set(talksInOrder),takenTalks=new Set([...S.pinned.talks,...missingEntries,...Object.keys(S.doc.talks).map(Number).filter(id=>localTalks.has(id)&&!domain.has(id))]);
   // A pinned line still occupies its position in the sequence, so the lines around it keep their numbers.
   let n=0;for(const id of talksInOrder){if(S.pinned.talks.has(id)){n++;continue;}let fresh;do{n++;fresh=eventId*1000+n;}while(takenTalks.has(fresh)&&fresh!==id);
     if(n>999||fresh>2147483647){if(!renumberWarned.has(eventId)){renumberWarned.add(eventId);toast('本事件对话超过 999 句，无法继续自动编号。','note');}return null;}

@@ -58,7 +58,7 @@ jobs:
           import hashlib,json,os
           from pathlib import Path
           p=Path('/tmp/studio-feed/student-age-studio-update.zip');data=p.read_bytes()
-          feed={'format':1,'runtimeAbi':1,'version':os.environ['RELEASE_TAG'],'commit':os.environ['PAYLOAD_COMMIT'],'sha256':hashlib.sha256(data).hexdigest(),'size':len(data),'notes':'资源读取、缓存与人物渲染优化由若心知（ruoxingzhi，PR #1）贡献，感谢若心知 🙏。Codex 完成保存冲突保护、目录排除与资源释放修复，并补充回归验证；保留 beta-1.3.3 的空白对话修复。'}
+          feed={'format':1,'runtimeAbi':1,'version':os.environ['RELEASE_TAG'],'commit':os.environ['PAYLOAD_COMMIT'],'sha256':hashlib.sha256(data).hexdigest(),'size':len(data),'notes':'修复内置编辑器空事件框架被误判为外部对话入口的问题：可直接添加首句，沿用空闲预留编号，保留已占用入口与其他模组引用。保存重开、撤销重做和四主题检查通过。保留此前电话兼容修复及若心知（ruoxingzhi，PR #1）的性能优化，感谢贡献。'}
           Path('/tmp/studio-feed/latest.json').write_text(json.dumps(feed,ensure_ascii=False,indent=2),encoding='utf-8')
           PYFEED
           git -C /tmp/studio-feed add latest.json
