@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 META = 'externalDialogueFolders'
-SCHEMAS = json.loads(Path(__file__).with_name('external-usage-schema.json').read_text())
+SCHEMAS = json.loads(Path(__file__).with_name('external-usage-schema.json').read_text(encoding='utf-8'))
 DEFINITIONS = []
 def define(kind, label, table, field, shape='pair', fields=(), **extra):
     DEFINITIONS.append(dict(kind=kind, label=label, table=table, field=field, shape=shape, fields=list(fields), **extra))

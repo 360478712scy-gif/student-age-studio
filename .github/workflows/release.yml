@@ -10,7 +10,21 @@ concurrency:
   group: publish-code-update
   cancel-in-progress: false
 jobs:
+  validate:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'certifi>=2026.2.25' 'Pillow==12.3.0' 'numpy>=2,<3'
+      - run: python -B -m unittest discover -s standalone/tests -p test_app_updates.py
+      - run: python -B -m unittest discover -s standalone/tests -p test_external_usages.py
   publish:
+    needs: validate
     outputs:
       tag: ${{ steps.version.outputs.tag }}
     runs-on: ubuntu-latest
