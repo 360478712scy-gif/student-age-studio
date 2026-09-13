@@ -173,6 +173,9 @@ class RecordIds:
         schema = self.store.table_schema(table)
         fields = {f['name']: f for f in schema.get('fields', [])}
         explicit = {'TalkCfg': {'nextTalk':'TalkCfg','nextTalk2':'TalkCfg','option':'OptionCfg','roleIds':'PersonCfg','highlights':'PersonCfg','bg':'BgCfg','audio':'AudioCfg','vocals':'AudioCfg'},
+                    'NegotiationCfg':{'talks':'TalkCfg','talks2':'TalkCfg'},
+                    'TalkInputMinigameCfg':{'talkId':'TalkCfg','jumps':'TalkCfg'},
+                    'LoveDrawCfg':{'talkId':'TalkCfg'}, 'LoveGreetingCfg':{'talkId':'TalkCfg'}, 'NpcActivityCfg':{'talkId':'TalkCfg'},
                     'MinigameActionCfg':{'startTalk':'TalkCfg','winTalk':'TalkCfg','loseTalk':'TalkCfg'},
                     'OptionCfg': {'talkId':'TalkCfg','talkId2':'TalkCfg','nextEvtId':'EvtCfg'},
                     'EvtCfg': {'talkId':'TalkCfg','options':'OptionCfg','npc':'PersonCfg'}, 'ActionCfg':{'evtId':'EvtCfg'}, 'ActionEvtCfg':{'evts':'EvtCfg'}, POST:{'role':'PersonCfg','options':COMMENT},
@@ -279,8 +282,25 @@ class RecordIds:
                     for outfit in outfits.values():
                         outfit['backgrounds']=m('BgCfg',outfit.get('backgrounds',[]))
             elif filename=='editor-state.json':
+                if 'externalDialogueIds' in data:data['externalDialogueIds']=m('TalkCfg',data['externalDialogueIds'])
                 for folder in data.get('externalDialogueFolders',{}).values():
                     if 'talkIds' in folder:folder['talkIds']=m('TalkCfg',folder['talkIds'])
+                    from external_usages import KINDS
+                    for use in folder.get('uses',[]):
+                        definition=KINDS.get(use.get('kind'))
+                        if not definition:continue
+                        target_table=definition['table']
+                        if 'entryId' in use:use['entryId']=m('TalkCfg',use['entryId'])
+                        if 'recordId' in use:use['recordId']=m(target_table,use['recordId'])
+                        if 'npc' in use:use['npc']=m('PersonCfg',use['npc'])
+                        if 'item' in use:use['item']=self.remap(use['item'],{**mappings.get('ItemCfg',{}),**mappings.get('BookCfg',{})})
+                        for field in ('params','baseParams'):
+                            if field in use:use[field]=self.rewrite(target_table,{'0':use[field]},mappings)['0']
+                        target=use.get('_target')
+                        if target:
+                            target['recordId']=m(target_table,target['recordId'])
+                            target['previous']=m('TalkCfg',target['previous'])
+                            target['written']=m('TalkCfg',target['written'])
                 if 'talkOwners' in data:data['talkOwners']={str(m('TalkCfg',int(k))):m('EvtCfg',v) for k,v in data['talkOwners'].items()}
                 if 'order' in data: data['order']=m('TalkCfg',data['order'])
                 if 'lighting' in data:data['lighting']={str(m('TalkCfg',int(k))):{str(m('PersonCfg',int(role))):v for role,v in actors.items()} for k,actors in data['lighting'].items()}

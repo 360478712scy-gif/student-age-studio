@@ -5,7 +5,7 @@ from pathlib import Path
 
 _lock = threading.RLock()
 _cached = {}
-TABLES = ('PersonalityTypeCfg', 'ScoreRankCfg', 'GradeCfg', 'ItemTypeCfg', 'MinigameCfg', 'MinigameActionCfg', 'KZoneFontCfg', 'GuideCfg', 'PuzzleMinigameCfg')
+TABLES = ('PersonalityTypeCfg', 'ScoreRankCfg', 'GradeCfg', 'ItemTypeCfg', 'MinigameCfg', 'MinigameActionCfg', 'KZoneFontCfg', 'GuideCfg', 'PuzzleMinigameCfg', 'LoveDrawCfg', 'LoveGreetingCfg', 'NpcActivityCfg', 'TalkInputMinigameCfg')
 
 
 def native_rules(game):

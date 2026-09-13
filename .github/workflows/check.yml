@@ -18,5 +18,6 @@ jobs:
       - run: python -B -m unittest discover -s standalone/tests -p test_ui_resources.py
       - run: python -B -m unittest discover -s standalone/tests -p test_user_chains.py
       - run: python -B -m unittest discover -s standalone/tests -p test_pr_regressions.py
+      - run: python -B -m unittest discover -s standalone/tests -p test_external_usages.py
       - run: node qa/tests/scene-engine.cjs
       - run: python -B tools/build_update.py --out release/student-age-studio-update.zip

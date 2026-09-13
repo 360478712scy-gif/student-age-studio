@@ -1601,8 +1601,16 @@ class StudioStore:
             if 'externalDialogueFolders' in payload:
                 from external_dialogues import folders as external_folders
                 external_owners=self.load(project.id).get('talkOwners',{})
-                external_rows={k:v for k,v in all_maps.get('TalkCfg.json',{}).items() if not external_owners.get(k)}
-                state['externalDialogueFolders']=external_folders(payload['externalDialogueFolders'],external_rows,sys.modules[__name__])
+                previous_external=state.get('externalDialogueFolders',{})
+                shared_external={str(i) for f in previous_external.values() if f.get('uses') for i in f.get('talkIds',[])} | {str(i) for i in state.get('externalDialogueIds',[])}
+                external_rows={k:v for k,v in all_maps.get('TalkCfg.json',{}).items() if not external_owners.get(k) or k in shared_external}
+                groups=external_folders(payload['externalDialogueFolders'],external_rows,sys.modules[__name__])
+                if 'externalDialogueIds' in payload:
+                    external_ids=payload['externalDialogueIds']
+                    if not isinstance(external_ids,list) or any(type(i)!=int or str(i) not in external_rows for i in external_ids):raise ApiError('事件外对话归属无效。')
+                    state['externalDialogueIds']=sorted(set(external_ids))
+                from external_usages import apply as apply_external_uses
+                state['externalDialogueFolders']=apply_external_uses(self,project,groups,previous_external,all_maps,touched,sys.modules[__name__])
             if "protagonistGender" in payload:
                 gender=payload["protagonistGender"]
                 if type(gender) is not int or gender not in (1,2): gender = 1
@@ -3601,6 +3609,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                 from goal_ui import resources, resource_file
                 name = query.get("resource", [""])[0]
                 return self.send_file(resource_file(name, self.server.store.game)) if name else self.send_json(resources(self.server.store.game))
+            if route == '/api/external-dialogue-uses':
+                import external_usages
+                return self.send_json(external_usages.catalog(self.server.store,query.get('projectId',[''])[0],sys.modules[__name__]))
             if route == '/api/external-dialogues':
                 import external_dialogues
                 return self.send_json(external_dialogues.load(self.server.store,query.get('projectId',[''])[0],sys.modules[__name__]))
@@ -3628,7 +3639,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 page = page.replace("</head>", bootstrap + "</head>", 1) if "</head>" in page else bootstrap + page
                 policy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval' 'nonce-" + nonce + "'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
                 return self.send_data(page.encode(), "text/html; charset=utf-8", extra={"Content-Security-Policy": policy})
-            if route in ("/character-images.js", "/external-dialogues.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-ui.css", "/locations.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
+            if route in ("/character-images.js", "/external-dialogues.js", "/external-uses.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-ui.css", "/locations.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
                 file = self.server.web_root / route.lstrip("/")
                 if file.is_file():
                     data = file.read_bytes()

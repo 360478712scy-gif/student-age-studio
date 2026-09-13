@@ -20,9 +20,10 @@ def folders(value,talks,api):
 def load(store,project_id,api):
     with store.lock,store.catalog_scope():
         project=store.project(project_id);doc=store.load(project.id);table=store.table(project.id,'TalkCfg')
-        talks={k:v for k,v in table['localRows'].items() if not doc.get('talkOwners',{}).get(k)}
         state=api.read_json(api.safe_path(project.path,'StudentAgeStudio/editor-state.json'),{})
         groups=copy.deepcopy(state.get(META,{}));used=set()
+        shared={str(i) for f in groups.values() if f.get('uses') for i in f.get('talkIds',[])} | {str(i) for i in state.get('externalDialogueIds',[])}
+        talks={k:v for k,v in table['localRows'].items() if not doc.get('talkOwners',{}).get(k) or k in shared}
         for group in groups.values():
             keep=[]
             for ident in group.get('talkIds',[]):
@@ -36,9 +37,9 @@ def save(store,payload,api):
         project=store.project(payload.get('projectId'),writable=True);current=load(store,project.id,api)
         if current['revision']!=payload.get('revision'):raise api.ApiError('对话已经被其他窗口修改，请重新打开。',409,'conflict')
         incoming=api.validate_map(payload.get('talks',{}),'TalkCfg.json')
-        if any(current['doc'].get('talkOwners',{}).get(k) for k in incoming):raise api.ApiError('事件所属对话请在剧情编辑中修改。',409)
+        if any(current['doc'].get('talkOwners',{}).get(k) and k not in current['talks'] for k in incoming):raise api.ApiError('事件所属对话请在剧情编辑中修改。',409)
         groups=folders(payload.get('folders',{}),incoming,api)
         removed=set(current['talks'])-set(incoming)
         talks={k:v for k,v in current['doc']['talks'].items() if k not in removed};talks.update(incoming)
-        result=store.save({'projectId':project.id,'revision':payload['revision'],'talks':talks,'deletedIds':[int(k) for k in removed],META:groups})
+        result=store.save({'projectId':project.id,'revision':payload['revision'],'talks':talks,'deletedIds':[int(k) for k in removed],META:groups,'externalDialogueIds':[int(k) for k in incoming]})
         return {**load(store,project.id,api),'ok':True,'warnings':result.get('warnings',[])}

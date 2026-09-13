@@ -1,0 +1,1675 @@
+{
+  "GiftEvtCfg": {
+    "fields": [
+      {
+        "name": "cond",
+        "label": "触发条件",
+        "type": "list<list<double>>",
+        "default": [],
+        "editorType": "Condition",
+        "listDepth": 2
+      },
+      {
+        "name": "id",
+        "label": "编号",
+        "type": "int",
+        "default": 0,
+        "editorType": "Default",
+        "listDepth": 0
+      },
+      {
+        "name": "item",
+        "label": "礼物物品",
+        "type": "int",
+        "default": 0,
+        "editorType": "Default",
+        "listDepth": 0,
+        "range": {
+          "table": "ItemCfg / BookCfg"
+        }
+      },
+      {
+        "name": "npc",
+        "label": "收礼人",
+        "type": "list<int>",
+        "default": [],
+        "editorType": "Default",
+        "listDepth": 1,
+        "range": {
+          "table": "PersonCfg"
+        }
+      },
+      {
+        "name": "redpoint",
+        "label": "显示提示",
+        "type": "int",
+        "default": 0,
+        "editorType": "Default",
+        "listDepth": 0
+      },
+      {
+        "name": "talkId",
+        "label": "送礼对话",
+        "type": "list<list<int>>",
+        "default": [],
+        "editorType": "Default",
+        "listDepth": 2,
+        "range": {
+          "table": "TalkCfg"
+        }
+      },
+      {
+        "name": "type",
+        "label": "赠送方式",
+        "type": "list<int>",
+        "default": [],
+        "editorType": "Default",
+        "listDepth": 1
+      }
+    ],
+    "label": "送礼对话"
+  },
+  "InteractCfg": {
+    "fields": [
+      {
+        "name": "id",
+        "label": "ID",
+        "type": "int",
+        "editorType": "Default",
+        "description": "ID由7位数字组成，\n左边第一位固定为1\n例如：1XXXXXX\n建议设置一个随机的数字，避免和其他mod重复",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "npc",
+        "label": "人物ID",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0,
+        "range": {
+          "table": "PersonCfg"
+        }
+      },
+      {
+        "name": "name",
+        "label": "备注",
+        "type": "string",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "text",
+        "label": "标题",
+        "type": "string",
+        "editorType": "Default",
+        "description": "建议格式：\n正在和某人一起干某事\n\n参考：\n正在和谭梓君一起逛商场\n正在和肖清雅一起寻宝\n正在跟罗晓纯一本正经地开玩笑",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "map",
+        "label": "发生地点",
+        "type": "list<int>",
+        "editorType": "Default",
+        "description": "指定地点出现此文本，不填表示任意地点\n可填多个，用逗号分隔\n\n填写以下ID\n1: 家\n2: 学校教学楼\n3: 学校操场\n4: 欣欣小卖部\n5: 百乐门游戏厅\n6: 新华书店\n7: 好宜多商场\n8: 星河电影院\n9: 鹅城博物馆\n10: 黄金海滩\n11: 长隆游乐园\n12: 鹅城客运站\n17: 双子峰\n101: 新开发区\n102: 南城名苑\n103: 老城区\n7002: 2楼服装区\n7003: 3楼娱乐区\n7004: 4楼达万影城\n17002: 祈福树\n17003: 山脚",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1,
+        "range": {
+          "table": "MapCfg"
+        }
+      },
+      {
+        "name": "talkId",
+        "label": "触发对话id",
+        "type": "int",
+        "editorType": "Default",
+        "description": "进度条结束后出现的对话",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "cond",
+        "label": "前提",
+        "type": "list<list<double>>",
+        "editorType": "Condition",
+        "description": "若不为空，需满足条件才可出现\n若为空，总是可出现",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "effect",
+        "label": "效果",
+        "type": "list<list<float>>",
+        "editorType": "Effect",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      }
+    ],
+    "label": "NPC社交进度条文本"
+  },
+  "ItemCfg": {
+    "fields": [
+      {
+        "name": "id",
+        "label": "ID",
+        "type": "int",
+        "editorType": "Default",
+        "description": "ID由7位数字组成，\n左边第一位固定为1\n例如：1XXXXXX\n建议设置一个随机的数字，避免和其他mod重复",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "name",
+        "label": "名称",
+        "type": "string",
+        "editorType": "Default",
+        "description": "",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "icon",
+        "label": "图片",
+        "type": "string",
+        "editorType": "Image",
+        "description": "建议分辨率：150x150像素且背景透明的png",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "type",
+        "label": "类型",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0,
+        "range": {
+          "table": "ItemTypeCfg"
+        }
+      },
+      {
+        "name": "itemTag",
+        "label": "标签",
+        "type": "list<int>",
+        "editorType": "Other",
+        "description": "影响送礼的好感获取，可拥有多个标签，用逗号分隔",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1
+      },
+      {
+        "name": "effect",
+        "label": "持续效果",
+        "type": "list<list<float>>",
+        "editorType": "Effect",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2,
+        "dependsOn": {
+          "field": "type",
+          "values": [
+            2,
+            4
+          ]
+        }
+      },
+      {
+        "name": "usingEffect",
+        "label": "使用效果",
+        "type": "list<list<float>>",
+        "editorType": "Effect",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2,
+        "dependsOn": {
+          "field": "type",
+          "values": [
+            1
+          ]
+        }
+      },
+      {
+        "name": "value",
+        "label": "价值",
+        "type": "float",
+        "editorType": "Default",
+        "description": "价值越高，送礼获得的好感越高\n-1表示不可赠送",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": -1.0,
+        "listDepth": 0
+      },
+      {
+        "name": "sell",
+        "label": "售价",
+        "type": "float",
+        "editorType": "Default",
+        "description": "跳蚤市场的售价\n-1表示不可出售",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": -1.0,
+        "listDepth": 0
+      },
+      {
+        "name": "desc",
+        "label": "简介",
+        "type": "string",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "talkId",
+        "label": "触发对话id",
+        "type": "int",
+        "editorType": "Default",
+        "description": "生效时触发的对话id",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "maxcount",
+        "label": "最大拥有数量",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": true,
+        "advanced": false,
+        "default": 1,
+        "listDepth": 0
+      },
+      {
+        "name": "btn",
+        "label": "btn",
+        "type": "string",
+        "editorType": "Text",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "clothType",
+        "label": "clothType",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "needDLC",
+        "label": "needDLC",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "precondition",
+        "label": "precondition",
+        "type": "list<list<double>>",
+        "editorType": "Condition",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "rarity",
+        "label": "rarity",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "sex",
+        "label": "sex",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "subType",
+        "label": "subType",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": 0,
+        "listDepth": 0
+      }
+    ],
+    "label": "物品"
+  },
+  "IntentCfg": {
+    "fields": [
+      {
+        "name": "id",
+        "label": "ID",
+        "type": "int",
+        "editorType": "Default",
+        "description": "ID由7位数字组成，\n左边第一位固定为1\n例如：1XXXXXX\n建议设置一个随机的数字，避免和其他mod重复",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "name",
+        "label": "标题",
+        "type": "string",
+        "editorType": "Default",
+        "description": "",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "group",
+        "label": "组别",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": true,
+        "advanced": false,
+        "default": 999,
+        "listDepth": 0
+      },
+      {
+        "name": "reward",
+        "label": "奖励",
+        "type": "list<list<float>>",
+        "editorType": "Effect",
+        "description": "见文档中的“效果”格式",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "desc",
+        "label": "描述",
+        "type": "string",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "demand",
+        "label": "要求",
+        "type": "list<list<double>>",
+        "editorType": "Condition",
+        "description": "见文档中的“前提/判断”格式",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "npc",
+        "label": "人物ID",
+        "type": "int",
+        "editorType": "Other",
+        "description": "影响目标面板显示谁的头像",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0,
+        "range": {
+          "table": "PersonCfg"
+        }
+      },
+      {
+        "name": "finishType",
+        "label": "移除规则",
+        "type": "int",
+        "editorType": "Default",
+        "description": "0：完成时领取奖励后移除\n1：完成时自动移除\n2：只能用效果移除",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "round",
+        "label": "持续回合",
+        "type": "int",
+        "editorType": "Default",
+        "description": "持续指定回合数，超过则失败\n若为0，表示持续存在",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "before",
+        "label": "前置内容",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "condition",
+        "label": "出现条件",
+        "type": "list<list<double>>",
+        "editorType": "Condition",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "fail",
+        "label": "失败效果",
+        "type": "list<list<float>>",
+        "editorType": "Effect",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "failTalk",
+        "label": "失败对话",
+        "type": "list<int>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": [],
+        "listDepth": 1
+      },
+      {
+        "name": "finishTalk",
+        "label": "完成对话",
+        "type": "list<int>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": [],
+        "listDepth": 1
+      },
+      {
+        "name": "next",
+        "label": "后续目标组",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "renshengguan",
+        "label": "关联人生观",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "tag",
+        "label": "标签",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "targetRound",
+        "label": "目标回合",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "weight",
+        "label": "权重",
+        "type": "float",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": 0.0,
+        "listDepth": 0
+      }
+    ],
+    "label": "目标"
+  },
+  "MinigameActionCfg": {
+    "fields": [
+      {
+        "name": "cost",
+        "type": "float",
+        "label": "消耗",
+        "default": 0
+      },
+      {
+        "name": "effect",
+        "type": "list<list<float>>",
+        "label": "触发效果",
+        "default": [],
+        "editorType": "Effect"
+      },
+      {
+        "name": "id",
+        "type": "int",
+        "label": "id",
+        "default": 0
+      },
+      {
+        "name": "loseTalk",
+        "type": "int",
+        "label": "失败对话",
+        "default": 0
+      },
+      {
+        "name": "mode",
+        "type": "int",
+        "label": "玩法模式",
+        "default": 0
+      },
+      {
+        "name": "needRelation",
+        "type": "int",
+        "label": "关系要求",
+        "default": 0,
+        "range": {
+          "table": "RelationCfg"
+        }
+      },
+      {
+        "name": "parms",
+        "type": "list<float>",
+        "label": "玩法参数",
+        "default": []
+      },
+      {
+        "name": "startTalk",
+        "type": "int",
+        "label": "开场对话",
+        "default": 0
+      },
+      {
+        "name": "winTalk",
+        "type": "int",
+        "label": "胜利对话",
+        "default": 0
+      }
+    ],
+    "label": "社交小游戏阶段"
+  },
+  "NegotiationCfg": {
+    "fields": [
+      {
+        "name": "before",
+        "label": "前置交涉",
+        "type": "int",
+        "section": "内容设置",
+        "default": 0,
+        "range": {
+          "table": "NegotiationCfg"
+        }
+      },
+      {
+        "name": "condition",
+        "label": "触发条件",
+        "type": "list<list<double>>",
+        "section": "条件与效果",
+        "default": [],
+        "visualList": true,
+        "editorType": "Condition",
+        "listDepth": 2
+      },
+      {
+        "name": "condition2",
+        "label": "阶段要求",
+        "type": "int",
+        "section": "内容设置",
+        "default": 0
+      },
+      {
+        "name": "difficulty",
+        "label": "难度",
+        "type": "float",
+        "section": "内容设置",
+        "default": 0
+      },
+      {
+        "name": "effect1",
+        "label": "完成效果",
+        "type": "list<list<float>>",
+        "section": "条件与效果",
+        "default": [],
+        "visualList": true,
+        "editorType": "Effect",
+        "listDepth": 2
+      },
+      {
+        "name": "group",
+        "label": "所属组",
+        "type": "int",
+        "section": "内容设置",
+        "default": 0
+      },
+      {
+        "name": "id",
+        "label": "编号",
+        "type": "int"
+      },
+      {
+        "name": "lv",
+        "label": "等级",
+        "type": "int",
+        "section": "内容设置",
+        "default": 0
+      },
+      {
+        "name": "name",
+        "label": "行动名称",
+        "type": "string",
+        "section": "内容设置",
+        "default": ""
+      },
+      {
+        "name": "name1",
+        "label": "备用名称",
+        "type": "string",
+        "section": "内容设置",
+        "default": ""
+      },
+      {
+        "name": "tag",
+        "label": "标签",
+        "type": "string",
+        "section": "内容设置",
+        "default": ""
+      },
+      {
+        "name": "talks",
+        "label": "交涉对话",
+        "type": "list<int>",
+        "section": "内容设置",
+        "default": [],
+        "visualList": true,
+        "range": {
+          "table": "TalkCfg"
+        }
+      },
+      {
+        "name": "talks2",
+        "label": "备用对话",
+        "type": "list<int>",
+        "section": "内容设置",
+        "default": [],
+        "visualList": true,
+        "range": {
+          "table": "TalkCfg"
+        }
+      },
+      {
+        "name": "type",
+        "label": "行动类型",
+        "type": "int",
+        "section": "内容设置",
+        "default": 0
+      }
+    ],
+    "label": "交涉行动"
+  },
+  "CGCfg": {
+    "fields": [
+      {
+        "name": "id",
+        "label": "ID",
+        "type": "int",
+        "editorType": "Default",
+        "description": "ID由7位数字组成，\n左边第一位固定为1\n例如：1XXXXXX\n建议设置一个随机的数字，避免和其他mod重复",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "name",
+        "label": "名称",
+        "type": "string",
+        "editorType": "Default",
+        "description": "",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "urls",
+        "label": "图片",
+        "type": "list<string>",
+        "editorType": "Image",
+        "description": "建议分辨率：1920x1080或2560x1440",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1
+      },
+      {
+        "name": "group",
+        "label": "组别",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": true,
+        "advanced": false,
+        "default": 3,
+        "listDepth": 0
+      },
+      {
+        "name": "gender",
+        "label": "筛选",
+        "type": "int",
+        "editorType": "Default",
+        "description": "用于同学录筛选性别\n0：男女主通用CG\n1：男主限定CG\n2：女主限定CG",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "comic",
+        "label": "漫画配置",
+        "type": "list<int>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": [],
+        "listDepth": 1
+      },
+      {
+        "name": "idx",
+        "label": "排序",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "move",
+        "label": "移动配置",
+        "type": "list<int>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": [],
+        "listDepth": 1
+      },
+      {
+        "name": "startTalks",
+        "label": "回忆对话",
+        "type": "list<int>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": true,
+        "default": [],
+        "listDepth": 1
+      }
+    ],
+    "label": "CG图"
+  },
+  "LoveDrawCfg": {
+    "fields": [
+      {
+        "name": "color",
+        "type": "string",
+        "label": "显示颜色",
+        "default": ""
+      },
+      {
+        "name": "cond",
+        "type": "list<list<double>>",
+        "label": "触发条件",
+        "default": [],
+        "editorType": "Condition"
+      },
+      {
+        "name": "id",
+        "type": "int",
+        "label": "id",
+        "default": 0
+      },
+      {
+        "name": "img",
+        "type": "string",
+        "label": "绘画图片",
+        "default": ""
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "label": "name",
+        "default": ""
+      },
+      {
+        "name": "talkId",
+        "type": "list<int>",
+        "label": "对话入口",
+        "default": []
+      },
+      {
+        "name": "video",
+        "type": "string",
+        "label": "视频路径",
+        "default": ""
+      }
+    ],
+    "label": "恋爱绘画"
+  },
+  "LoveGreetingCfg": {
+    "fields": [
+      {
+        "name": "cond",
+        "type": "list<list<double>>",
+        "label": "触发条件",
+        "default": [],
+        "editorType": "Condition"
+      },
+      {
+        "name": "id",
+        "type": "int",
+        "label": "id",
+        "default": 0
+      },
+      {
+        "name": "scenes",
+        "type": "list<int>",
+        "label": "场景",
+        "default": [],
+        "range": {
+          "table": "BgCfg"
+        }
+      },
+      {
+        "name": "talkId",
+        "type": "int",
+        "label": "对话入口",
+        "default": 0
+      }
+    ],
+    "label": "恋爱问候（原版预留）"
+  },
+  "NpcActivityCfg": {
+    "fields": [
+      {
+        "name": "appearRate",
+        "type": "float",
+        "label": "出现概率",
+        "default": 0
+      },
+      {
+        "name": "cnt",
+        "type": "int",
+        "label": "发生次数",
+        "default": 0
+      },
+      {
+        "name": "cond",
+        "type": "list<list<double>>",
+        "label": "触发条件",
+        "default": [],
+        "editorType": "Condition"
+      },
+      {
+        "name": "id",
+        "type": "int",
+        "label": "id",
+        "default": 0
+      },
+      {
+        "name": "map",
+        "type": "int",
+        "label": "发生地点",
+        "default": 0,
+        "range": {
+          "table": "MapCfg"
+        }
+      },
+      {
+        "name": "npc",
+        "type": "int",
+        "label": "人物",
+        "default": 0,
+        "range": {
+          "table": "PersonCfg"
+        }
+      },
+      {
+        "name": "talkId",
+        "type": "list<int>",
+        "label": "对话入口",
+        "default": []
+      }
+    ],
+    "label": "人物活动（原版预留）"
+  },
+  "TalkInputMinigameCfg": {
+    "fields": [
+      {
+        "name": "id",
+        "type": "int",
+        "label": "id",
+        "default": 0
+      },
+      {
+        "name": "inputs",
+        "type": "list<string>",
+        "label": "匹配答案",
+        "default": []
+      },
+      {
+        "name": "jumps",
+        "type": "list<list<int>>",
+        "label": "答案对应对话",
+        "default": []
+      },
+      {
+        "name": "talkId",
+        "type": "list<int>",
+        "label": "对话入口",
+        "default": []
+      }
+    ],
+    "label": "输入答案"
+  },
+  "OptionCfg": {
+    "fields": [
+      {
+        "name": "check",
+        "label": "分支条件",
+        "type": "list<list<double>>",
+        "editorType": "Condition",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "content",
+        "label": "内容",
+        "type": "string",
+        "editorType": "Text",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "effect",
+        "label": "触发效果",
+        "type": "list<list<float>>",
+        "editorType": "Effect",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "effect2",
+        "label": "另一分支效果",
+        "type": "list<list<float>>",
+        "editorType": "Effect",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "id",
+        "label": "编号",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "miniGame",
+        "label": "miniGame",
+        "type": "list<double>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1
+      },
+      {
+        "name": "nextEvtId",
+        "label": "nextEvtId",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0,
+        "range": {
+          "table": "EvtCfg"
+        }
+      },
+      {
+        "name": "precondition",
+        "label": "precondition",
+        "type": "list<list<double>>",
+        "editorType": "Condition",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "pressure",
+        "label": "pressure",
+        "type": "list<list<float>>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "showTxt",
+        "label": "showTxt",
+        "type": "string",
+        "editorType": "Text",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "stateCond",
+        "label": "stateCond",
+        "type": "list<list<double>>",
+        "editorType": "Condition",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "tag",
+        "label": "标签",
+        "type": "string",
+        "editorType": "Text",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "talkId",
+        "label": "下一段对话",
+        "type": "list<int>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1,
+        "range": {
+          "table": "TalkCfg"
+        }
+      },
+      {
+        "name": "talkId2",
+        "label": "另一分支",
+        "type": "list<int>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1,
+        "range": {
+          "table": "TalkCfg"
+        }
+      }
+    ],
+    "label": "对话选项"
+  },
+  "TalkCfg": {
+    "fields": [
+      {
+        "name": "audio",
+        "label": "音频",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0,
+        "range": {
+          "table": "AudioCfg"
+        }
+      },
+      {
+        "name": "bg",
+        "label": "场景",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0,
+        "range": {
+          "table": "BgCfg"
+        }
+      },
+      {
+        "name": "check",
+        "label": "分支条件",
+        "type": "list<list<double>>",
+        "editorType": "Condition",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "content",
+        "label": "内容",
+        "type": "string",
+        "editorType": "Text",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "effect",
+        "label": "触发效果",
+        "type": "list<list<float>>",
+        "editorType": "Effect",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "effect2",
+        "label": "另一分支效果",
+        "type": "list<list<float>>",
+        "editorType": "Effect",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "highlights",
+        "label": "高亮人物",
+        "type": "list<int>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1,
+        "range": {
+          "table": "PersonCfg"
+        }
+      },
+      {
+        "name": "id",
+        "label": "编号",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": true,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "maxoptions",
+        "label": "maxoptions",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "miniGame",
+        "label": "miniGame",
+        "type": "list<double>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1
+      },
+      {
+        "name": "nextTalk",
+        "label": "下一段对话",
+        "type": "list<int>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1,
+        "range": {
+          "table": "TalkCfg"
+        }
+      },
+      {
+        "name": "nextTalk2",
+        "label": "另一分支",
+        "type": "list<int>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1,
+        "range": {
+          "table": "TalkCfg"
+        }
+      },
+      {
+        "name": "option",
+        "label": "选项",
+        "type": "list<int>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1,
+        "range": {
+          "table": "OptionCfg"
+        }
+      },
+      {
+        "name": "replace",
+        "label": "replace",
+        "type": "list<int>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1,
+        "range": {
+          "table": "TalkCfg"
+        }
+      },
+      {
+        "name": "roleIds",
+        "label": "说话人物",
+        "type": "list<int>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1,
+        "range": {
+          "table": "PersonCfg"
+        }
+      },
+      {
+        "name": "roleName",
+        "label": "显示名称",
+        "type": "string",
+        "editorType": "Text",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "roles",
+        "label": "人物演出",
+        "type": "list<list<float>>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 2
+      },
+      {
+        "name": "screenEffect",
+        "label": "画面效果",
+        "type": "list<float>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1
+      },
+      {
+        "name": "showTxt",
+        "label": "showTxt",
+        "type": "string",
+        "editorType": "Text",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": "",
+        "listDepth": 0
+      },
+      {
+        "name": "time",
+        "label": "时间",
+        "type": "int",
+        "editorType": "Default",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": 0,
+        "listDepth": 0
+      },
+      {
+        "name": "vocals",
+        "label": "vocals",
+        "type": "list<float>",
+        "editorType": "List",
+        "description": "",
+        "required": false,
+        "nullable": false,
+        "hidden": false,
+        "advanced": false,
+        "default": [],
+        "listDepth": 1
+      }
+    ],
+    "label": "对话"
+  }
+}
