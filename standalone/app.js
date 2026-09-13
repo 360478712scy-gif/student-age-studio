@@ -164,6 +164,20 @@ function closeCGBeforeFollowing(row,folder=null) {
   S.order.splice(S.order.indexOf(Number(row.id))+1,0,...transitions);
   if(folder)folder.talkIds.splice(folder.talkIds.indexOf(Number(row.id))+1,0,...transitions);
 }
+let addingBlankCG=false;
+async function addBlankCG(){
+ if(addingBlankCG||!editable())return;if(S.event==='all'||!S.doc.events[S.event]){createEvent();return;}
+ addingBlankCG=true;const selected=S.selected,event=S.event,folder=S.activeFolder;
+ try{
+  const context=await STUDIO_PREPARE_ASSET_REUSE();if(!context)return;
+  const canvas=document.createElement('canvas');canvas.width=2560;canvas.height=1440;const ctx=canvas.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);
+  const result=await api('/api/import',{projectId:context.project.id,revision:context.revision,reservedIds:context.reservedCgIds,kind:'cg',name:'空白 CG',data:canvas.toDataURL('image/png')});canvas.width=canvas.height=0;
+  if(S.project?.id!==context.project.id)throw Error('空白 CG 已加入原模组，当前模组已切换。');
+  mergeImportedAssets({...result,previousRevision:context.revision,importDelta:{CGCfg:{before:{},after:{[result.id]:result.row}}}});
+  if(S.selected!==selected||S.event!==event||S.activeFolder!==folder)throw Error('空白 CG 已加入素材目录，当前对话已变化，请在新位置添加。');
+  addTalk(false,{cgId:result.id});toast('已添加空白 CG，右键画面可更换图片。');
+ }finally{addingBlankCG=false;}
+}
 function addTalk(duplicate=false,options={}) {
   if(S.event==='all'||!S.doc?.events[S.event]){createEvent();return;}
   if(!editable())return;if(S.activeFolder)return addFolderTalk(S.activeFolder,duplicate,S.selected,options);const current=talk();if(!duplicate&&ids(current?.option).length){if(current.miniGame?.length){toast('这句带小游戏，请在对应对话夹里添加后续内容。','note');return;}return addAfterBranches(current,options);}
@@ -397,30 +411,12 @@ function renderSpeakers(state){
 function addSpeaker(id){if(!editable()||!talk())return;mutate('添加说话人',()=>{const t=talk();const list=ids(t.roleIds).filter(v=>v>=0);if(!list.includes(Number(id)))list.push(Number(id));t.roleIds=list;S.previewRole=Number(id);});}
 function removeSpeaker(id){if(!editable()||!talk())return;mutate('移除说话人',()=>{const t=talk();t.roleIds=ids(t.roleIds).filter(v=>v!==Number(id));});}
 function setSpeakerName(value){if(!editable()||!talk())return;mutate('设置说话人名称',()=>{talk().roleName=value.trim();},'speaker-name:'+S.selected,false);}
-function openSpeakerPicker(anchor){
-  const t=talk();if(!t||!editable())return;
-  // The speaker strip is rebuilt after every toggle, so the anchor is measured once and the same
-  // menu element is kept open until the user clicks elsewhere; several people can be ticked in a row.
-  const origin=(anchor||$('#scene-speakers')).getBoundingClientRect(),place=()=>{const menu=document.querySelector('#talk-context-menu.speaker-menu');if(!menu)return;const r=origin;menu.style.left=Math.max(8,Math.min(r.left,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(r.bottom+4,innerHeight-menu.offsetHeight-8))+'px';};
-  const render=()=>{const row=talk();if(!row){closeTalkMenu();return;}const state=currentStage(),onStage=Object.values(state.roles).filter(r=>r.visible).map(r=>Number(r.id)),current=new Set(ids(row.roleIds));
-    for(const id of current)if(!onStage.includes(id))onStage.push(id);
-    let menu=document.querySelector('#talk-context-menu.speaker-menu');if(!menu){closeTalkMenu();menu=document.createElement('div');menu.id='talk-context-menu';menu.className='talk-context-menu speaker-menu';menu.setAttribute('role','menu');document.body.append(menu);
-      menu.addEventListener('click',e=>{const b=e.target.closest('[data-speaker-toggle]');if(!b||b.disabled)return;e.stopPropagation();const value=b.dataset.speakerToggle;
-        if(value==='narrator')mutate('设为旁白',()=>{talk().roleIds=[];});else{const id=Number(value);if(ids(talk().roleIds).includes(id))removeSpeaker(id);else addSpeaker(id);}
-        render();menu.querySelector(`[data-speaker-toggle="${value}"]`)?.focus({preventScroll:true});});
-      menu.addEventListener('keydown',e=>{
-        if(e.key==='Escape'||e.key==='Tab'){closeTalkMenu();$('#scene-speakers [data-action="speaker-add"]')?.focus({preventScroll:true});if(e.key==='Escape'){e.preventDefault();e.stopPropagation();}return;}
-        if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key))return;
-        e.preventDefault();const items=[...menu.querySelectorAll('button:not(:disabled)')],at=items.indexOf(document.activeElement);
-        const next=e.key==='Home'?0:e.key==='End'?items.length-1:(at+(e.key==='ArrowUp'?-1:1)+items.length)%items.length;items[next]?.focus();
-      });}
-    menu.innerHTML=`<strong>选择说话人</strong><p class="speaker-menu-hint">可勾选多位在场人物</p>${onStage.length?onStage.map(id=>`<button role="menuitemcheckbox" aria-checked="${current.has(id)}" data-speaker-toggle="${id}"><span class="speaker-check" aria-hidden="true">${current.has(id)?'✓':''}</span><span class="speaker-menu-name">${h(personName(id))}</span></button>`).join(''):'<p class="helper">尚无在场人物，请先让人物登场。</p>'}<button role="menuitem" data-speaker-toggle="narrator" ${current.size?'':'disabled'}>设为旁白</button>`;
-    place();
-  };
-  render();document.querySelector('#talk-context-menu [aria-checked="true"],#talk-context-menu button:not(:disabled)')?.focus({preventScroll:true});
+async function openSpeakerPicker(anchor){
+ const t=talk(),project=S.project?.id;if(!t||!editable())return;
+ const picked=await STUDIO_ASSET_PICKER.pickRecords('portrait',{title:'选择说话人',projectId:project,rows:[{id:-1,name:'旁白',selectionOnly:true,exclusive:true},...values(S.doc.persons).filter(r=>!S.goalImageIds?.includes(String(r.id)))],multiple:true,selected:t.roleIds?.length?t.roleIds:[-1]});
+ if(picked&&S.project?.id===project&&talk()===t)mutate('设置说话人',()=>{t.roleIds=picked.some(r=>r.id===-1)?[]:picked.map(r=>Number(r.id));});
 }
 
-// ---- Bottom-bar menus ----
 function popupMenu(anchor,items){
   closeTalkMenu();const menu=document.createElement('div');menu.id='talk-context-menu';menu.className='talk-context-menu';menu.setAttribute('role','menu');
   menu.innerHTML=items.map((it,i)=>`<button role="menuitem" data-popup-item="${i}" class="${it.danger?'danger-text':''}" ${it.disabled?'disabled':''}>${h(it.label)}</button>`).join('');document.body.append(menu);
@@ -619,7 +615,7 @@ function showDialogueImport(){
   const count=parsed.rows.length;importDialogueRows(parsed.rows);closeModal();toast('已导入 '+count+' 句对话。');
  }}]);
  function refresh(){parsed=StudentAgeDialogueText.parse($('#dialogue-import-text').value,S.doc.persons,bindings);const speakers=[...new Set(parsed.rows.map(row=>row.speaker))];
-  $('#dialogue-import-match').innerHTML=speakers.map(name=>{const row=parsed.rows.find(row=>row.speaker===name);return `<label class="dialogue-person-match"><strong>${h(name)}</strong>${row.roleIds!==null&&!Object.hasOwn(bindings,name)?`<span>${row.roleIds.length?'已识别，将自动登场':'旁白'}</span>`:`<select data-import-speaker="${h(name)}" aria-label="匹配 ${h(name)}"><option value="">${row.candidates.length>1?'存在同名人物，请选择':'未匹配，请选择人物'}</option><option value="narrator" ${bindings[name]==='narrator'?'selected':''}>作为旁白</option>${values(S.doc.persons).filter(p=>!S.goalImageIds?.includes(String(p.id))).map(person=>`<option ${StudentAgeRecordLabels.option(person.id)} value="${person.id}" ${String(bindings[name])===String(person.id)?'selected':''}>${h(person.name)}</option>`).join('')}</select>`}</label>`;}).join('');
+  $('#dialogue-import-match').innerHTML=speakers.map(name=>{const row=parsed.rows.find(row=>row.speaker===name);return `<label class="dialogue-person-match"><strong>${h(name)}</strong>${row.roleIds!==null&&!Object.hasOwn(bindings,name)?`<span>${row.roleIds.length?'已识别，将自动登场':'旁白'}</span>`:`<select data-reference-table="PersonCfg" data-import-speaker="${h(name)}" aria-label="匹配 ${h(name)}"><option value="">${row.candidates.length>1?'存在同名人物，请选择':'未匹配，请选择人物'}</option><option value="narrator" ${bindings[name]==='narrator'?'selected':''}>作为旁白</option>${values(S.doc.persons).filter(p=>!S.goalImageIds?.includes(String(p.id))).map(person=>`<option ${StudentAgeRecordLabels.option(person.id)} value="${person.id}" ${String(bindings[name])===String(person.id)?'selected':''}>${h(person.name)}</option>`).join('')}</select>`}</label>`;}).join('');
   $('#dialogue-import-count').textContent=parsed.errors.length?parsed.errors.map(error=>(error.line?'第 '+error.line+' 行：':'')+error.message).join('；'):parsed.rows.length+' 句对话 · '+parsed.unmatched.length+' 个人物待匹配';
   $('#modal [data-modal-button="1"]').disabled=!parsed.rows.length||!!parsed.errors.length||!!parsed.unmatched.length;
   $$('[data-import-speaker]').forEach(select=>select.onchange=()=>{if(select.value)bindings[select.dataset.importSpeaker]=select.value;else delete bindings[select.dataset.importSpeaker];refresh();});
@@ -627,16 +623,35 @@ function showDialogueImport(){
  $('#dialogue-import-text').oninput=refresh;
  $('#dialogue-import-file').onchange=async event=>{const file=event.target.files[0];if(!file)return;try{if(file.size>2*1024*1024)throw Error('对话文件不能超过 2 MB。');const bytes=await file.arrayBuffer();let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{text=new TextDecoder('gb18030').decode(bytes);}if(S.project.id!==project||!$('#dialogue-import-text'))return;$('#dialogue-import-text').value=text;refresh();}catch(error){fail(error);}};refresh();
 }
+let conditionLoadSequence=0,conditionLoadAbort=null;
+function refreshConditionNotice(){
+ const root=$('#editor-content');if(!root)return;root.querySelector('#condition-loading-notice')?.remove();
+ if(!S.conditionsLoading&&!S.conditionsError)return;const notice=document.createElement('div');notice.id='condition-loading-notice';notice.className='notice-panel';notice.setAttribute('role','status');
+ notice.append(document.createTextNode(S.conditionsLoading?'正在读取条件和效果目录，可先编辑对话内容。':S.conditionsError));
+ if(!S.conditionsLoading){const retry=document.createElement('button');retry.dataset.action='retry-conditions';retry.textContent='重试读取';notice.append(retry);}root.prepend(notice);
+}
 async function loadConditionCatalog(){
-  const projectId=S.project.id,doc=S.doc,data=await api('/api/workshop?projectId='+encodeURIComponent(projectId)),templates=data.commands?.condition||[],effects=data.commands?.effect||[],refs={},localIds={};
+ conditionLoadAbort?.abort();const controller=new AbortController();conditionLoadAbort=controller;const timeout=setTimeout(()=>controller.abort(),45000);
+ const projectId=S.project.id,sequence=++conditionLoadSequence;
+ S.conditionsLoading=true;S.conditionsError='';refreshConditionNotice();
+ const current=()=>S.project?.id===projectId&&sequence===conditionLoadSequence;
+ const get=async path=>{try{const r=await fetch(path,{headers:{'X-Studio-Token':token},signal:controller.signal}),d=await r.json();if(!r.ok||d.error)throw Error(d.error||'目录读取失败');return d;}catch(e){if(e.name==='AbortError')throw Error('读取超时，请重试');throw e;}};
+ try{
+  const data=await get('/api/commands?projectId='+encodeURIComponent(projectId)),templates=data.commands?.condition||[],effects=data.commands?.effect||[],refs={},localIds={};
   if(!templates.some(t=>Number(t.template?.[0])===7&&Number(t.template?.[1])===0))templates.unshift({label:'人物关系',template:[7,0,0,1],match:{0:7,1:0},parameters:[{index:2,label:'与谁',type:'int',range:{table:'PersonCfg'}},{index:3,label:'关系是',type:'int',range:{table:'OtherRelationCfg'}}]});
-  const tables=new Set(['ConditionTypeCfg','EffectTypeCfg','EvtTypeCfg','MapCfg','ActionCfg','ActionEvtCfg','InteractCfg',...[...templates,...effects].flatMap(t=>(t.parameters||[]).map(p=>p.range?.table).filter(Boolean))]);
-  await Promise.all([...tables].map(async name=>{const table=await api('/api/table?projectId='+encodeURIComponent(projectId)+'&name='+encodeURIComponent(name));refs[name]=table.rows;localIds[name]=table.localIds||[];}));
-  if(S.project?.id!==projectId||S.doc!==doc)return false;
+  const tables=[...new Set(['ConditionTypeCfg','EffectTypeCfg','EvtTypeCfg','MapCfg','ActionCfg','ActionEvtCfg','InteractCfg',...[...templates,...effects].flatMap(t=>(t.parameters||[]).map(p=>p.range?.table).filter(Boolean))])];
+  let cursor=0;const failures=[];
+  await Promise.all(Array.from({length:4},async()=>{while(cursor<tables.length&&current()){const name=tables[cursor++];try{const d=await get('/api/table?'+new URLSearchParams({projectId,name}));refs[name]=d.rows;localIds[name]=d.localIds||[];}catch(e){failures.push(name+'：'+e.message);}}}));
+  if(!current())return false;
+  const doc=S.doc;
   if(!Object.keys(refs.OtherRelationCfg||{}).length)refs.OtherRelationCfg=window.StudentAgeCommandTypes.otherRelations();
   refs.PersonCfg={...refs.PersonCfg,...doc.persons};for(const id of S.goalImageIds||[])delete refs.PersonCfg[id];refs.EvtCfg={...refs.EvtCfg,...doc.events};refs.OptionCfg={...refs.OptionCfg,...doc.options};refs.TalkCfg={...refs.TalkCfg,...doc.talks};
-  S.conditionTemplates=templates;S.effectTemplates=effects;S.conditionRefs=refs;S.conditionLocalIds=localIds;return true;
+  S.conditionTemplates=templates;S.effectTemplates=effects;S.conditionRefs=refs;S.conditionLocalIds=localIds;
+  S.conditionsError=failures.length?'部分目录未读取成功：'+failures.join('；'):'';return true;
+ }catch(error){if(current())S.conditionsError='条件和效果目录读取失败：'+error.message;return false;}
+ finally{clearTimeout(timeout);if(current()){conditionLoadAbort=null;S.conditionsLoading=false;window.STUDIO_EVENTS?.refresh();refreshConditionNotice();const root=$('#editor-content');mountConditionEditors(root);mountEffectEditors(root);}}
 }
+window.STUDIO_RETRY_CONDITIONS=()=>loadConditionCatalog();
 function conditionMarkup(scope,id,field,title,description,forceOpen=false){return `<details class="condition-section" ${forceOpen||(S.doc?.[scope]?.[id]?.[field]||[]).length?'open':''}><summary>${h(title)} <span>${S.doc?.[scope]?.[id]?.[field]?.length||0} 项</span></summary><div data-condition-scope="${scope}" data-condition-id="${id}" data-condition-field="${field}" data-condition-description="${h(description)}"></div></details>`;}
 function mountConditionEditors(root){
   root.querySelectorAll('[data-condition-scope]').forEach(node=>{const scope=node.dataset.conditionScope,id=Number(node.dataset.conditionId),field=node.dataset.conditionField,row=S.doc?.[scope]?.[id];if(!row)return;
@@ -737,7 +752,7 @@ async function loadProject(id,preserve=false) {
   S.conditionTemplates=[];S.effectTemplates=[];S.conditionRefs={};S.conditionLocalIds={};S.conditionsLoading=true;
   localStorage.setItem('studentAgeStudio.project',String(id));renderProjects();render();if(data.warnings?.length||data.project?.warnings?.length)toast((data.warnings||data.project.warnings)[0],'note');
   projectBusy(false);$('#project-load-status')?.remove();
-  loadConditionCatalog().then(ready=>{if(!ready||request!==projectLoadSequence)return;S.conditionsLoading=false;window.STUDIO_EVENTS?.refresh();$('#condition-loading-notice')?.remove();mountConditionEditors($('#editor-content'));mountEffectEditors($('#editor-content'));}).catch(error=>{if(request!==projectLoadSequence)return;const note=$('#condition-loading-notice');if(note)note.textContent='条件和效果目录读取失败：'+error.message+'。重新打开此模组可重试。';toast('条件目录读取失败：'+error.message,'error');});
+  loadConditionCatalog();
   loadAudioCatalog().catch(error=>{if(request===projectLoadSequence)toast(error.message,'note')});window.dispatchEvent(new CustomEvent('studio-project-ready'));return true;
   }catch(error){error.projectId=id;if(request!==projectLoadSequence)return false;if(previous){Object.assign(S,previous);renderProjects();render();}projectBusy(false);projectFeedback('无法打开“'+(availableProject(id)?.name||id)+'”：'+(error.message||error),true,id);throw error;}
 }
@@ -783,21 +798,17 @@ function phoneHome(id){
  const name=S.doc?.persons[id]?.name||'';
  return Number(values(S.doc?.backgrounds).find(r=>name&&String(r.name||'').includes(name)&&/家|卧室/.test(r.name))?.id)||100;
 }
-const phoneFixedActions=new Set([1001,1002,1003,2001,2002,3003,3004,3008]);
+const phoneFixedActions=new Set();
 function configurePhone(e,caller=Number(e.npc)||0,bg=e.studioPhoneBackground||phoneHome(caller)){
  e.npc=caller;e.studioPhoneBackground=bg;
  const entry=S.doc.talks[ids(e.talkId)[0]];if(!entry)return;
- const allowed=new Set([0,...(caller>0?[caller]:[])]);
- for(const id of graphOrder(ids(e.talkId))){const row=S.doc.talks[id];
-   row.roles=(row.roles||[]).filter(r=>Number(r[1])===5001||(allowed.has(Number(r[0]))&&!phoneFixedActions.has(Number(r[1]))));
-   row.roleIds=ids(row.roleIds).filter(id=>allowed.has(id));row.highlights=ids(row.highlights).filter(id=>allowed.has(id));
-   if(row.roleName==='')row.roleName=null;
-   if([4007,4008].includes(Number(row.screenEffect?.[0])))row.screenEffect=[];
-   row.bg=0;
- }
- // The game looks up the highlighted anchor (or Bai Yu) before opening the other half.
- entry.bg=S.doc.backgrounds[201011]?201011:100;entry.roles.unshift([0,1002,1,2,0]);entry.screenEffect=[4007,bg,...(caller>0?[caller]:[])];
- if(!ids(entry.roleIds).length)entry.roleIds=[0];entry.highlights=[0];
+ // Configure only the entry. Never erase subsequent speakers, actions, backgrounds or hang-ups.
+ if(!entry.bg)entry.bg=S.doc.backgrounds[201011]?201011:100;
+ entry.roles||=[];
+ if(!entry.roles.some(r=>Number(r[0])===0&&[1001,1002,1003].includes(Number(r[1]))))entry.roles.unshift([0,1002,1,2,0]);
+ entry.screenEffect=[4007,bg,...(caller>0?[caller]:[])];
+ if(!ids(entry.roleIds).length)entry.roleIds=[0];
+
 }
 function editPaper(){
  if(!editable()||!talk())return;
@@ -865,12 +876,12 @@ function eventDetails(id=S.event,creation=null) {
     const type=Number($('#event-type').value),spec=StudentAgeCharacterUI.eventParameter(type),npc=Number($('#event-npc').value),phone=[70,71].includes(type),root=$('#event-parameters');
     $('#event-map').closest('label').hidden=type===37;
     const firstChat=bindings.social?.kind==='talk';$('#event-maxcount').closest('label').hidden=firstChat;if(firstChat)$('#event-maxcount').value=1;
-    root.innerHTML=(spec?`<label><span class="field-label">${h(spec[1])}</span><button id="event-parameter-person">${h((spec[0]==='PersonCfg'?S.doc.persons[npc]?.name:S.conditionRefs[spec[0]]?.[npc]?.name)||'未设置')} ▾</button></label>`:'')+(type===37?`<label><span class="field-label">结算阶段</span><select id="event-phase"><option value="1">所有按钮完成后</option><option value="2">每日结算时</option></select></label>`:'')+(phone?`<label><span class="field-label">通话对象的场景</span><select id="event-phone-bg">${values(S.doc.backgrounds).map(r=>`<option value="${r.id}">${h(r.name||r.id)}</option>`).join('')}</select></label>`:'');
+    root.innerHTML=(spec?`<label><span class="field-label">${h(spec[1])}</span><button id="event-parameter-person">${h((spec[0]==='PersonCfg'?S.doc.persons[npc]?.name:S.conditionRefs[spec[0]]?.[npc]?.name)||'未设置')} ▾</button></label>`:'')+(type===37?`<label><span class="field-label">结算阶段</span><select id="event-phase"><option value="1">所有按钮完成后</option><option value="2">每日结算时</option></select></label>`:'')+(phone?`<label><span class="field-label">通话对象的场景</span><select id="event-phone-bg" data-reference-table="BgCfg">${values(S.doc.backgrounds).map(r=>`<option value="${r.id}">${h(r.name||r.id)}</option>`).join('')}</select></label>`:'');
     if(phone)$('#event-phone-bg').value=phoneChange?.bg||e.studioPhoneBackground||phoneHome(npc);
     if(type===37){$('#event-phase').value=Number($('#event-map').value)||1;$('#event-phase').onchange=()=>{const map=$('#event-map'),value=$('#event-phase').value;if(![...map.options].some(o=>o.value===value))map.add(new Option('结算阶段 '+value,value));map.value=value;};}
     $('#event-parameter-person')?.addEventListener('click',async()=>{
       const rows=spec[0]==='PersonCfg'?values(S.doc.persons).filter(p=>!S.goalImageIds?.includes(String(p.id))):values((await StudentAgeCharacterUI.api('table?projectId='+encodeURIComponent(S.project.id)+'&name='+encodeURIComponent(spec[0]))).rows);
-      const selected=await StudentAgeCharacterUI.choices(spec[1],rows.filter(r=>!phone||Number(r.id)!==0),{selected:npc});
+      const selected=await StudentAgeCharacterUI.choices(spec[1],rows.filter(r=>!phone||Number(r.id)!==0),{selected:npc,table:spec[0],projectId:S.project.id});
       if(selected&&root.isConnected){$('#event-npc').value=selected.id;if(phone)phoneChange={bg:phoneHome(selected.id)};parameters();}
     });
   }
@@ -987,7 +998,7 @@ function welcome() {
 function renderEditor() {
   $('#scene-panel').hidden=!talk();
   const container=$('#editor-content');if(!S.project){container.innerHTML=welcome();return;}
-  const banner=(S.project.readOnly?'<div class="read-only-banner">订阅模组可以查看、预演。<button data-action="copy-project">创建副本后编辑</button></div>':'')+(!availableProject(S.project.id)?'<div class="read-only-banner">当前项目已不在模组列表中。已有草稿保留在窗口内。</div>':'')+(S.conditionsLoading?'<div id="condition-loading-notice" class="notice-panel" role="status">正在读取条件和效果目录，可先编辑对话内容。</div>':'');
+  const banner=(S.project.readOnly?'<div class="read-only-banner">订阅模组可以查看、预演。<button data-action="copy-project">创建副本后编辑</button></div>':'')+(!availableProject(S.project.id)?'<div class="read-only-banner">当前项目已不在模组列表中。已有草稿保留在窗口内。</div>':'')+(S.conditionsLoading?'<div id="condition-loading-notice" class="notice-panel" role="status">正在读取条件和效果目录，可先编辑对话内容。</div>':S.conditionsError?`<div id="condition-loading-notice" class="notice-panel" role="status">${h(S.conditionsError)} <button data-action="retry-conditions">重试读取</button></div>`:'');
   if(!talk())container.innerHTML=banner+welcome();
   else container.innerHTML=banner+renderDialogue();
   if(S.project.readOnly)$$('input[data-edit],textarea[data-edit],select[data-edit],input[data-arg],select[data-arg],[data-option-field],[data-folder-continuation],#sfx-add,#bgm-track,#bgm-loop,#bgm-volume,#bgm-range-start,#bgm-range-end,[data-bgm-talk],[data-sfx-volume]',container).forEach(e=>e.disabled=true);
@@ -1211,11 +1222,11 @@ function initialEntry(roleId,state=currentStage()){
  return null;
 }
 function renderInitialPosition(state=currentStage()){
- const node=$('#scene-initial-position');if(!node)return;const entry=initialEntry(S.previewRole,state),disabled=!!phoneEvent()||!entry||!isLocalProject(S.project)||sceneMode!=='edit';
- node.innerHTML=`<div><strong>${entry?h(personName(S.previewRole))+' · ':''}初始站位</strong><small>${phoneEvent()?'电话人物固定站位':entry?(Number(entry.talkId)===Number(S.selected)?'当前句登场，后续位移保留':'调整此前的登场句，后续位移保留'):'先让人物登场，再选择人物'}</small></div><div class="initial-position-buttons" role="group" aria-label="初始站位">${[[1,'左'],[3,'中'],[2,'右']].map(([axis,name])=>`<button data-initial-axis="${axis}" aria-pressed="${entry?.axis===axis}" ${disabled?'disabled':''}>${name}</button>`).join('')}</div>${entry&&Number(entry.talkId)!==Number(S.selected)?`<button class="text-button" data-initial-source="${entry.talkId}">查看登场句</button>`:''}`;
+ const node=$('#scene-initial-position');if(!node)return;const entry=initialEntry(S.previewRole,state),disabled=!entry||!isLocalProject(S.project)||sceneMode!=='edit';
+ node.innerHTML=`<div><strong>${entry?h(personName(S.previewRole))+' · ':''}初始站位</strong><small>${entry?(Number(entry.talkId)===Number(S.selected)?'当前句登场，后续位移保留':'调整此前的登场句，后续位移保留'):'先让人物登场，再选择人物'}</small></div><div class="initial-position-buttons" role="group" aria-label="初始站位">${[[1,'左'],[3,'中'],[2,'右']].map(([axis,name])=>`<button data-initial-axis="${axis}" aria-pressed="${entry?.axis===axis}" ${disabled?'disabled':''}>${name}</button>`).join('')}</div>${entry&&Number(entry.talkId)!==Number(S.selected)?`<button class="text-button" data-initial-source="${entry.talkId}">查看登场句</button>`:''}`;
 }
 function setInitialPosition(roleId,axis){
- if(phoneEvent())return;roleId=Number(roleId);axis=Number(axis);if(![1,2,3].includes(axis)||!isLocalProject(S.project)||storyPreview)return;
+ roleId=Number(roleId);axis=Number(axis);if(![1,2,3].includes(axis)||!isLocalProject(S.project)||storyPreview)return;
  stopLinePlayback();const entry=initialEntry(roleId);if(!entry||entry.axis===axis)return;
  const row=S.doc.talks[entry.talkId];
  mutate('调整'+personName(roleId)+'的初始站位',()=>{
@@ -1225,7 +1236,6 @@ function setInitialPosition(roleId,axis){
  });
 }
 function commitSceneDrag(roleId,dx,dy,context=null) {
-  if(phoneEvent())return;
   if(context&&(Number(context.talkId)!==Number(S.selected)||context.doc!==S.doc))return;
   const selected=talk(),state=currentStage();if(!selected||!state.roles[roleId]?.visible)return;
   const target={x:Math.round((context?.x??state.roles[roleId].x)+dx),y:Math.round((context?.y??state.roles[roleId].y)+dy)};
@@ -1269,7 +1279,7 @@ function openActorMenu(id,x,y) {
   if(S.project?.readOnly||sceneMode!=='edit')return;selectStageRole(id);
   const state=currentStage(),speaking=state.speakerIds.includes(id),highlighted=state.highlightIds.includes(id),menu=$('#scene-context-menu');menu.dataset.role=String(id);menu.dataset.talk=String(S.selected);menu.dataset.project=S.project.id;
   menu.innerHTML=`<strong>${h(personName(id))}</strong><button role="menuitem" data-stage-menu="flip-instant">无动画翻转</button><button role="menuitem" data-stage-menu="flip">有动画翻转</button>${speaking?'<button role="menuitem" data-stage-menu="remove-speaker">不再由此人说话</button>':'<button role="menuitem" data-stage-menu="add-speaker">添加为说话人</button>'}<button role="menuitem" class="danger-text" data-stage-menu="remove">从此句移除人物</button><button role="menuitem" data-stage-menu="light-toggle" ${speaking?'disabled title="说话人物保持高光"':''}>${highlighted?'取消高光':'设为高光'}</button><div class="context-initial-position"><span>初始站位</span>${[[1,'左'],[3,'中'],[2,'右']].map(([axis,label])=>`<button role="menuitem" data-stage-menu="initial-position" data-axis="${axis}" aria-label="初始站位：${label}">${label}</button>`).join('')}</div>`;
-  if(phoneEvent()){menu.querySelector('.context-initial-position')?.remove();if(Number(id)===0)menu.querySelector('[data-stage-menu="remove"]')?.remove();}
+  if(phoneEvent()){if(Number(id)===0)menu.querySelector('[data-stage-menu="remove"]')?.remove();}
   menu.hidden=false;menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';
 }
 function scenePlayerRender(state,flags) {
@@ -1511,7 +1521,7 @@ function renderInspector() {
   const p=S.doc?.persons[S.previewRole],t=talk();
   for(const button of $$('[data-action=set-grade]')){button.classList.toggle('active',Number(button.dataset.value)===S.grade);button.setAttribute('aria-pressed',String(Number(button.dataset.value)===S.grade));}
   for(const button of $$('[data-action=set-protagonist-gender]')){button.classList.toggle('active',Number(button.dataset.value)===protagonistGender());button.setAttribute('aria-pressed',String(Number(button.dataset.value)===protagonistGender()));}
-  $('#preview-controls').innerHTML=S.doc?`<select id="preview-person" data-no-search="true" aria-label="预览人物">${personOptions(S.previewRole)}</select><div class="row"><select id="preview-cloth" aria-label="预览服装">${Array.from({length:10},(_,n)=>`<option value="${n}" ${n===S.cloth?'selected':''}>${n===0?'默认服装':'服装 '+(n+1)}</option>`).join('')}</select></div>`:'';
+  $('#preview-controls').innerHTML=S.doc?`<select data-reference-table="PersonCfg" id="preview-person" data-no-search="true" aria-label="预览人物">${personOptions(S.previewRole)}</select><div class="row"><select id="preview-cloth" aria-label="预览服装">${Array.from({length:10},(_,n)=>`<option value="${n}" ${n===S.cloth?'selected':''}>${n===0?'默认服装':'服装 '+(n+1)}</option>`).join('')}</select></div>`:'';
   if(!S.doc){$('#expression-grid').innerHTML='';return;}
   const asset=portraitPath();
   const cachePath=`portrait-cache/${portraitIdentity(S.previewRole)}-${S.grade}-${S.cloth}-${S.face}.png`;
@@ -1543,7 +1553,7 @@ function updateTalkTextCard(){
 const actions={
   'refresh-projects':()=>refreshProjects(),'create-project':()=>unsaved(()=>newProject(false)),'copy-project':()=>newProject(true),'save':save,'undo':undo,'redo':redo,
   'talk-page':b=>{S.listStart=Number(b.dataset.start);renderList();$('#talk-list').scrollTop=0;},
-  'select-talk':b=>selectTalk(b.dataset.id),'add-talk':()=>addTalk(false),'duplicate-talk':()=>addTalk(true),'delete-talk':deleteTalk,'move-up':()=>moveTalk(-1),'move-down':()=>moveTalk(1),
+  'retry-conditions':()=>loadConditionCatalog(),'select-talk':b=>selectTalk(b.dataset.id),'add-blank-cg':addBlankCG,'add-talk':()=>addTalk(false),'duplicate-talk':()=>addTalk(true),'delete-talk':deleteTalk,'move-up':()=>moveTalk(-1),'move-down':()=>moveTalk(1),
   'toggle-folder':b=>toggleFolder(b.dataset.folderKey),'folder-add':b=>addFolderTalk(b.dataset.folderKey),'reveal-folder':b=>{S.folderOpen[b.dataset.folderKey]=true;renderList();document.querySelector('[data-folder="'+b.dataset.folderKey+'"]')?.scrollIntoView({block:'nearest'});},
   'history-export':showHistoryExport,
   'dialogue-import':showDialogueImport,
@@ -1761,7 +1771,7 @@ function openAssetPicker(kind,options={}) {
 async function pickScenePerson(){
  if(!editable()||!talk())return;
  const selected=S.selected,projectId=S.project.id;
- await openAssetPicker('portrait',{selectPerson:true,selectFromDocument:true,
+ await openAssetPicker('portrait',{multiple:true,selectPerson:true,selectFromDocument:true,
   excludePersonIds:()=>S.goalImageIds,
   onUse:picked=>{if(S.project?.id!==projectId||S.selected!==selected)return false;
    const id=Number(picked.personId);if(!S.doc.persons[id]||S.goalImageIds.map(String).includes(String(id)))return false;

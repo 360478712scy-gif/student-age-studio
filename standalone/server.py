@@ -1875,6 +1875,18 @@ class StudioStore:
             resolution = catalog.get("referenceResolution")
             if not isinstance(resolution, list) or len(resolution) != 2 or any(not isinstance(value, (int, float)) or value <= 0 for value in resolution):
                 resolution = [2560, 1440]
+            commands = self.command_catalog(project_id)["commands"]
+            return {"project": project.public(), "revision": self.revision(project), "tables": result,
+                    "features": self.workshop_features(result), "warnings": warnings_list,
+                    "supported": [entry["name"] for entry in result], "catalogAvailable": bool(catalog.get("schemas")),
+                    "operations": catalog.get("operations", []), "commands": commands,
+                    "referenceResolution": resolution}
+
+    def command_catalog(self, project_id):
+        """Read command definitions without enumerating every game configuration table."""
+        with self.lock, self.catalog_scope():
+            project = self.project(project_id)
+            catalog = self.catalog()
             commands = copy.deepcopy(catalog.get("commands", {}))
             def signature(row):
                 return json.dumps([len(row.get("template", [])), {key: float(value) if isinstance(value, (int, float)) else value for key, value in row.get("match", {}).items()}], sort_keys=True)
@@ -1890,11 +1902,7 @@ class StudioStore:
                 row = entry['rows'][0]
                 commands['condition'].insert(0, {'label': entry['title'], 'template': row,
                                                'match': dict(enumerate(row)), 'parameters': []})
-            return {"project": project.public(), "revision": self.revision(project), "tables": result,
-                    "features": self.workshop_features(result), "warnings": warnings_list,
-                    "supported": [entry["name"] for entry in result], "catalogAvailable": bool(catalog.get("schemas")),
-                    "operations": catalog.get("operations", []), "commands": commands,
-                    "referenceResolution": resolution}
+            return {"commands": commands}
 
     def table(self, project_id, requested):
         with self.lock:
@@ -2855,7 +2863,8 @@ class StudioStore:
             else:
                 table = "cgs" if kind == "cg" else "backgrounds"
                 rows = local_map(table)
-                ident = self.record_ids.allocate(TABLES[table][:-5], rows)
+                reserved = {str(int(value)): {} for value in payload.get('reservedIds', []) if valid_id(value)}
+                ident = self.record_ids.allocate(TABLES[table][:-5], {**rows, **reserved})
                 row = ({"id": ident, "name": name, "urls": [resource_url], "group": 3, "gender": 0, "comic": [], "idx": 0, "move": [], "startTalks": []}
                        if kind == "cg" else {"id": ident, "name": name, "url": resource_url, "audio": 0, "cloth": [], "gaozhongCond": [], "gaozhongUrl": 0})
                 rows[str(ident)] = row
@@ -3474,6 +3483,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 data=self.server.store.load(query.get("id", [""])[0])
                 if repair_warning:data.setdefault('warnings',[]).append(repair_warning)
                 return self.send_json(data)
+            if route == "/api/commands":
+                return self.send_json(self.server.store.command_catalog(query.get("projectId", [""])[0]))
             if route == "/api/workshop":
                 self.server.store.clean_orphan_dialogues(query.get("projectId", [""])[0])
                 return self.send_json(self.server.store.workshop_info(query.get("projectId", [""])[0]))

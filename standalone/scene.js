@@ -149,11 +149,21 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
   for(const role of Object.values(state.roles)){const cloth=outfitCloth(role.id);if(cloth!==null&&state.background!==prior.background){role.cloth=cloth;delete role.manualCloth;}}
   const defaultCloth=id=>{const outfit=outfitCloth(id);if(outfit!==null)return outfit;if(!state.useCloth?.length)state.useCloth=[0];return state.useCloth[id===1?1:id===5?2:0]||0;};
   const screen=talk.screenEffect||[];
-  if(screen.length){const code=Number(screen[0]);if(code===4015)state.cg=Number(screen[1]);else if(code===4017){state.cg=0;state.nativeComic=false;}else if(code===4016){state.nativeComic=true;state.warnings.push('漫画画面需在游戏中预演。');}else if(code===4007){state.phone={left:Number(screen[1])||100,right:state.background||201011,caller:Number(screen[2])||0,remote:screen.slice(2).map(Number),local:[...new Set([...(talk.highlights||[]),...(talk.roleIds||[])].map(Number))]};}else if(code===4008){for(const id of state.phone?.remote||[state.phone?.caller])if(state.roles[id])state.roles[id].visible=false;state.phone=null;}else if(!window.StudentAgeScreenEffects?.entries.some(e=>e.id===code))state.warnings.push('这段包含额外屏幕效果，最终效果请在游戏中确认。');}
+  if(screen.length){const code=Number(screen[0]);if(code===4015)state.cg=Number(screen[1]);else if(code===4017){state.cg=0;state.nativeComic=false;}else if(code===4016){state.nativeComic=true;state.warnings.push('漫画画面需在游戏中预演。');}else if(code===4007&&!(talk.roleIds||[]).length){state.warnings.push('本句没有说话人，原版不会启动电话。');}else if(code===4007){state.phone={left:Number(screen[1])||100,right:state.background||201011,caller:Number(screen[2])||0,remote:screen.slice(2).map(Number),local:[...new Set([...(talk.highlights||[]),...(talk.roleIds||[])].map(Number))]};}else if(code===4008){for(const id of state.phone?.remote||[state.phone?.caller])if(state.roles[id])state.roles[id].visible=false;state.phone=null;}else if(!window.StudentAgeScreenEffects?.entries.some(e=>e.id===code))state.warnings.push('这段包含额外屏幕效果，最终效果请在游戏中确认。');}
   if(talk.effect?.length||talk.effect2?.length||talk.miniGame?.length)state.warnings.push('此段的数值变化、奖励或小游戏交由游戏执行。');
   // Native NewTalkView implicitly brings in a new speaker when there are no explicit actions.
   let actions=nativeRoleOrder((talk.roles||[]).filter(Array.isArray));
   if(!actions.length)actions=state.speakerIds.filter(id=>!state.roles[id]).map(id=>[id,1001,1,defaultAxis,0]);
+  if(Number(screen[0])===4007&&(talk.roleIds||[]).length&&state.phone){
+    const anchor=Number(talk.highlights?.[0]??0),entry=actions.find(r=>Number(r[0])===anchor&&[1001,1002,1003].includes(Number(r[1])));
+    const axis=Number(entry?.[3])||state.roles[anchor]?.axis||2;
+    state.phone.localRight=axis!==1;
+    state.phone.local=state.phone.local.filter(id=>id>=0&&!state.phone.remote.includes(id));
+    for(const id of [...state.phone.remote].reverse()){
+      if(state.roles[id]){state.roles[id].visible=false;delete state.roles[id].nativeTargetX;delete state.roles[id].nativeTargetY;}
+      actions.unshift([id,1001,1,axis===1?2:1,0]);
+    }
+  }
   // Native RefreshTalk prepares new actors before playing the sorted actions.
   // Initial clothing/flip/shadow are state, not delayed playback commands.
   const creationOrder=[...new Set(actions.map(r=>Number(r[0])))].filter(id=>!state.roles[id]);
@@ -230,15 +240,12 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
   const nativeDelays={},delaySlots={1001:4,1002:4,1003:4,2001:3,2002:2,3001:3,3002:3,3003:3,3004:3,3005:2,3007:2,3008:3,3009:3};
   for(const row of originalActions){const slot=delaySlots[Number(row[1])];if(slot!==undefined&&row.length>slot)nativeDelays[Number(row[0])]=Number(row[slot])||0;}
   for(const role of Object.values(state.roles))if(role.emoji!==undefined){role.emojiDelay=nativeDelays[role.id]||0;for(const m of state.motions)if(m.id===role.id&&m.code===3009){m.delay=role.emojiDelay;m.duration=.5;}}
-  if(state.phoneEvent){const e=state.phoneEvent;state.phone={left:Number(e.studioPhoneBackground)||state.phone?.left||100,right:doc.backgrounds?.[201011]?201011:100,caller:Number(e.npc)||state.phone?.caller||0};}
   if(state.phone){
-    const {caller}=state.phone,remote=new Set(state.phone.remote||[caller]),local=(state.phone.local?.length?state.phone.local:[0]).filter(id=>!remote.has(id)),allowed=new Set([...local,...remote]);state.phone.local=local;const localRight=state.phone.localRight??(state.roles[local[0]]?.axis!==1);state.phone.localRight=localRight;
+    const remote=new Set(state.phone.remote||[]),local=state.phone.local||[],allowed=new Set([...local,...remote]);
     for(const role of Object.values(state.roles))if(!allowed.has(role.id))role.visible=false;
-    for(const id of allowed){const role=state.roles[id]||{id,face:0,cloth:defaultCloth(id),hair:0,flip:false,shadow:false,grade},slot=(remote.has(id)?[...remote]:local).indexOf(id),offset=slot===0?0:slot%2?-(slot+1)/2*300:slot/2*300;Object.assign(role,{visible:true,x:((remote.has(id)===localRight)?-800:800)+offset,y:0,scale:1,axis:(remote.has(id)===localRight)?1:2,layer:1,slot});state.roles[id]=role;}
-    state.motions=state.motions.filter(m=>allowed.has(m.id)&&![1001,1002,1003,2001,2002,3003,3004,3008].includes(m.code));
-    state.background=state.phone.right;
+    // Keep movement, scaling and exit visibility produced by the original role actions.
   }
-  if(!state.phone)for(const [id,track]of Object.entries(state.positionTracks)){
+  for(const [id,track]of Object.entries(state.positionTracks)){
     const role=state.roles[id];role.nativeTargetX=role.x;role.nativeTargetY=role.y;
     if(track.steps.length){const end=nativePositionFrames(track).frames.at(-1);role.x=end.x;role.y=end.y;}
   }
@@ -611,7 +618,7 @@ class Renderer {
     const from=this.layout(node,start,state.reference);let left=from.left,bottom=from.bottom;
     if(entering){tween('opacity',0,1,entry,entry.code===1002?.15:.4);if(entry.code===1001&&entry.fromAxis!==3)left=entry.fromAxis===1?'-35%':'135%';if(entry.code===1003)bottom=(parseFloat(from.bottom)-100)+'%';}
     const changeScale=motions.find(m=>m.code===3003),flip=motions.find(m=>m.code===3005||m.code===3007);
-    const track=!state.phone&&state.positionTracks?.[role.id];
+    const track=state.positionTracks?.[role.id];
     if(track?.steps.length){
       const timeline=nativePositionFrames(track),frames=timeline.frames.map(p=>{const box=this.layout(node,{...role,x:p.x,y:p.y},state.reference);return {left:box.left,bottom:box.bottom,offset:timeline.duration?p.time/timeline.duration:0};});
       if(frames.length===1)frames.push({...frames[0],offset:1});
@@ -640,7 +647,6 @@ class Renderer {
     if(event.button===2||(event.button===0&&event.ctrlKey)){this.contextMenu(event);return;}
     if(event.button!==0)return;this.cancelDrag();if(this.options.onBeforeInteract?.()===false||!this.edit)return;
     const role=this.state.roles[target.dataset.role],node=this.actors.get(Number(target.dataset.role));if(!role?.visible||!node)return;
-    if(this.state.phone){event.preventDefault();this.options.onSelectRole?.(role.id);return;}
     event.preventDefault();const rect=this.stageRect();if(rect.width<=0||rect.height<=0)return;
     this.drag={node,role:copy(role),talkId:this.state.talkId,doc:this.doc,reference:this.state.reference.slice(),rect,startX:event.clientX,startY:event.clientY,pointer:event.pointerId,dx:0,dy:0,moved:false};
     node.getAnimations?.().forEach(a=>a.cancel());node.sceneMotionState=null;this.drag.unit=this.unitScale(this.drag.reference);this.drag.bounds=this.dragBounds(this.drag);

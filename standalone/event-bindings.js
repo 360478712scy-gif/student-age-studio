@@ -126,7 +126,7 @@ function create(parameters){
   if(!state.gifts.length)state.gifts.push({id:null,index:0,npc:0,item:0,type:0});
   node.innerHTML='<h3>送礼对话设置</h3>'+state.gifts.map((r,i)=>`<article><label>收礼人<button data-gift-person="${i}">${esc(parameters.persons?.[r.npc]?.name||parameters.refs?.PersonCfg?.[r.npc]?.name||(r.npc?'人物 '+r.npc:'选择收礼人'))} ▾</button></label><label>礼物物品<button data-gift-pick="${i}">${esc(r.itemName||parameters.refs?.ItemCfg?.[r.item]?.name||parameters.refs?.BookCfg?.[r.item]?.name||(r.item?'物品 '+r.item:'打开物品仓库'))} ▾</button></label>${r.sourceName?`<small>来自 ${esc(r.sourceName)} · 游戏中需同时启用该模组</small>`:''}</article>`).join('')+'<p class="helper">赠送指定物品给所选人物时，播放本事件的首句对话。应用后随模组一起保存。</p>';
   node.onclick=async e=>{const b=e.target.closest('button');if(!b)return;try{
-   if(b.dataset.giftPerson!==undefined){const r=state.gifts[Number(b.dataset.giftPerson)],people={...parameters.refs?.PersonCfg,...parameters.persons};const chosen=await UI().choices('选择收礼人',Object.values(people).filter(p=>Number(p.id)>0),{selected:r.npc});if(chosen){r.npc=Number(chosen.id);options.repaint();}}
+   if(b.dataset.giftPerson!==undefined){const r=state.gifts[Number(b.dataset.giftPerson)],people={...parameters.refs?.PersonCfg,...parameters.persons};const chosen=await UI().choices('选择收礼人',Object.values(people).filter(p=>Number(p.id)>0),{selected:r.npc,table:'PersonCfg'});if(chosen){r.npc=Number(chosen.id);options.repaint();}}
    if(b.dataset.giftPick!==undefined){const r=state.gifts[Number(b.dataset.giftPick)],chosen=await StudentAgeWarehouse.pick(options.projectId,r.item);if(chosen){r.item=Number(chosen.id);r.itemName=chosen.name;r.sourceName=chosen.sourceName;r.itemTable=chosen.table;options.repaint();}}
   }catch(error){options.error(error);}};return;
  }

@@ -106,7 +106,7 @@ function nameOf(select){
  return select.getAttribute('aria-label')||(labelled?labelled.split(/\s+/).map(id=>document.getElementById(id)?.textContent||'').join(' '):'')||
   Array.from(select.labels||[],labelText).join(' ').replace(/\s+/g,' ').trim()||select.title||'选择一项';
 }
-function optionText(option){return window.StudentAgeRecordLabels?.text(option.dataset.labelId,option.label||option.textContent)||option.label||option.textContent||'';}
+function optionText(option){return (option.dataset.labelId!=null?'['+option.dataset.labelId+'] ':'')+(option.label||option.textContent||'');}
 function selectionText(select){
  const selected=select.selectedOptions;
  if(!selected.length)return select.getAttribute('data-placeholder')||'请选择';
@@ -226,6 +226,17 @@ function position(){
 }
 function open(info,initialQuery=''){
  if(!info||!connected(info)||isDisabled(info.select))return;
+ const table=info.select.dataset.referenceTable;
+ if(['PersonCfg','BgCfg'].includes(table)&&window.STUDIO_ASSET_PICKER){
+  const select=info.select,projectId=window.STUDIO_CURRENT_PROJECT?.();if(info.referenceBusy)return;
+  info.referenceBusy=true;
+  (async()=>{try{
+   const response=await fetch('/api/table?'+new URLSearchParams({projectId,name:table}),{headers:{'X-Studio-Token':STUDIO_TOKEN}}),data=await response.json();if(!response.ok)throw Error(data.error||'目录读取失败');
+   const rows=[...select.options].filter(o=>!o.disabled&&!o.hidden).map(o=>({...data.rows?.[o.value],id:o.value,name:data.rows?.[o.value]?.name||o.label||o.textContent,selectionOnly:!data.rows?.[o.value]}));
+   const picked=await STUDIO_ASSET_PICKER.pickRecords(table==='PersonCfg'?'portrait':'background',{title:nameOf(select),projectId,rows,selected:select.value});
+   if(picked&&select.isConnected&&!isDisabled(select)&&window.STUDIO_CURRENT_PROJECT?.()===projectId){select.value=String(picked.id);select.dispatchEvent(new Event('input',{bubbles:true}));select.dispatchEvent(new Event('change',{bubbles:true}));}
+  }catch(error){window.STUDIO_REPORT_ERROR?.(error);}finally{info.referenceBusy=false;focusBack(info);}})();return;
+ }
  if(active?.info===info){close();return}if(active)close(false);sync(info);createPopup();
  active={info,rows:[],filtered:[],focused:-1,page:0,stale:false};popup.classList.toggle('uc-toolbar-popup',['studio-project','studio-feature'].includes(info.select.id));popup.querySelector('.uc-popup-title').textContent=nameOf(info.select);search.hidden=info.select.dataset.noSearch==='true';search.value=search.hidden?'':initialQuery;
  info.button.setAttribute('aria-expanded','true');info.button.setAttribute('aria-controls',list.id);
