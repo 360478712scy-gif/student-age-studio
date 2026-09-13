@@ -19,7 +19,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
-          import hashlib, json, os, subprocess
+          import ast, hashlib, json, os, subprocess
           from pathlib import Path
           repo=os.environ['GITHUB_REPOSITORY']
           version=json.loads(Path('.github/desktop-release.json').read_text())['version']
@@ -42,7 +42,9 @@ jobs:
               assert len(content)==by_name[n]['size'] and 'sha256:'+hashlib.sha256(content).hexdigest()==by_name[n]['digest'],n
           raw=subprocess.run(['gh','api',f'repos/{repo}/releases/tags/{tag}'],capture_output=True)
           if raw.returncode:
-              target=api('releases',{'tag_name':tag,'target_commitish':source['target_commitish'],'name':f'拾光工坊 {version} · 完整客户端','draft':True},'POST')
+              installed=next(ast.literal_eval(n.value) for n in ast.parse(Path('standalone/error_logs.py').read_text()).body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='APP_VERSION' for t in n.targets))
+              assert installed==version, 'Create the canonical tag from the matching client source checkout'
+              target=api('releases',{'tag_name':tag,'target_commitish':os.environ['GITHUB_SHA'],'name':f'拾光工坊 {version} · 完整客户端','draft':True},'POST')
           else: target=json.loads(raw.stdout)
           existing={a['name']:a for a in target['assets']}
           for n in sorted(expected):
