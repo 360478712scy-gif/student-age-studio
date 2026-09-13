@@ -24,7 +24,7 @@ jobs:
           requested="$(python -c 'import json;print(json.load(open(".github/desktop-release.json"))["version"])')"
           test "$requested" = "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if [[ "$version" == beta-* ]]; then tag="$version"; else tag="v$version"; fi
+          if [[ "$version" == beta-* ]]; then tag="v${version#beta-}-beta.0"; else tag="v$version"; fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
   windows:
     needs: version

@@ -1,4 +1,4 @@
-name: Set latest full-client release
+name: Normalize full-client release listing
 on:
   push:
     branches: [main]
@@ -14,30 +14,50 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set verified full-client download as Latest
+      - name: Preserve old downloads and publish the canonical version label
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
-          import json, os, subprocess
+          import hashlib, json, os, subprocess
           from pathlib import Path
           repo=os.environ['GITHUB_REPOSITORY']
           version=json.loads(Path('.github/desktop-release.json').read_text())['version']
-          tag=version if version.startswith('beta-') else 'v'+version
-          def api(path, payload=None):
+          legacy=version if version.startswith('beta-') else 'v'+version
+          tag='v'+version[5:]+'-beta.0' if version.startswith('beta-') else legacy
+          def api(path, payload=None, method='PATCH'):
               args=['gh','api',f'repos/{repo}/'+path]
-              if payload is not None: args+=['--method','PATCH','--input','-']
+              if payload is not None: args+=['--method',method,'--input','-']
               return json.loads(subprocess.check_output(args,input=json.dumps(payload).encode() if payload is not None else None))
-          release=api('releases/tags/'+tag)
-          expected={f'StudentAgeStudio-Windows-x64-{version}.zip',f'StudentAgeStudio-Mac-arm64-{version}.zip'}
-          assert not release['draft'] and expected <= {a['name'] for a in release['assets'] if a['state']=='uploaded' and a['size']>0}, 'Both complete clients must already be published'
-          assets=lambda r: sorted((a['id'],a['name'],a['size'],a.get('digest'),a['browser_download_url']) for a in r['assets'])
-          intro=f'> 当前完整安装包：{version}。安装后可在软件内获取最新轻量更新。\n\n'
-          body=release.get('body') or ''
-          if not body.startswith(intro): body=intro+body
-          changed=api('releases/'+str(release['id']),{'prerelease':False,'make_latest':'true','name':f'拾光工坊 {version} · 完整客户端','body':body})
-          assert assets(changed)==assets(release), 'Download assets must remain unchanged'
-          latest=api('releases/latest')
-          assert latest['id']==release['id'] and latest['tag_name']==tag
-          print(json.dumps({'latest':tag,'assetsUnchanged':True,'url':latest['html_url']},ensure_ascii=False))
+          source=api('releases/tags/'+legacy)
+          expected={f'StudentAgeStudio-Windows-x64-{version}.zip',f'StudentAgeStudio-Mac-arm64-{version}.zip','student-age-studio-update.zip'}
+          by_name={a['name']:a for a in source['assets']}
+          assert not source['draft'] and expected <= by_name.keys()
+          assert all(by_name[n]['state']=='uploaded' and by_name[n]['size']>0 and by_name[n].get('digest','').startswith('sha256:') for n in expected)
+          # Copy the existing bytes, including the legacy updater payload; never rebuild clients.
+          folder=Path('existing-downloads');folder.mkdir(exist_ok=True)
+          subprocess.run(['gh','release','download',legacy,'--repo',repo,'--dir',str(folder)],check=True)
+          for n in expected:
+              content=(folder/n).read_bytes()
+              assert len(content)==by_name[n]['size'] and 'sha256:'+hashlib.sha256(content).hexdigest()==by_name[n]['digest'],n
+          raw=subprocess.run(['gh','api',f'repos/{repo}/releases/tags/{tag}'],capture_output=True)
+          if raw.returncode:
+              target=api('releases',{'tag_name':tag,'target_commitish':source['target_commitish'],'name':f'拾光工坊 {version} · 完整客户端','draft':True},'POST')
+          else: target=json.loads(raw.stdout)
+          existing={a['name']:a for a in target['assets']}
+          for n in sorted(expected):
+              if n in existing:
+                  assert (existing[n]['size'],existing[n].get('digest'))==(by_name[n]['size'],by_name[n]['digest']),n
+              else: subprocess.run(['gh','release','upload',tag,str(folder/n),'--repo',repo],check=True)
+          body=source.get('body') or ''
+          changed=api('releases/'+str(target['id']),{'draft':False,'prerelease':False,'make_latest':'true','name':f'拾光工坊 {version} · 完整客户端','body':body})
+          assert expected <= {a['name'] for a in changed['assets']}
+          latest=api('releases/latest');assert latest['id']==target['id']
+          # Existing beta-... URLs and attachments remain available for installed clients.
+          if tag!=legacy:
+              api('releases/'+str(source['id']),{'prerelease':True,'make_latest':'false','name':f'拾光工坊 {version} · 旧下载链接（保留兼容）'})
+          after=api('releases/tags/'+legacy)
+          signature=lambda r: sorted((a['id'],a['name'],a['size'],a.get('digest'),a['browser_download_url']) for a in r['assets'])
+          assert signature(after)==signature(source)
+          print(json.dumps({'latest':tag,'legacy':legacy,'originalAssetsUnchanged':True,'noRebuild':True},ensure_ascii=False))
           PY
