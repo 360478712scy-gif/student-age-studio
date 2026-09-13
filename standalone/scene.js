@@ -534,7 +534,7 @@ class Renderer {
     rows.sort((a,b)=>a.layer-b.layer);
     const signature=JSON.stringify([width,height,!!this.state.phone,...rows.map(r=>[r.img.dataset.castFrameId,r.img.src,r.shade,r.x,r.y,r.w,r.h,r.flip,r.opacity,r.layer])]);
     if(resized||signature!==this.rasterSignature){
-      this.rasterSignature=signature;const ctx=this.castContext;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,stage.width,stage.height);
+      this.rasterSignature=signature;const ctx=this.castContext;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.clearRect(0,0,stage.width,stage.height);
       for(const row of rows){if(!row.opacity||Math.abs(row.flip)<.00001)continue;ctx.save();if(this.state.phone){ctx.beginPath();ctx.rect((this.state.phone.local?.includes(row.id)!==(this.state.phone.localRight===false))?stage.width/2:0,0,stage.width/2,stage.height);ctx.clip();}ctx.globalAlpha=row.opacity;ctx.translate(row.x,row.y);ctx.scale(row.flip,1);ctx.drawImage(this.shadeImage(row.img,row.shade),-row.w/2,-row.h,row.w,row.h);ctx.restore();}
     }
     // Delayed animations are 'running' as well. Static scenes consume no RAF loop.

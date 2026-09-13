@@ -52,6 +52,7 @@ class UpdatesTest(unittest.TestCase):
         self.assertEqual(status['status'],'ready',status)
 
     def test_beta135_hotfix_sorts_after_installed_beta135(self):
+        self.assertGreater(version_key('v1.3.5-beta.2'), version_key('v1.3.5-beta.1'))
         self.assertGreater(version_key('v1.3.5-beta.1'), version_key('beta-1.3.5'))
         self.assertLess(version_key('v1.3.5-beta.1'), version_key('beta-1.3.6'))
         self.assertEqual(version_key('v1.3.5-beta.1'), version_key('1.3.5-beta.1'))
