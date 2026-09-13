@@ -1,9 +1,9 @@
 {
   "format": 1,
   "runtimeAbi": 1,
-  "version": "beta-1.3.2",
-  "commit": "c0cc75b9d00282af908ac3b3359f452f53fd7bb2",
-  "sha256": "69534f91c8069ce1499aa077095e7cfef5ba5377947e81238bd1f0d89d1aea29",
-  "size": 2440203,
-  "notes": "修复条件目录持续读取；电话支持拖动与挂电话，保留说话人；统一人物和背景目录，保留企鹅空间与短信专属头像选择；添加空白 CG。"
+  "version": "beta-1.3.3",
+  "commit": "ff9747ce669bb99b69a89c93130efb886def9101",
+  "sha256": "6f8d51ba861b70b61ba26164424f4d0ba69e27306f4fbaf9367f7db8b09ad0c6",
+  "size": 2439770,
+  "notes": "热修复：将空白 CG 入口更正为空白对话，并在对话夹底部添加同样入口。"
 }
