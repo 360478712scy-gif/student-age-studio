@@ -1,8 +1,10 @@
 """Small OS boundary for local locking, workers, and revealing exported files."""
 import os
 import errno
+import stat as statmod
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 if os.name == 'nt':
@@ -11,13 +13,32 @@ else:
     import fcntl
 
 _metadata_api = None
+# Windows CreateFileW+GetFileInformationByHandleEx per call is ~10x a stat
+# under Defender. Coalesce duplicate checks within one UI request: same
+# (dev, ino, size, mtime) hit reuses the ChangeTime for a short TTL.
+# Output tuple format is unchanged, so cache validation stays identical.
+_fp_cache = {}
+_fp_lock = threading.Lock()
+_FP_TTL_NS = 750_000_000
 
 
 def file_fingerprint(path):
     path = Path(path)
     stat, entry = path.stat(), path.lstat()
-    changed = stat.st_ctime_ns
+    # Directories only need mtime granularity for folder-watch checks.
+    # Skipping the NTFS ChangeTime handle here saves one kernel open per dir.
+    if statmod.S_ISDIR(entry.st_mode):
+        return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns,
+                stat.st_mtime_ns, entry.st_ino, entry.st_mode)
     if sys.platform == 'win32':
+        key = (stat.st_dev, stat.st_ino)
+        now = time.monotonic_ns()
+        with _fp_lock:
+            hit = _fp_cache.get(key)
+            if (hit is not None and hit[0] == stat.st_size
+                    and hit[1] == stat.st_mtime_ns and now - hit[3] < _FP_TTL_NS):
+                return (stat.st_dev, stat.st_ino, stat.st_size,
+                        stat.st_mtime_ns, hit[2], entry.st_ino, entry.st_mode)
         # Python 3.12's Windows st_ctime is the creation time. Use NTFS's
         # ChangeTime so same-size edits that restore mtime still invalidate.
         # https://learn.microsoft.com/windows/win32/api/winbase/ns-winbase-file_basic_info
@@ -46,6 +67,12 @@ def file_fingerprint(path):
                     changed = info.changed
             finally:
                 library.CloseHandle(handle)
+        with _fp_lock:
+            _fp_cache[key] = (stat.st_size, stat.st_mtime_ns, changed, now)
+            if len(_fp_cache) > 8192:
+                _fp_cache.clear()
+    else:
+        changed = stat.st_ctime_ns
     return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, changed, entry.st_ino, entry.st_mode)
 
 

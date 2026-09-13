@@ -68,6 +68,9 @@ MAX_JSON = 96 * 1024 * 1024
 MAX_IMAGE = 24 * 1024 * 1024
 MAX_PIXELS = 16 * 1024 * 1024
 MAX_DIMENSION = 4096
+# Positive-only cache for audio converter lookups (negatives re-resolve).
+_afconvert_path = None
+_ffmpeg_path = None
 DRIVE = Path.home() / "Library/Application Support/CrossOver/Bottles/Steam/drive_c"
 DEFAULT_MODS = DRIVE / "users/crossover/AppData/LocalLow/PakyiGame/StudentAge/Mods"
 DEFAULT_WORKSHOP = DRIVE / "Program Files (x86)/Steam/steamapps/workshop/content/1991040"
@@ -254,14 +257,18 @@ def safe_path(root, relative):
     return path
 
 
-def atomic_write(path, data):
+def atomic_write(path, data, fsync=True):
+    # fsync=False is reserved for recomputable indexes (hash tables, warmup
+    # attempts/manifests): crash windows only trigger a re-warm with identical
+    # eventual content. All user Mod data keeps fsync=True.
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name("." + path.name + "." + secrets.token_hex(8) + ".tmp")
     try:
         with temporary.open("xb") as stream:
             stream.write(data)
             stream.flush()
-            os.fsync(stream.fileno())
+            if fsync:
+                os.fsync(stream.fileno())
         replace_file(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
@@ -2548,10 +2555,19 @@ class StudioStore:
             known = self._audio_digests.get(key)
             if known is None:
                 try:
-                    known = hashlib.sha256(path.read_bytes()).hexdigest()
+                    # Chunked file hash: identical digest, no full-file transient.
+                    digest_file = hashlib.sha256()
+                    with path.open('rb') as stream:
+                        for block in iter(lambda: stream.read(1024 * 1024), b''):
+                            digest_file.update(block)
+                    known = digest_file.hexdigest()
                 except OSError:
                     continue
-                if len(self._audio_digests) > 4096: self._audio_digests.clear()
+                if len(self._audio_digests) > 4096:
+                    # Evict oldest quarter instead of full clear to avoid
+                    # recompute stampedes; hits return identical digests.
+                    for old in list(self._audio_digests)[:1024]:
+                        self._audio_digests.pop(old, None)
                 self._audio_digests[key] = known
             if digest is None: digest = hashlib.sha256(raw).hexdigest()
             if known == digest:
@@ -2892,13 +2908,23 @@ def decode_audio(payload):
     if not signatures[extension]:
         raise ApiError("文件内容与音频格式不符，请使用完整的音频文件。")
     if extension in {".m4a", ".aac", ".flac"}:
-        converter = shutil.which("afconvert")
-        ffmpeg = None
+        # Cache positive converter lookups; negatives re-resolve so a
+        # mid-session install still takes effect. Same binary selection.
+        global _afconvert_path, _ffmpeg_path
+        converter = _afconvert_path
+        if converter is not None and not Path(converter).is_file():
+            converter, _afconvert_path = None, None
+        if converter is None and _afconvert_path is None:
+            found = shutil.which("afconvert")
+            if found: converter, _afconvert_path = found, found
+        ffmpeg = _ffmpeg_path
         if not converter and os.name == "nt":
-            try:
-                import imageio_ffmpeg
-                ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-            except ImportError: pass
+            if ffmpeg is None or not Path(str(ffmpeg)).is_file():
+                try:
+                    import imageio_ffmpeg
+                    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+                    _ffmpeg_path = ffmpeg
+                except ImportError: ffmpeg = None
         if not converter and not ffmpeg:
             raise ApiError("游戏不能直接读取此格式，请先转换为 WAV 或 MP3。")
         with tempfile.TemporaryDirectory(prefix="student-age-audio-") as temporary:
@@ -2922,7 +2948,15 @@ def decode_audio(payload):
         try:
             with wave.open(io.BytesIO(raw), "rb") as decoded:
                 if decoded.getnchannels() <= 0 or decoded.getnframes() <= 0 or decoded.getframerate() <= 0: raise ValueError()
-                if len(decoded.readframes(decoded.getnframes())) < decoded.getnframes() * decoded.getnchannels() * decoded.getsampwidth(): raise ValueError()
+                # Chunked total, same `< expected` verdict as one-shot read.
+                expected = decoded.getnframes() * decoded.getnchannels() * decoded.getsampwidth()
+                total, remaining = 0, decoded.getnframes()
+                while remaining > 0:
+                    chunk = decoded.readframes(min(4096, remaining))
+                    if not chunk: break
+                    total += len(chunk)
+                    remaining -= min(4096, remaining)
+                if total < expected: raise ValueError()
         except (wave.Error, EOFError, ValueError):
             raise ApiError("WAV 音频不完整或无法解码。")
     return raw, extension
@@ -2952,12 +2986,17 @@ def normalize_image(raw, maximum=MAX_IMAGE):
             with Image.open(io.BytesIO(raw)) as source:
                 source.load()
                 width, height = source.size
-                clean = source.convert("RGBA" if "A" in source.getbands() or "transparency" in source.info else "RGB")
-                clean.info.clear()
-                output = io.BytesIO()
-                clean.save(output, format="PNG")
-                clean.close()
-                return output.getvalue(), ".png", width, height
+                bands = source.getbands()
+                has_transparency = "transparency" in source.info
+                clean = source.convert("RGBA" if "A" in bands or has_transparency else "RGB")
+            # Source bitmap released before PNG encode so peak is converted +
+            # output only (was source + converted + output). Encoded bytes
+            # identical: same convert mode and default PNG params.
+            clean.info.clear()
+            output = io.BytesIO()
+            clean.save(output, format="PNG")
+            clean.close()
+            return output.getvalue(), ".png", width, height
     except ApiError:
         raise
     except Exception:
@@ -3854,7 +3893,9 @@ def main():
     else:
         print(json.dumps(ready), flush=True)
     try:
-        server.serve_forever(poll_interval=0.25)
+        # Windows timer wakeups cost more under WebView2+Python double runtime;
+        # 0.5s only delays shutdown handshake, request latency is unchanged.
+        server.serve_forever(poll_interval=0.5 if os.name == 'nt' else 0.25)
     except KeyboardInterrupt:
         pass
     finally:

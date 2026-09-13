@@ -54,9 +54,13 @@ def main():
     p.add_argument('--qa-debug-port',type=int)
     args=p.parse_args(); args.web_root=str(WEB)
     if args.qa_debug_port: os.environ['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS']='--remote-debugging-port='+str(args.qa_debug_port)
-    from storage_paths import user_data_root, cache_root
+    from storage_paths import user_data_root
     storage=Path(args.qa_storage) if args.qa_storage else user_data_root()/'WebView2'
-    browser_cache=cache_root()/'WebView2'
+    # Chromium disk cache is opaque browser internals (never listed in the
+    # editor UI): keep it under LOCALAPPDATA so its high-frequency small
+    # writes avoid Defender-scanned install directories. Same browsing
+    # behavior, only the on-disk location changes.
+    browser_cache=user_data_root()/'WebView2Cache'
     try:
         browser_cache.mkdir(parents=True,exist_ok=True)
     except OSError:
