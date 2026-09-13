@@ -136,10 +136,10 @@ function nextId(map, base) {const table=map===S.doc.events?'EvtCfg':map===S.doc.
 function eventForTalk() {if(S.event!=='all')return Number(S.event);const e=values(S.doc.events).find(x=>graphOrder(ids(x.talkId)).includes(S.selected));return e?e.id:900000;}
 function newTalkId() {let base=eventForTalk()*1000+1;if(base>2147483000)base=900000001;return nextId(S.doc.talks,base);}
 function normalizeTalk(t) {for(const k of ['nextTalk','nextTalk2','roleIds','roles','option','check','effect','effect2','highlights','replace','screenEffect'])if(!Array.isArray(t[k]))t[k]=[];return t;}
-function continuationTalk(id,previous,stage) {
+function continuationTalk(id,previous,stage,blank=false) {
   // Actors keep their preceding state in the game; copying actions would move them twice.
-  return normalizeTalk({id,content:'',roleIds:ids(previous?.roleIds),roleName:previous?.roleName||null,
-    bg:Number(stage?.background)||0,highlights:[],roles:[],screenEffect:[]});
+  return normalizeTalk({id,content:'',roleIds:blank?[]:ids(previous?.roleIds),roleName:blank?null:previous?.roleName||null,
+    bg:blank?0:Number(stage?.background)||0,highlights:[],roles:[],screenEffect:[]});
 }
 function stageAt(id) {
   return Number(id)===S.selected?currentStage():StudentAgeScene.reconstruct({...S.doc,branchFolders:S.branchFolders},Number(id),sceneContext());
@@ -164,26 +164,12 @@ function closeCGBeforeFollowing(row,folder=null) {
   S.order.splice(S.order.indexOf(Number(row.id))+1,0,...transitions);
   if(folder)folder.talkIds.splice(folder.talkIds.indexOf(Number(row.id))+1,0,...transitions);
 }
-let addingBlankCG=false;
-async function addBlankCG(){
- if(addingBlankCG||!editable())return;if(S.event==='all'||!S.doc.events[S.event]){createEvent();return;}
- addingBlankCG=true;const selected=S.selected,event=S.event,folder=S.activeFolder;
- try{
-  const context=await STUDIO_PREPARE_ASSET_REUSE();if(!context)return;
-  const canvas=document.createElement('canvas');canvas.width=2560;canvas.height=1440;const ctx=canvas.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);
-  const result=await api('/api/import',{projectId:context.project.id,revision:context.revision,reservedIds:context.reservedCgIds,kind:'cg',name:'空白 CG',data:canvas.toDataURL('image/png')});canvas.width=canvas.height=0;
-  if(S.project?.id!==context.project.id)throw Error('空白 CG 已加入原模组，当前模组已切换。');
-  mergeImportedAssets({...result,previousRevision:context.revision,importDelta:{CGCfg:{before:{},after:{[result.id]:result.row}}}});
-  if(S.selected!==selected||S.event!==event||S.activeFolder!==folder)throw Error('空白 CG 已加入素材目录，当前对话已变化，请在新位置添加。');
-  addTalk(false,{cgId:result.id});toast('已添加空白 CG，右键画面可更换图片。');
- }finally{addingBlankCG=false;}
-}
 function addTalk(duplicate=false,options={}) {
   if(S.event==='all'||!S.doc?.events[S.event]){createEvent();return;}
   if(!editable())return;if(S.activeFolder)return addFolderTalk(S.activeFolder,duplicate,S.selected,options);const current=talk();if(!duplicate&&ids(current?.option).length){if(current.miniGame?.length){toast('这句带小游戏，请在对应对话夹里添加后续内容。','note');return;}return addAfterBranches(current,options);}
   const previousStage=current?currentStage():null;
-  mutate(options.cgId?'添加 CG':duplicate?'复制对话':'添加对话',()=>{
-    const id=newTalkId(),item=duplicate&&current?normalizeTalk(clone(current)):continuationTalk(id,current,previousStage);item.id=id;if(options.cgId){item.screenEffect=[4015,Number(options.cgId)];item.roleIds=[];item.roleName='';item.highlights=[];}
+  mutate(options.cgId?'添加 CG':options.blank?'添加空白对话':duplicate?'复制对话':'添加对话',()=>{
+    const id=newTalkId(),item=duplicate&&current?normalizeTalk(clone(current)):continuationTalk(id,current,previousStage,options.blank);item.id=id;if(options.cgId){item.screenEffect=[4015,Number(options.cgId)];item.roleIds=[];item.roleName='';item.highlights=[];}
     if(duplicate && current){item.check=[];item.nextTalk2=[];item.option=[];for(const oid of ids(current.option)){const old=S.doc.options[oid];if(!old)continue;const newId=nextId(S.doc.options,eventForTalk()*100+1);S.doc.options[newId]={...clone(old),id:newId};item.option.push(newId);}}
     item.nextTalk=current?Timeline.next(S.doc,S.branchFolders,current.id):[];
     if(current)Timeline.setNext(S.doc,S.branchFolders,current.id,[id]);
@@ -211,8 +197,8 @@ function blockEnd(parent){let index=S.order.indexOf(Number(parent));for(const id
 function addAfterBranches(current,options={}){
   const previousStage=currentStage();
   let skipped=0;
-  mutate(options.cgId?'在分支后添加 CG':'在分支后添加对话',()=>{
-    const id=newTalkId(),item=continuationTalk(id,current,previousStage);item.id=id;
+  mutate(options.cgId?'在分支后添加 CG':options.blank?'在分支后添加空白对话':'在分支后添加对话',()=>{
+    const id=newTalkId(),item=continuationTalk(id,current,previousStage,options.blank);item.id=id;
     if(options.cgId){item.screenEffect=[4015,Number(options.cgId)];item.roleIds=[];item.roleName='';item.highlights=[];}
     const folders=[];
     for(const oid of ids(current.option)){
@@ -668,11 +654,11 @@ function takeFolder(key){
 function addFolderTalk(key,duplicate=false,after=null,options={}){
   if(!editable())return;let d=folderDescription(key);if(!d.option)return;
   const original=duplicate?talk():null;
-  mutate(options.cgId?'在选项对话夹添加 CG':duplicate?'在选项对话夹复制对话':'在选项对话夹添加对话',()=>{
+  mutate(options.cgId?'在选项对话夹添加 CG':options.blank?'在选项对话夹添加空白对话':duplicate?'在选项对话夹复制对话':'在选项对话夹添加对话',()=>{
     d=takeFolder(key);const folder=d.folder,id=newTalkId();
     const insertion=ids(folder.talkIds).includes(Number(after))?Number(after):null;
     const previous=S.doc.talks[insertion||ids(folder.talkIds).at(-1)]||S.doc.talks[d.parentTalkId];
-    const row=duplicate&&original?normalizeTalk(clone(original)):continuationTalk(id,previous,stageAt(previous.id));row.id=id;row.option=[];if(options.cgId){row.screenEffect=[4015,Number(options.cgId)];row.roleIds=[];row.roleName='';row.highlights=[];}
+    const row=duplicate&&original?normalizeTalk(clone(original)):continuationTalk(id,previous,stageAt(previous.id),options.blank);row.id=id;row.option=[];if(options.cgId){row.screenEffect=[4015,Number(options.cgId)];row.roleIds=[];row.roleName='';row.highlights=[];}
     Timeline.insert(S.doc,S.branchFolders,folder,row,insertion);
     const predecessor=insertion||folder.talkIds[folder.talkIds.indexOf(id)-1]||d.parentTalkId,index=S.order.indexOf(predecessor);S.order.splice(index+1,0,id);
     if(options.cgId)closeCGBeforeFollowing(row,folder);
@@ -1007,7 +993,7 @@ function renderEditor() {
 function renderFolder(d,depth,card){
  const f=d.folder,conditional=f?.kind==='condition'||d.legacy,open=S.folderOpen[d.key]??!(f?.collapsed??true);
  const references=d.references||[];
- return `<section class="branch-folder ${conditional?'conditional-folder':''} ${S.activeFolder===d.key?'active-folder':''}" data-folder="${d.key}"><button class="branch-folder-title" data-action="toggle-folder" data-folder-key="${d.key}" aria-expanded="${open}"><span>${open?'▾':'▸'}</span><strong>${StudentAgeRecordLabels.html(conditional?null:d.option?.id,d.option?.content||'未载入选项')}</strong><small>${conditional||d.managed?d.talkIds.length+' 句':'选项'}</small>${conditional?'':(n=>n?`<span class="id-notes">${n}</span>`:'')(idConflict('options',d.option?.id)+idPinNote('options',d.option?.id))}</button>${open?`<div class="branch-folder-body">${d.talkIds.map(child=>card(child,depth+1)).join('')}${references.length?`<div class="branch-references">${references.map(target=>`<button data-action="select-talk" data-id="${target}" ${S.doc.talks[target]?'':'disabled'}>↗ ${StudentAgeRecordLabels.html(target,talkLabel(target))}</button>`).join('')}</div>`:''}${!d.legacy&&d.option?`<div class="branch-add-actions"><button class="branch-add" data-action="folder-add" data-folder-key="${d.key}">＋ 对话</button></div>${d.managed?`<label class="branch-continuation"><span>对话夹结束后</span><select data-folder-continuation="${d.key}">${continuationOptions(f)}</select></label>`:''}`:''}${conditional?`<label class="branch-continuation"><span>判定失败后进入</span><select data-folder-failure="${d.key}" ${S.project?.readOnly?'disabled':''}>${failureOptions(f||{failureNext:S.doc.talks[d.parentTalkId]?.nextTalk2?.[0]?S.doc.talks[d.parentTalkId].nextTalk2:null},d.parentTalkId)}</select></label>`:''}</div>`:''}</section>`;
+ return `<section class="branch-folder ${conditional?'conditional-folder':''} ${S.activeFolder===d.key?'active-folder':''}" data-folder="${d.key}"><button class="branch-folder-title" data-action="toggle-folder" data-folder-key="${d.key}" aria-expanded="${open}"><span>${open?'▾':'▸'}</span><strong>${StudentAgeRecordLabels.html(conditional?null:d.option?.id,d.option?.content||'未载入选项')}</strong><small>${conditional||d.managed?d.talkIds.length+' 句':'选项'}</small>${conditional?'':(n=>n?`<span class="id-notes">${n}</span>`:'')(idConflict('options',d.option?.id)+idPinNote('options',d.option?.id))}</button>${open?`<div class="branch-folder-body">${d.talkIds.map(child=>card(child,depth+1)).join('')}${references.length?`<div class="branch-references">${references.map(target=>`<button data-action="select-talk" data-id="${target}" ${S.doc.talks[target]?'':'disabled'}>↗ ${StudentAgeRecordLabels.html(target,talkLabel(target))}</button>`).join('')}</div>`:''}${!d.legacy&&d.option?`<div class="branch-add-actions"><button class="branch-add" data-action="folder-add-blank" data-folder-key="${d.key}">＋ 空白对话</button><button class="branch-add" data-action="folder-add" data-folder-key="${d.key}">＋ 对话</button></div>${d.managed?`<label class="branch-continuation"><span>对话夹结束后</span><select data-folder-continuation="${d.key}">${continuationOptions(f)}</select></label>`:''}`:''}${conditional?`<label class="branch-continuation"><span>判定失败后进入</span><select data-folder-failure="${d.key}" ${S.project?.readOnly?'disabled':''}>${failureOptions(f||{failureNext:S.doc.talks[d.parentTalkId]?.nextTalk2?.[0]?S.doc.talks[d.parentTalkId].nextTalk2:null},d.parentTalkId)}</select></label>`:''}</div>`:''}</section>`;
 }
 function renderDialogue() {
  const t=talk();
@@ -1553,8 +1539,8 @@ function updateTalkTextCard(){
 const actions={
   'refresh-projects':()=>refreshProjects(),'create-project':()=>unsaved(()=>newProject(false)),'copy-project':()=>newProject(true),'save':save,'undo':undo,'redo':redo,
   'talk-page':b=>{S.listStart=Number(b.dataset.start);renderList();$('#talk-list').scrollTop=0;},
-  'retry-conditions':()=>loadConditionCatalog(),'select-talk':b=>selectTalk(b.dataset.id),'add-blank-cg':addBlankCG,'add-talk':()=>addTalk(false),'duplicate-talk':()=>addTalk(true),'delete-talk':deleteTalk,'move-up':()=>moveTalk(-1),'move-down':()=>moveTalk(1),
-  'toggle-folder':b=>toggleFolder(b.dataset.folderKey),'folder-add':b=>addFolderTalk(b.dataset.folderKey),'reveal-folder':b=>{S.folderOpen[b.dataset.folderKey]=true;renderList();document.querySelector('[data-folder="'+b.dataset.folderKey+'"]')?.scrollIntoView({block:'nearest'});},
+  'retry-conditions':()=>loadConditionCatalog(),'select-talk':b=>selectTalk(b.dataset.id),'add-blank-talk':()=>addTalk(false,{blank:true}),'add-talk':()=>addTalk(false),'duplicate-talk':()=>addTalk(true),'delete-talk':deleteTalk,'move-up':()=>moveTalk(-1),'move-down':()=>moveTalk(1),
+  'toggle-folder':b=>toggleFolder(b.dataset.folderKey),'folder-add-blank':b=>addFolderTalk(b.dataset.folderKey,false,null,{blank:true}),'folder-add':b=>addFolderTalk(b.dataset.folderKey),'reveal-folder':b=>{S.folderOpen[b.dataset.folderKey]=true;renderList();document.querySelector('[data-folder="'+b.dataset.folderKey+'"]')?.scrollIntoView({block:'nearest'});},
   'history-export':showHistoryExport,
   'dialogue-import':showDialogueImport,
   'preview-story':openStoryPreview,
