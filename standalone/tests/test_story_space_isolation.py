@@ -27,7 +27,7 @@ class StorySpaceIsolationTests(unittest.TestCase):
         self.protected={p.name:p.read_bytes() for p in self.cfg.glob('KZone*.json')}
     def write(self,name,rows):
         # Noncanonical whitespace makes accidental rewrites observable byte for byte.
-        (self.cfg/(name+'.json')).write_text(b.json.dumps(rows,ensure_ascii=False,indent=4)+'\n')
+        (self.cfg/(name+'.json')).write_text(b.json.dumps(rows,ensure_ascii=False,indent=4)+'\n',encoding='utf-8')
     def request(self):
         d=self.store.load(self.ident);talks=copy.deepcopy(d['talks']);talks['9001']['content']='只改剧情'
         return dict(projectId=self.ident,revision=d['revision'],talks=talks)
