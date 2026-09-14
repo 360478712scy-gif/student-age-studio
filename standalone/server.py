@@ -316,6 +316,10 @@ def reconcile_premises(state, previous, maps, original):
     old = previous.get('premises', {})
     incoming = state.setdefault('premises', copy.deepcopy(old))
     if not isinstance(old, dict) or not isinstance(incoming, dict): raise ApiError('前提列表格式无效。')
+    # No named definitions or pending removals means there is nothing to reconcile.
+    if not old and not incoming and not previous.get('deletedPremisePairs'):
+        state['deletedPremisePairs'] = []
+        return set()
     before, after = premise_writers(original), premise_writers(maps)
     deleted = {tuple(pair) for pair in previous.get('deletedPremisePairs', []) if isinstance(pair, list) and len(pair) == 2}
     for key, premise in list(incoming.items()):
@@ -612,10 +616,9 @@ class StudioStore:
         for name, path in self.cfg_table_files(project).items():
             try:
                 rows = read_json(path, {})
-                normalized = copy.deepcopy(rows)
-                if isinstance(normalized, dict):
-                    for key, row in normalized.items():
-                        if valid_id(key) and isinstance(row, dict): row["id"] = int(key)
+                # Validation changes only the top-level ID; nested payloads stay untouched.
+                normalized = {key: {**row, "id": int(key)} if valid_id(key) and isinstance(row, dict) else row
+                              for key, row in rows.items()} if isinstance(rows, dict) else rows
                 validate_map(normalized, name, allow_zero=True)
                 maps[name] = rows
             except ApiError as error: failures[name] = error
@@ -1373,7 +1376,7 @@ class StudioStore:
                     if payload[name] != catalog.get(name, {}): save_warnings.append(unreadable[filename].message + "。为避免覆盖损坏的文件，这张表的修改未写入。")
                     del payload[name]
             original_maps = copy.deepcopy(all_maps)
-            original_talks = copy.deepcopy(all_maps.get("TalkCfg.json", {}))
+            original_talks = original_maps.get("TalkCfg.json", {})
             catalog_talks = self.catalog_rows("TalkCfg", catalog)
             base_talk_ids = set(catalog_talks)
             if isinstance(catalog.get("baseTalkIds"), list):
@@ -1531,34 +1534,34 @@ class StudioStore:
             redirects = {key: [int(value) for value in resolve(int(key))] for key in redirects}
             if redirects:
                 all_maps.setdefault("TalkCfg.json", {})
-            for filename, table in all_maps.items():
-                if not isinstance(table, dict):
-                    continue
-                before = json_bytes(table)
-                for row in table.values():
-                    if not isinstance(row, dict):
+                for filename, table in all_maps.items():
+                    if not isinstance(table, dict):
                         continue
-                    for field in TALK_FIELDS.intersection(row):
-                        value = row[field]
-                        if isinstance(value, list) and all(isinstance(entry, int) and not isinstance(entry, bool) for entry in value):
-                            row[field] = [target for ident in value for target in resolve(ident)]
-                        elif filename == 'GiftEvtCfg.json' and field == 'talkId' and isinstance(value, list):
-                            # One dialogue list per recipient; preserve slot alignment.
-                            row[field] = [[target for ident in entry for target in resolve(ident)]
-                                          if isinstance(entry, list) else entry for entry in value]
-                        elif isinstance(value, int) and not isinstance(value, bool) and str(value) in redirects:
-                            targets = resolve(value)
-                            if len(targets) > 1:
-                                save_warnings.append("删除后的多个跳转无法写入单目标字段 " + filename + "/" + field + "，已使用第一个替代对话。")
-                            row[field] = targets[0] if targets else 0
-                if filename == "TalkCfg.json":
-                    for key in redirects:
-                        if key in base_talk_ids or key in native_tombstones:
-                            table[key] = inert_talk(key, redirects[key])
-                        else:
-                            table.pop(key, None)
-                if json_bytes(table) != before:
-                    touched.add(filename)
+                    before = json_bytes(table)
+                    for row in table.values():
+                        if not isinstance(row, dict):
+                            continue
+                        for field in TALK_FIELDS.intersection(row):
+                            value = row[field]
+                            if isinstance(value, list) and all(isinstance(entry, int) and not isinstance(entry, bool) for entry in value):
+                                row[field] = [target for ident in value for target in resolve(ident)]
+                            elif filename == 'GiftEvtCfg.json' and field == 'talkId' and isinstance(value, list):
+                                # One dialogue list per recipient; preserve slot alignment.
+                                row[field] = [[target for ident in entry for target in resolve(ident)]
+                                              if isinstance(entry, list) else entry for entry in value]
+                            elif isinstance(value, int) and not isinstance(value, bool) and str(value) in redirects:
+                                targets = resolve(value)
+                                if len(targets) > 1:
+                                    save_warnings.append("删除后的多个跳转无法写入单目标字段 " + filename + "/" + field + "，已使用第一个替代对话。")
+                                row[field] = targets[0] if targets else 0
+                    if filename == "TalkCfg.json":
+                        for key in redirects:
+                            if key in base_talk_ids or key in native_tombstones:
+                                table[key] = inert_talk(key, redirects[key])
+                            else:
+                                table.pop(key, None)
+                    if json_bytes(table) != before:
+                        touched.add(filename)
             removed_options = set()
             if "options" in payload or cascade_deleted:
                 removed_options = previous_options - set(all_maps.get("OptionCfg.json", {}))
@@ -1685,7 +1688,10 @@ class StudioStore:
                 talk_map = all_maps.get("TalkCfg.json", {})
                 order = list(dict.fromkeys(int(ident) for ident in order if str(ident) in talk_map and str(ident) not in redirects))
                 old_order = state.get("order", []) if isinstance(state.get("order"), list) else []
-                order.extend(int(ident) for ident in old_order if valid_id(ident) and int(ident) not in order and str(ident) not in redirects)
+                ordered_ids = set(order)
+                for ident in old_order:
+                    if valid_id(ident) and int(ident) not in ordered_ids and str(ident) not in redirects:
+                        order.append(int(ident)); ordered_ids.add(int(ident))
                 ordered_map = {str(ident): talk_map[str(ident)] for ident in order if str(ident) in talk_map}
                 ordered_map.update({key: row for key, row in talk_map.items() if key not in ordered_map})
                 if list(ordered_map) != list(talk_map):

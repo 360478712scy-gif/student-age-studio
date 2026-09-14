@@ -596,12 +596,12 @@ function importDialogueRows(rows){
   if(folder){folder.collapsed=false;S.folderOpen[S.activeFolder]=true;}S.search='';$('#talk-search').value='';
  });
  }catch(error){S.undo=undoBefore;S.redo=redoBefore;restore(prior);throw error;}
- S.selected=created[0];scenePlayer?.dispose();scenePlayer=null;render();return created;
+ S.selected=created.at(-1);scenePlayer?.dispose();scenePlayer=null;render();return created;
 }
 function showDialogueImport(){
- if(!editable())return;stopLinePlayback();const project=S.project.id,bindings={};let parsed={rows:[],errors:[],unmatched:[]};
- modal('导入对话',`<p>每行支持：人物 对话、人物：对话、人物:对话。不带人名和分隔符的行自动识别为旁白。按名字识别人物，导入后自动登场，并沿用背景与已有在场人物。</p><label class="dialogue-file-label">读取 TXT 文件<input type="file" id="dialogue-import-file" accept=".txt,text/plain"></label><textarea id="dialogue-import-text" rows="9" placeholder="白雨 今天去哪里？&#10;梁超杰 去操场吧。&#10;两个人走出教室。"></textarea><p class="helper">也可直接粘贴。正文中的换行用 \\n 表示。新对话会接在当前句后，可一次撤销。</p><div id="dialogue-import-match"></div><p id="dialogue-import-count" role="status"></p>`,[{label:'取消',run:closeModal},{label:'导入对话',primary:true,run:()=>{
-  if(S.project.id!==project)throw Error('模组已切换，请重新导入。');refresh();if(parsed.errors.length||parsed.unmatched.length||!parsed.rows.length)throw Error('请检查文本格式并匹配人物。');
+ if(!editable())return;stopLinePlayback();const project=S.project.id,anchor=S.selected,folder=S.activeFolder,bindings={};let parsed={rows:[],errors:[],unmatched:[]};
+ modal('导入对话',`<p>导入位置：${anchor?'当前所选对话之后':'当前事件开头'}。导入后选中最后一句，继续导入会接在它后面。</p><p>每行支持：人物 对话、人物：对话、人物:对话。不带人名和分隔符的行自动识别为旁白。按名字识别人物，导入后自动登场，并沿用背景与已有在场人物。</p><label class="dialogue-file-label">读取 TXT 文件<input type="file" id="dialogue-import-file" accept=".txt,text/plain"></label><textarea id="dialogue-import-text" rows="9" placeholder="白雨 今天去哪里？&#10;梁超杰 去操场吧。&#10;两个人走出教室。"></textarea><p class="helper">也可直接粘贴。正文中的换行用 \\n 表示。新对话会接在当前句后，可一次撤销。</p><div id="dialogue-import-match"></div><p id="dialogue-import-count" role="status"></p>`,[{label:'取消',run:closeModal},{label:'导入对话',primary:true,run:()=>{
+  if(S.project.id!==project||S.selected!==anchor||S.activeFolder!==folder)throw Error('导入位置已变化，请重新打开导入窗口。');refresh();if(parsed.errors.length||parsed.unmatched.length||!parsed.rows.length)throw Error('请检查文本格式并匹配人物。');
   const count=parsed.rows.length;importDialogueRows(parsed.rows);closeModal();toast('已导入 '+count+' 句对话。');
  }}]);
  function refresh(){parsed=StudentAgeDialogueText.parse($('#dialogue-import-text').value,S.doc.persons,bindings);const speakers=[...new Set(parsed.rows.map(row=>row.speaker))];

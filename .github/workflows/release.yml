@@ -21,6 +21,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install 'certifi>=2026.2.25' 'Pillow==12.3.0' 'numpy>=2,<3'
+      - run: python -B -m unittest discover -s standalone/tests -p test_save_large.py
       - run: node qa/tests/dialogue-text.cjs
       - run: python -B -m unittest discover -s standalone/tests -p test_app_updates.py
       - run: python -B -m unittest discover -s standalone/tests -p test_external_usages.py
@@ -78,7 +79,7 @@ jobs:
           import hashlib,json,os
           from pathlib import Path
           p=Path('/tmp/studio-feed/student-age-studio-update.zip');data=p.read_bytes()
-          feed={'format':1,'runtimeAbi':1,'version':os.environ['RELEASE_TAG'],'commit':os.environ['PAYLOAD_COMMIT'],'sha256':hashlib.sha256(data).hexdigest(),'size':len(data),'notes':Path('docs/releases/beta137.md').read_text(encoding='utf-8')}
+          feed={'format':1,'runtimeAbi':1,'version':os.environ['RELEASE_TAG'],'commit':os.environ['PAYLOAD_COMMIT'],'sha256':hashlib.sha256(data).hexdigest(),'size':len(data),'notes':Path('docs/releases/beta1372.md').read_text(encoding='utf-8')}
           Path('/tmp/studio-feed/latest.json').write_text(json.dumps(feed,ensure_ascii=False,indent=2),encoding='utf-8')
           PYFEED
           git -C /tmp/studio-feed add latest.json
