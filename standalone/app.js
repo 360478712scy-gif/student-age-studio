@@ -4,7 +4,8 @@
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => Array.from(root.querySelectorAll(s));
 const h = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const clone = v => JSON.parse(JSON.stringify(v));
+const IndexedTalks=window.StudentAgeIndexedTalks;
+const clone = v => IndexedTalks.clone(v);
 const ids = v => Array.isArray(v) ? v.map(Number).filter(Number.isFinite) : [];
 const values = map => Object.values(map || {});
 const Timeline=window.StudentAgeTimeline;
@@ -58,8 +59,8 @@ function personName(id) {const p=S.doc && S.doc.persons[id];return p && p.name |
 function speaker(t) {const speaking=ids(t.roleIds).filter(id=>id>=0);return t.roleName || (speaking.length ? speaking.map(personName).join('、') : '旁白');}
 function talkLabel(id) {const t=S.doc && S.doc.talks[id];return t ? speaker(t)+' · '+(t.content || '空白对话').replace(/\n/g,' ').slice(0,35) : '外部对话 · '+id;}
 function faceName(face=S.face) {const cfg=S.doc && S.doc.faces[Number(S.previewRole)*1000+S.cloth*100+face];return cfg && cfg.name || FACES[face] || '自定义表情 '+face;}
-window.addEventListener('studio-premise-created',e=>{const v=e.detail;if(S.project?.id!==v.projectId||S.revision!==v.previousRevision)return;S.revision=v.revision;S.premises[v.premise.id]=clone(v.premise);for(const entry of [...S.undo,...S.redo]){entry.premises??={};entry.premises[v.premise.id]=clone(v.premise);}if(S.saved){const saved=JSON.parse(S.saved);saved[4]??={};saved[4][v.premise.id]=clone(v.premise);S.saved=JSON.stringify(saved);}updateDirty();});
-function currentSignature() {return JSON.stringify([S.doc,S.order,S.deleted,S.replacements,S.premises,Object.fromEntries(Object.entries(S.branchFolders).map(([key,{collapsed,...folder}])=>[key,folder])),pinnedSnapshot()]);}
+window.addEventListener('studio-premise-created',e=>{const v=e.detail;if(S.project?.id!==v.projectId||S.revision!==v.previousRevision)return;S.revision=v.revision;S.premises[v.premise.id]=clone(v.premise);for(const entry of [...S.undo,...S.redo]){entry.premises??={};entry.premises[v.premise.id]=clone(v.premise);}if(S.saved){const saved=IndexedTalks.parse(S.saved);saved[4]??={};saved[4][v.premise.id]=clone(v.premise);S.saved=IndexedTalks.stringify(saved);}updateDirty();});
+function currentSignature() {return IndexedTalks.stringify([S.doc,S.order,S.deleted,S.replacements,S.premises,Object.fromEntries(Object.entries(S.branchFolders).map(([key,{collapsed,...folder}])=>[key,folder])),pinnedSnapshot()]);}
 function pinnedSnapshot(){return {talks:[...S.pinned.talks].sort((a,b)=>a-b),options:[...S.pinned.options].sort((a,b)=>a-b),events:[...S.pinned.events].sort((a,b)=>a-b)};}
 function snapshot(label) {return {label,doc:clone(S.doc),order:S.order.slice(),premises:clone(S.premises),branchFolders:clone(S.branchFolders),activeFolder:S.activeFolder,selected:S.selected,event:S.event,deleted:S.deleted.slice(),replacements:clone(S.replacements),pinnedIds:pinnedSnapshot(),idMappings:clone(S.idMappings||{}),localIds:clone(S.localIds)};}
 function history(label, key) {
@@ -98,7 +99,13 @@ async function deletePremise(rowOrId){
 window.STUDIO_DELETE_PREMISE=deletePremise;
 function eventRoots(e){return [...ids(e.talkId),...ids(e.options).flatMap(id=>[...ids(S.doc.options[id]?.talkId),...ids(S.doc.options[id]?.talkId2)])];}
 function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));fn();StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds);cleanLostPremises(writers);updateDirty();if(redraw)render();scheduleRenumber();return true;}
-function updateDirty() {invalidateStageMemo();S.dirty=S.doc !== null && (currentSignature() !== S.saved||Object.values(S.idMappings||{}).some(m=>Object.keys(m).length));renderChrome();}
+let textDirtyTimer=null;
+function updateTextDirty(){
+ // Input changes the live row immediately. Full-document comparison waits for a pause.
+ S.dirty=true;renderChrome();clearTimeout(textDirtyTimer);
+ textDirtyTimer=setTimeout(()=>{textDirtyTimer=null;updateDirty();},600);
+}
+function updateDirty() {clearTimeout(textDirtyTimer);textDirtyTimer=null;invalidateStageMemo();S.dirty=S.doc !== null && (currentSignature() !== S.saved||Object.values(S.idMappings||{}).some(m=>Object.keys(m).length));renderChrome();}
 function restore(entry) {S.doc=entry.doc;S.order=entry.order;S.premises=entry.premises||{};S.branchFolders=entry.branchFolders||{};S.activeFolder=entry.activeFolder||null;S.selected=entry.selected;S.event=entry.event;S.deleted=entry.deleted;S.replacements=entry.replacements;S.pinned=Object.fromEntries(['talks','options','events'].map(k=>[k,new Set(entry.pinnedIds?.[k]||[])]));S.idMappings=clone(entry.idMappings||{});if(entry.localIds)S.localIds=clone(entry.localIds);clearTimeout(renumberTimer);S.coalesce=null;updateDirty();render();}
 function undo() {if(!S.undo.length)return;const e=S.undo.pop();S.redo.push(snapshot(e.label));restore(e);toast('已撤销：'+e.label);}
 function redo() {if(!S.redo.length)return;const e=S.redo.pop();S.undo.push(snapshot(e.label));restore(e);toast('已重做：'+e.label);}
@@ -728,10 +735,10 @@ async function loadProject(id,preserve=false) {
   projectBusy(true);projectFeedback('正在打开模组：'+availableProject(id).name+'…');
   try{
   if(!preserve&&(S.deferredProject||String(S.project?.id)!==String(id))&&isLocalProject(availableProject(id))&&!availableProject(id).originalMode){projectFeedback('正在备份模组：'+availableProject(id).name+'…');let backup;try{backup=await api('/api/backup',{projectId:id,kind:'automatic',requestId:crypto.randomUUID()});}catch(error){error.message='自动备份未完成：'+error.message;throw error;}if(backup.warning)toast(backup.warning,'note');if(request!==projectLoadSequence)return false;}
-  const data=await api('/api/project?id='+encodeURIComponent(id));await STUDIO_IDS.refresh(id);if(request!==projectLoadSequence)return false;previous={...S};
+  const data=await api('/api/project?id='+encodeURIComponent(id)+'&talkStorage=indexed');await STUDIO_IDS.refresh(id);if(request!==projectLoadSequence)return false;previous={...S};
   if(!isReadableProject(data.project)||String(data.project.id)!==String(id))throw Error('读取的项目与当前选择不符，请重新打开。');
   if(S.project&&String(S.project.id)!==String(data.project.id)){scenePlayer?.dispose();scenePlayer=null;StudentAgeScene.portraitSizes.clear();portraitSizeRequests.clear();}S.project=data.project;S.deferredProject=false;S.referenceResolution=data.referenceResolution||[2560,1440];S.revision=data.revision;S.localIds=data.localIds||{};S.catalogAvailable=!!data.catalogAvailable;
-  S.goalImageIds=data.goalImageIds||[];S.doc={protagonistGender:data.protagonistGender===2?2:1,eventGrades:data.eventGrades||{}};for(const k of MAPS)S.doc[k]=data[k]||{};
+  S.goalImageIds=data.goalImageIds||[];S.doc={protagonistGender:data.protagonistGender===2?2:1,eventGrades:data.eventGrades||{}};for(const k of MAPS)S.doc[k]=data[k]||{};if(data.indexedTalks)S.doc.talks=IndexedTalks.create(data.indexedTalks.rows);
   S.premises=clone(data.premises||{});S.branchFolders=clone(data.branchFolders||{});S.folderOpen={};S.activeFolder=null;S.doc.talkOwners=clone(data.talkOwners||{});StudentAgeEventOwnership.sync(S.doc,S.branchFolders);S.doc.audioCues=data.audioCues||{version:1,sfx:{},bgm:[]};S.bgmDraft=null;S.audios=[];S.defaultBgm=null;stageAudio?.stop();
   const computedOrder=initialOrder();const storedOrder=ids(data.order).filter(id=>S.doc.talks[id]);S.order=[...new Set([...storedOrder,...computedOrder])];S.event=preserve&&(oldEvent==='all'||S.doc.events[oldEvent])?oldEvent:(values(S.doc.events)[0]?.id || 'all');
   S.search='';$('#talk-search').value='';S.selected=preserve&&S.doc.talks[oldSelection]?oldSelection:(visibleIds()[0]||null);
@@ -743,7 +750,7 @@ async function loadProject(id,preserve=false) {
   localStorage.setItem('studentAgeStudio.project',String(id));renderProjects();render();if(data.warnings?.length||data.project?.warnings?.length)toast((data.warnings||data.project.warnings)[0],'note');
   projectBusy(false);$('#project-load-status')?.remove();
   loadConditionCatalog();
-  loadAudioCatalog().catch(error=>{if(request===projectLoadSequence)toast(error.message,'note')});window.dispatchEvent(new CustomEvent('studio-project-ready'));return true;
+  loadAudioCatalog().catch(error=>{if(request===projectLoadSequence)toast(error.message,'note')});IndexedTalks.retain(S.doc.talks);window.dispatchEvent(new CustomEvent('studio-project-ready'));return true;
   }catch(error){error.projectId=id;if(request!==projectLoadSequence)return false;if(previous){Object.assign(S,previous);renderProjects();render();}projectBusy(false);projectFeedback('无法打开“'+(availableProject(id)?.name||id)+'”：'+(error.message||error),true,id);throw error;}
 }
 function newProject(copy=false,sourceId=null) {
@@ -762,9 +769,13 @@ function changedStoryPayload(mappings){
  return changedStoryPayloadFrom();
 }
 function changedStoryPayloadFrom(){
- const baseline=S.saved?JSON.parse(S.saved):[],before=baseline[0]||{};
+ const baseline=S.saved?IndexedTalks.parse(S.saved):[],before=baseline[0]||{};
  const payload={projectId:S.project.id,revision:S.revision};
- for(const [key,value] of Object.entries(S.doc))if(JSON.stringify(value)!==JSON.stringify(before[key]))payload[key]=value;
+ for(const [key,value] of Object.entries(S.doc)){
+  const patch=key==='talks'?IndexedTalks.delta(value,before[key]):null;
+  if(patch){if(Object.keys(patch.upsert).length||patch.deleted.length)payload.talkPatch=patch;}
+  else if(JSON.stringify(value)!==JSON.stringify(before[key]))payload[key]=value;
+ }
  const extras={deletedIds:[S.deleted,baseline[2]],replacements:[S.replacements,baseline[3]],order:[S.order,baseline[1]],branchFolders:[Object.fromEntries(Object.entries(S.branchFolders).map(([key,{collapsed,...folder}])=>[key,folder])),baseline[5]],premises:[S.premises,baseline[4]]};
  for(const [key,[value,old]] of Object.entries(extras))if(JSON.stringify(value)!==JSON.stringify(old))payload[key]=value;
  const pinnedNow=pinnedSnapshot();if(JSON.stringify(pinnedNow)!==JSON.stringify(baseline[6]||{talks:[],options:[],events:[]}))payload.pinnedIds=pinnedNow;
@@ -772,7 +783,7 @@ function changedStoryPayloadFrom(){
  return payload;
 }
 async function save() {
-  if(!editable()||S.saving)return false;document.activeElement?.blur?.();const invalid=document.querySelector('.effect-editor [data-effect-invalid]');if(invalid){for(let parent=invalid.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;toast('有效果参数尚未填好（'+invalid.dataset.effectInvalid+'），已按上一次有效值保存。','note');}if(!S.dirty)return true;
+  if(!editable()||S.saving)return false;document.activeElement?.blur?.();if(textDirtyTimer!==null)updateDirty();const invalid=document.querySelector('.effect-editor [data-effect-invalid]');if(invalid){for(let parent=invalid.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;toast('有效果参数尚未填好（'+invalid.dataset.effectInvalid+'），已按上一次有效值保存。','note');}if(!S.dirty)return true;
   StudentAgeEventBindings.syncSocialEffects(S.doc);for(const id of S.project.originalMode?[]:S.localIds.talks||[]){const t=S.doc.talks[id];if(t)StudentAgeScene.normalizeNativeMoves(t);}
   for(const id of Timeline.internals(S.branchFolders)){const t=S.doc.talks[id];if(!t)continue;if((t.content||'').trim()||t.roles?.length||t.option?.length||t.effect?.length||t.screenEffect?.length){t.content='';t.roles=[];t.option=[];t.effect=[];t.screenEffect=[];}}S.saving=true;renderChrome();const submittedSignature=currentSignature();
   const sentMappings=S.idMappings;S.idMappings={};
@@ -1595,7 +1606,7 @@ document.addEventListener('input',event=>{
   if(e.dataset.sfxVolume!==undefined){if(!editable())return;history('调整音效音量','sfx-volume:'+S.selected+':'+e.dataset.sfxVolume);S.doc.audioCues.sfx[S.selected][Number(e.dataset.sfxVolume)].volume=Number(e.value);updateDirty();return;}
   if(e.id==='talk-search'){S.search=e.value;S.listStart=0;S.listAnchor=S.selected;renderList();return;}
   if(e.dataset.edit&&e.tagName!=='SELECT'&&talk()){
-    if(!editable())return;history('编辑对话文字','text:'+S.selected+':'+e.dataset.edit);talk()[e.dataset.edit]=e.value;updateDirty();updateTalkTextCard();updatePreviewText();if(e.dataset.edit==='content'){const count=$('#character-count');if(count)count.textContent=e.value.length+' 字';}return;
+    if(!editable())return;history('编辑对话文字','text:'+S.selected+':'+e.dataset.edit);talk()[e.dataset.edit]=e.value;updateTextDirty();updateTalkTextCard();updatePreviewText();if(e.dataset.edit==='content'){const count=$('#character-count');if(count)count.textContent=e.value.length+' 字';}return;
   }
   if(e.dataset.optionField&&e.tagName!=='SELECT'){
     if(!editable())return;const o=S.doc.options[e.dataset.optionId];if(!o)return;history('编辑选项文字','option:'+o.id);o[e.dataset.optionField]=e.value;updateDirty();renderList();return;
@@ -1727,10 +1738,10 @@ function mergeImportedAssets(result){
     edits.push({key,id,row:merged});
    }
   }plans.push({doc,edits});}
- const saved=S.saved?JSON.parse(S.saved):null;
+ const saved=S.saved?IndexedTalks.parse(S.saved):null;
  plan(S.doc);for(const entry of [...S.undo,...S.redo])plan(entry.doc);if(saved)plan(saved[0],true);
  for(const {doc,edits}of plans)for(const {key,id,row}of edits){doc[key]??={};doc[key][id]=row;}
- if(saved)S.saved=JSON.stringify(saved);
+ if(saved)S.saved=IndexedTalks.stringify(saved);
  for(const [table,delta]of Object.entries(result.importDelta)){
   const key=aliases[table];if(key)S.localIds[key]=[...new Set([...(S.localIds[key]||[]),...Object.keys(delta.after).map(Number)])];
   if(S.conditionRefs?.[table])Object.assign(S.conditionRefs[table],clone(delta.after));
@@ -1800,7 +1811,7 @@ window.STUDIO_COMMIT_OPEN_EDITOR=commitOpenEditor;
 window.STUDIO_HAS_OPEN_DRAFT=()=>!!($('#modal').open&&pendingModalSave);
 window.STUDIO_DISCARD_STORY=()=>{
  closeModal();if(!S.dirty)return;
- const [doc,order,deleted,replacements,premises,branchFolders]=JSON.parse(S.saved);
+ const [doc,order,deleted,replacements,premises,branchFolders]=IndexedTalks.parse(S.saved);
  S.undo=[];S.redo=[];restore({doc,order,deleted,replacements,premises,branchFolders,selected:doc.talks[S.selected]?S.selected:order[0]||null,event:S.event==='all'||doc.events[S.event]?S.event:'all'});window.STUDIO_EVENTS?.refresh();
 };
 window.STUDIO_BEFORE_WORKSHOP=async()=>{if(!S.project)return false;const options={dirty:()=>S.dirty||window.STUDIO_HAS_OPEN_DRAFT(),save:async()=>{await commitOpenEditor();return !S.dirty||await save();},discard:window.STUDIO_DISCARD_STORY};return window.STUDIO_NAV?window.STUDIO_NAV.prepareLeave(options):options.save();};
@@ -1814,7 +1825,7 @@ window.STUDIO_STORY_NAV={
 // Exposed pure/data operations make graph integrity checkable without a running game.
 const jsonStoryKeys={TalkCfg:'talks',EvtCfg:'events',OptionCfg:'options',PersonCfg:'persons',ModFaceCfg:'faces',BgCfg:'backgrounds',CGCfg:'cgs',PaperCfg:'papers',ActionCfg:'actions',ActionEvtCfg:'actionEvents',InteractCfg:'interactions',GiftEvtCfg:'giftEvents',MinigameActionCfg:'minigameActions'};
 window.STUDIO_STORY_JSON={
- read(name,disk={}){const key=jsonStoryKeys[name];if(!key||!S.doc?.[key]||S.deferredProject)return null;const baseline=S.saved?JSON.parse(S.saved)[0]?.[key]||{}:{},rows=S.doc[key],keys=new Set([...Object.keys(disk),...(S.localIds[key]||[]).map(String)]);for(const [id,row]of Object.entries(rows))if(JSON.stringify(row)!==JSON.stringify(baseline[id]))keys.add(id);return Object.fromEntries([...keys].filter(id=>rows[id]).map(id=>[id,clone(rows[id])]));},
+ read(name,disk={}){const key=jsonStoryKeys[name];if(!key||!S.doc?.[key]||S.deferredProject)return null;const baseline=S.saved?IndexedTalks.parse(S.saved)[0]?.[key]||{}:{},rows=S.doc[key],keys=new Set([...Object.keys(disk),...(S.localIds[key]||[]).map(String)]);for(const [id,row]of Object.entries(rows))if(JSON.stringify(row)!==JSON.stringify(baseline[id]))keys.add(id);return Object.fromEntries([...keys].filter(id=>rows[id]).map(id=>[id,clone(rows[id])]));},
  async write(name,rows,disk={}){const key=jsonStoryKeys[name];if(!key||!S.doc?.[key]||S.deferredProject)return false;if(!editable())throw Error('当前模组不可编辑。');const previous=this.read(name,disk);if(JSON.stringify(previous)===JSON.stringify(rows))return true;
   rows=clone(rows);const map={};if(['talks','options','events'].includes(key))for(const [id,row]of Object.entries(rows)){const next=Number(row?.id);if(Number.isInteger(next)&&next>0&&next<=2147483647&&String(next)!==id){map[id]=next;row.id=Number(id);}}
   for(const [id,next]of Object.entries({...map}))if((rows[next]||S.doc[key][next])&&localStoryIds(key).has(Number(next))&&map[next]===undefined)map[next]=Number(id);
@@ -1834,7 +1845,7 @@ window.STUDIO_STORY_JSON={
   updateDirty();render();
   if(Object.keys(map).length){const ok=await runRenumber({[name]:map});if(!ok)throw Error('编号同步尚未完成，请再次检查 JSON。');if(key!=='events')for(const id of Object.values(map))S.pinned[key].add(Number(id));updateDirty();render();}
   window.STUDIO_EVENTS?.refresh();return true;},
- saved(name,rows,revision){const key=jsonStoryKeys[name];S.revision=revision;if(!key||!S.doc||!S.saved)return;const saved=JSON.parse(S.saved);saved[0][key]=clone(S.doc[key]);if(key==='talks')saved[1]=S.order.slice();S.saved=JSON.stringify(saved);S.localIds[key]=Object.keys(rows).map(Number);updateDirty();renderChrome();
+ saved(name,rows,revision){const key=jsonStoryKeys[name];S.revision=revision;if(!key||!S.doc||!S.saved)return;const saved=IndexedTalks.parse(S.saved);saved[0][key]=clone(S.doc[key]);if(key==='talks')saved[1]=S.order.slice();S.saved=IndexedTalks.stringify(saved);S.localIds[key]=Object.keys(rows).map(Number);updateDirty();renderChrome();
  }
 };
 window.STUDIO_CURRENT_REVISION=()=>S.revision;

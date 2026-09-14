@@ -204,7 +204,7 @@ bar.addEventListener('click',event=>{const button=event.target.closest('[data-na
 $('#studio-feature').addEventListener('change',event=>{const id=event.target.value,currentFeature=wk()?.isOpen()?wk().capture()?.feature:window.STUDIO_CURRENT_PROJECT?.()?'story':'';featureSignature='';renderFeatures(busy());if(!id||id===currentFeature)return;run(async()=>{if(!await prepareLeave())return;window.STUDIO_HELP?.close();window.STUDIO_EVENTS?.close();await wk().openFeature(id);});});
 $('#studio-project').addEventListener('change',event=>{const id=event.target.value;event.target.value=window.STUDIO_CURRENT_PROJECT?.()||'';if(!id||id===window.STUDIO_CURRENT_PROJECT?.())return;run(async()=>{if(!await prepareLeave())return;await window.STUDIO_SELECT_PROJECT(id);});});
 document.addEventListener('click',()=>{if(!busy())record();changed();},true);
-document.addEventListener('change',changed,true);document.addEventListener('input',()=>{updateCurrent();render();changed();},true);
+document.addEventListener('change',changed,true);document.addEventListener('input',changed,true);
 document.addEventListener('scroll',()=>{if(!busy())updateCurrent();},true);
 document.addEventListener('keydown',event=>{if(savePromise||!saving.hidden){event.preventDefault();event.stopImmediatePropagation();return;}if(event.altKey&&!event.metaKey&&!event.ctrlKey&&['ArrowLeft','ArrowRight'].includes(event.key)&&!document.querySelector('dialog[open]')){event.preventDefault();travel(event.key==='ArrowLeft'?-1:1);}},true);
 const observer=new MutationObserver(changed);for(const selector of ['#workshop','#story-events','#editor-content','#talk-list'])if($(selector))observer.observe($(selector),{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','disabled']});

@@ -1364,6 +1364,27 @@ class StudioStore:
             catalog = self.catalog()
             all_maps, unreadable = self.readable_maps(project)
             payload = dict(payload)
+            # A partial table must never enter the legacy missing-row deletion path.
+            # Expand explicit deltas against this exact revision while holding the save lock.
+            if 'talkPatch' in payload:
+                patch = payload.pop('talkPatch')
+                if 'talks' in payload or not isinstance(patch, dict) or set(patch) != {'version', 'upsert', 'deleted'} or type(patch.get('version')) is not int or patch['version'] != 1:
+                    raise ApiError('对话增量保存格式无效；原文件未修改。')
+                if 'TalkCfg.json' in unreadable:
+                    raise ApiError('对话原文件无法读取，不能合并增量；原文件未修改。', 409, 'conflict')
+                rows, deleted = patch['upsert'], patch['deleted']
+                if not isinstance(rows, dict) or not isinstance(deleted, list) or any(not valid_id(v) or isinstance(v, bool) for v in deleted):
+                    raise ApiError('对话增量记录或删除列表无效；原文件未修改。')
+                validate_map(rows, 'TalkCfg.json', allow_zero=True)
+                if set(rows) & {str(v) for v in deleted}:
+                    raise ApiError('同一对话不能同时修改和删除；原文件未修改。')
+                current = {**self.catalog_rows('TalkCfg', catalog), **all_maps.get('TalkCfg.json', {})}
+                prior = flat_deletions(read_json(safe_path(project.path, 'StudentAgeStudio/deleted-talks.json'), {}))
+                for key in prior: current.pop(key, None)
+                for key in deleted: current.pop(str(key), None)
+                current.update(rows)
+                payload['talks'] = current
+                payload['deletedIds'] = list(dict.fromkeys([*payload.get('deletedIds', []), *deleted]))
             if project.original_mode:
                 for name, filename in TABLES.items():
                     if name in payload:
@@ -3551,6 +3572,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                     repair_warning='自动播放修复未完成，已跳过；仍可继续编辑。'+(' 错误日志：'+diagnostic['errorLog'] if diagnostic.get('errorLog') else '')
                 self.server.store.clean_orphan_dialogues(query.get("id", [""])[0])
                 data=self.server.store.load(query.get("id", [""])[0])
+                if query.get('talkStorage', [''])[0] == 'indexed' and not data.get('unreadableTables', {}).get('talks'):
+                    # Keep a read-only JSON base in the browser. Rows are decoded on access,
+                    # and history stores only changed rows instead of cloning the full table.
+                    data['indexedTalks'] = {'version': 1, 'rows': [[key, json.dumps(row, ensure_ascii=False, separators=(',', ':'))] for key, row in data.pop('talks', {}).items()]}
                 if repair_warning:data.setdefault('warnings',[]).append(repair_warning)
                 return self.send_json(data)
             if route == "/api/commands":
@@ -3669,7 +3694,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 page = page.replace("</head>", bootstrap + "</head>", 1) if "</head>" in page else bootstrap + page
                 policy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval' 'nonce-" + nonce + "'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
                 return self.send_data(page.encode(), "text/html; charset=utf-8", extra={"Content-Security-Policy": policy})
-            if route in ("/plugin-mode.js", "/plugin-mode.css", "/editor-music.js", "/editor-music.css", "/character-images.js", "/external-dialogues.js", "/external-uses.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-ui.css", "/locations.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
+            if route in ("/plugin-mode.js", "/plugin-mode.css", "/editor-music.js", "/editor-music.css", "/character-images.js", "/external-dialogues.js", "/external-uses.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/indexed-talks.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-ui.css", "/locations.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
                 file = self.server.web_root / route.lstrip("/")
                 if file.is_file():
                     data = file.read_bytes()
