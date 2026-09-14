@@ -95,7 +95,19 @@ def _int(value, label, api, minimum=1, maximum=2147483647):
     return value
 
 
-def apply(store,project,groups,previous,all_maps,touched,api):
+def entry_values(groups, all_maps):
+    """Capture only bound paths around the store's deletion-reference normalization."""
+    values = {}
+    for fid, folder in groups.items():
+        for use in folder.get('uses', []):
+            definition = KINDS.get(use.get('kind')); target = use.get('_target')
+            if not definition or not target: continue
+            row = all_maps.get(definition['table'] + '.json', {}).get(str(target['recordId']))
+            if row is not None: values[(fid, use['id'])] = read_path(row, target['path'])
+    return values
+
+
+def apply(store,project,groups,previous,all_maps,touched,api,normalized_entries=None):
     """Resolve real CFG targets, merge only edited fields, reject collisions, then write atomically."""
     groups=copy.deepcopy(groups)
     from external_sequence import compile_sequences
@@ -122,7 +134,9 @@ def apply(store,project,groups,previous,all_maps,touched,api):
         name=d['table'];rid=str(target['recordId']);row=table(name).get(rid)
         if row is None:raise api.ApiError('已绑定的配置被移除，请重新载入并处理用途。',409,'conflict')
         actual=read_path(row,target['path'])
-        if actual!=target['written']:
+        normalized=(normalized_entries or {}).get(identity)
+        own_rewrite=normalized is not None and normalized[0]==target['written'] and normalized[1]==actual
+        if actual!=target['written'] and not own_rewrite:
             if identity not in desired:continue
             raise api.ApiError('用途对应的游戏入口已被其他编辑修改。请移除此用途并保存，再重新绑定；外部修改会被保留。',409,'conflict')
         write_path(row,target['path'],target['previous'])

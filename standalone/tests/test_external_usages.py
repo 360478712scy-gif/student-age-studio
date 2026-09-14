@@ -142,6 +142,32 @@ class ExternalUsesTests(unittest.TestCase):
         p=self.request(d['folders']['one']['uses']);del p['talks']['9001'];p['folders']['one']['talkIds']=[9002]
         with self.assertRaises(b.ApiError):ext.save(self.store,p,b)
         self.assertIn('9001',self.read('TalkCfg'))
+    def test_sequence_batch_deletion_reassigns_gift_and_minigame_then_unlinks(self):
+        rows=self.read('TalkCfg');rows['9002']['nextTalk']=[9003]
+        rows['9003']={'id':9003,'content':'保留末句','nextTalk':[],'future':'keep'};self.write('TalkCfg',rows)
+        p=self.request([self.use('gift',npc=3,item=10,giftMode=0),self.use('mini-start',npc=3,level=5)])
+        p['folders']['one'].update(talkIds=[9001,9002,9003],sequence=True)
+        d=ext.save(self.store,p,b)
+        p=dict(projectId=self.ident,revision=d['revision'],talks=d['talks'],folders=d['folders'])
+        del p['talks']['9001'];del p['talks']['9002'];p['folders']['one']['talkIds']=[9003]
+        for u in p['folders']['one']['uses']:u['entryId']=9003
+        d=ext.save(self.store,p,b)
+        self.assertEqual(self.read('MinigameActionCfg')['705']['startTalk'],9003)
+        gifts=list(self.read('GiftEvtCfg').values());self.assertEqual(gifts[0]['talkId'],[[9003]])
+        self.assertEqual(self.read('TalkCfg')['9003']['future'],'keep')
+        p=dict(projectId=self.ident,revision=d['revision'],talks={},folders=d['folders'])
+        p['folders']['one'].update(talkIds=[],uses=[]);ext.save(self.store,p,b)
+        self.assertEqual(self.read('MinigameActionCfg')['705']['startTalk'],0)
+        self.assertFalse(self.read('TalkCfg'))
+
+    def test_batch_deletion_does_not_hide_foreign_binding_change(self):
+        d=self.save([self.use('mini-start',npc=3,level=1)])
+        r=self.read('MinigameActionCfg');r['701']['startTalk']=9002;self.write('MinigameActionCfg',r)
+        p=self.request(d['folders']['one']['uses']);del p['talks']['9001']
+        p['folders']['one']['talkIds']=[9002];p['folders']['one']['uses'][0]['entryId']=9002
+        with self.assertRaises(b.ApiError):ext.save(self.store,p,b)
+        self.assertIn('9001',self.read('TalkCfg'))
+        self.assertEqual(self.read('MinigameActionCfg')['701']['startTalk'],9002)
     def test_existing_event_callback_keeps_folder_visible_after_save(self):
         self.write('EvtCfg',{'7':{'id':7,'talkId':[7001]}})
         rows=self.read('TalkCfg');rows['7001']={'id':7001,'content':'事件','option':[71]};self.write('TalkCfg',rows)

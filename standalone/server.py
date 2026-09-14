@@ -1553,6 +1553,10 @@ class StudioStore:
                 return result
 
             redirects = {key: [int(value) for value in resolve(int(key))] for key in redirects}
+            normalized_external_entries = {}
+            if redirects and 'externalDialogueFolders' in payload:
+                from external_usages import entry_values
+                external_entries_before = entry_values(premise_state.get('externalDialogueFolders', {}), all_maps)
             if redirects:
                 all_maps.setdefault("TalkCfg.json", {})
                 for filename, table in all_maps.items():
@@ -1583,6 +1587,9 @@ class StudioStore:
                                 table.pop(key, None)
                     if json_bytes(table) != before:
                         touched.add(filename)
+            if redirects and 'externalDialogueFolders' in payload:
+                external_entries_after = entry_values(premise_state.get('externalDialogueFolders', {}), all_maps)
+                normalized_external_entries = {key: (value, external_entries_after[key]) for key, value in external_entries_before.items() if key in external_entries_after and value != external_entries_after[key]}
             removed_options = set()
             if "options" in payload or cascade_deleted:
                 removed_options = previous_options - set(all_maps.get("OptionCfg.json", {}))
@@ -1634,7 +1641,7 @@ class StudioStore:
                     if not isinstance(external_ids,list) or any(type(i)!=int or str(i) not in external_rows for i in external_ids):raise ApiError('事件外对话归属无效。')
                     state['externalDialogueIds']=sorted(set(external_ids))
                 from external_usages import apply as apply_external_uses
-                state['externalDialogueFolders']=apply_external_uses(self,project,groups,previous_external,all_maps,touched,sys.modules[__name__])
+                state['externalDialogueFolders']=apply_external_uses(self,project,groups,previous_external,all_maps,touched,sys.modules[__name__],normalized_external_entries)
             if "protagonistGender" in payload:
                 gender=payload["protagonistGender"]
                 if type(gender) is not int or gender not in (1,2): gender = 1
