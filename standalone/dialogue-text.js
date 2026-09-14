@@ -8,8 +8,7 @@ function parse(text,persons={},bindings={}){
  for(const person of Object.values(persons)){if(!person||person.name==null)continue;const name=String(person.name).trim();if(!name||name==='旁白')continue;if(!names.has(name))names.set(name,[]);names.get(name).push(Number(person.id));}
  const known=[...names.keys(),...Object.keys(bindings)].sort((a,b)=>b.length-a.length),rows=[],errors=[];
  for(const [index,original] of String(text).replace(/^\uFEFF/,'').split(/\r\n|\r|\n/).entries()){
-  if(!original.trim())continue;const line=original.trimStart(),matched=known.find(name=>line.startsWith(encode(name))&&/[ \t：:]/.test(line.charAt(encode(name).length))),parts=matched?[encode(matched),line.slice(encode(matched).length).replace(/^(?:[：:][ \t]?|[ \t])/,'')]:line.match(/^([^：:\s]+)(?:[：:][ \t]?|[ \t])(.*)$/)?.slice(1);
-  if(!parts){errors.push({line:index+1,message:'人物名后用空格、中文冒号或英文冒号分隔，再填写对话。'});continue;}
+  if(!original.trim())continue;const line=original.trimStart(),matched=known.find(name=>line.startsWith(encode(name))&&/[ \t：:]/.test(line.charAt(encode(name).length))),parts=matched?[encode(matched),line.slice(encode(matched).length).replace(/^(?:[：:][ \t]?|[ \t])/,'')]:line.match(/^([^：:\s]+)(?:[：:][ \t]?|[ \t])(.*)$/)?.slice(1)||['旁白',line];
   const speaker=decode(parts[0]),content=decode(parts[1]),bound=bindings[speaker],candidates=names.get(speaker)||[];
   const group=speaker.split('、').map(name=>names.get(name));
   const roleIds=speaker==='旁白'||bound==='narrator'?[]:bound!==undefined?[Number(bound)]:candidates.length===1?candidates:group.length>1&&group.every(ids=>ids?.length===1)?group.flat():null;

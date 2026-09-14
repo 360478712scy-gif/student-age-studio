@@ -3654,8 +3654,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 nonce = secrets.token_urlsafe(18)
                 preferences = self.server.display_settings()
                 bootstrap = '<script nonce="' + nonce + '">window.STUDIO_TOKEN=' + json.dumps(self.server.token) + ';window.STUDIO_BOOTSTRAPPING=true;window.STUDIO_DISPLAY_IDS=' + json.dumps(preferences['showRecordIds']) + ';window.STUDIO_AUTO_SAVE=' + json.dumps(preferences['autoSave']) + ';window.STUDIO_SAVE_ON_EXIT='+json.dumps(preferences['saveOnExit'])+';window.STUDIO_ONBOARDING_COMPLETE='+json.dumps(preferences['onboardingComplete'])+';window.STUDIO_WORKSHOP_FAVORITES=' + json.dumps(preferences['workshopFavorites']) + ";</script>"
-                from error_logs import APP_VERSION
-                bootstrap = bootstrap.replace('</script>', ';window.STUDIO_VERSION='+json.dumps(APP_VERSION)+';</script>')
+                from error_logs import APP_VERSION, display_version
+                bootstrap = bootstrap.replace('</script>', ';window.STUDIO_VERSION='+json.dumps(display_version(APP_VERSION))+';</script>')
                 bootstrap = bootstrap.replace('</script>', ';window.STUDIO_THEME='+json.dumps(preferences['theme'])+';document.documentElement.dataset.theme=window.STUDIO_THEME;</script>')
                 if preferences['theme'] == 'classic':
                     for sheet in ('glass-palette.css', 'glass-theme.css'):

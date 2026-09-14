@@ -92,8 +92,9 @@ class AppUpdates:
         self.state={'status':'idle','message':'可从 GitHub 检查新版本。','progress':0}
 
     def status(self):
+        from error_logs import display_version
         with self.lock:
-            return {**self.state,'currentVersion':self.current,'repository':self.config['repository'],'managed':self.managed,
+            return {**self.state,'currentVersion':self.current,'currentDisplayVersion':display_version(self.current),'displayVersion':display_version(self.state.get('version')),'repository':self.config['repository'],'managed':self.managed,
                     'notice':read_state(self.root).get('notice',''),'canRollback':bool(read_state(self.root).get('active'))}
 
     def check(self):
