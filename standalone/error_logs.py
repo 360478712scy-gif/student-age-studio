@@ -12,10 +12,10 @@ import traceback
 from game_locator import settings_path
 from platform_support import lock_file, unlock_file
 
-APP_VERSION = '1.3.7-beta.4'
+APP_VERSION = '1.3.7-beta.5'
 
 def display_version(value):
-    return {'1.3.7-beta.2': '1.3.7.1', '1.3.7-beta.3': '1.3.7.2', '1.3.7-beta.4': '1.3.7.3'}.get(str(value).removeprefix('v'), value)
+    return {'1.3.7-beta.2': '1.3.7.1', '1.3.7-beta.3': '1.3.7.2', '1.3.7-beta.4': '1.3.7.3', '1.3.7-beta.5': '1.3.7.4'}.get(str(value).removeprefix('v'), value)
 
 KEEP = 20
 _lock = threading.RLock()

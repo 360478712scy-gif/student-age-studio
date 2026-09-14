@@ -17,6 +17,7 @@ jobs:
       - run: python -B -m unittest discover -s standalone/tests -p test_save_large.py
       - run: python -B -m unittest discover -s standalone/tests -p test_talk_patch.py
       - run: node standalone/tests/indexed-talks.cjs
+      - run: node standalone/tests/bulk-references.cjs
       - run: node qa/tests/dialogue-text.cjs
       - run: python -B -m unittest discover -s standalone/tests -p test_app_updates.py
       - run: python -B -m unittest discover -s standalone/tests -p test_ui_resources.py

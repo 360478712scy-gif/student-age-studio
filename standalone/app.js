@@ -51,7 +51,7 @@ function fail(error) {console.error(error); toast(error.message || String(error)
 window.STUDIO_REPORT_ERROR=fail;
 window.STUDIO_NOTIFY=(message,error=false)=>toast(message,error?'error':'');
 let projectLoadSequence=0;
-function projectBusy(value){S.projectOpening=value;document.querySelector('.workspace').inert=value;document.querySelector('.header-actions').inert=value;const main=$('#wk-main');if(main)main.inert=value;}
+function projectBusy(value){S.projectOpening=value;document.querySelector('.workspace').inert=value;document.querySelector('.header-actions').inert=value;const main=$('#wk-main');if(main)main.inert=value;if(!value)storySelection.render();}
 function projectFeedback(message,error=false,copyId=null){let node=$('#project-load-status');if(!node){node=document.createElement('div');node.id='project-load-status';node.setAttribute('role','status');node.setAttribute('aria-live','polite');document.body.append(node);}node.dataset.state=error?'error':'loading';node.innerHTML=`<span>${h(message)}</span>${error&&copyId?'<button data-load-copy class="primary">创建副本后编辑</button>':''}${error?'<button data-load-close aria-label="关闭载入提示">关闭</button>':''}`;node.querySelector('[data-load-close]')?.addEventListener('click',()=>node.remove());node.querySelector('[data-load-copy]')?.addEventListener('click',()=>newProject(true,copyId));}
 window.STUDIO_PROJECT_LOAD_ERROR=error=>projectFeedback(error.message||String(error),true,error.projectId);
 function talk() {return S.doc && S.doc.talks[S.selected] || null;}
@@ -452,11 +452,22 @@ function addOptionWithSettings(){
   setTimeout(()=>$('#new-option-content')?.select(),0);
 }
 function replaceEdges(target,replacements,except=null) {Timeline.replace(S.doc,S.branchFolders,target,replacements,new Set(except===null?[]:[except]));}
-function deleteTalk(){return deleteTalkChecked().catch(error=>{fail(error);return false;});}
-async function deleteTalkChecked() {
-  const t=talk();if(!t||!editable())return;
-  const hidden=Timeline.internals(S.branchFolders),group=Timeline.entries(S.branchFolders,t.id),candidates=Array.from(new Set(group.length?[...Timeline.next(S.doc,S.branchFolders,t.id),...group.flatMap(([,f])=>ids(f.talkIds).slice(0,1))]:links(t))).filter(id=>id!==t.id&&!hidden.has(id));
-  const signature=currentSignature(),project=S.project.id,created=premiseHolders(t),remaining=premiseHolders({...S.doc,talks:Object.fromEntries(Object.entries(S.doc.talks).filter(([id])=>Number(id)!==t.id))});
+function deleteTalk(requested){return deleteTalkChecked(Array.isArray(requested)?requested:[S.selected]).catch(error=>{fail(error);return false;});}
+async function deleteTalkChecked(requested) {
+  if(!S.doc||!editable())return false;
+  const hidden=Timeline.internals(S.branchFolders),selected=[...new Set(requested.map(Number))].filter(id=>S.doc.talks[id]&&!hidden.has(id));
+  if(!selected.length)return false;
+  const removed=new Set(selected),folderKeys=new Set(),successors={};
+  for(const id of selected){
+    const t=S.doc.talks[id],group=Timeline.entries(S.branchFolders,id);
+    successors[id]=Array.from(new Set(group.length?[...Timeline.next(S.doc,S.branchFolders,id),...group.flatMap(([,f])=>ids(f.talkIds).slice(0,1))]:links(t))).filter(n=>n!==id&&!hidden.has(n)).slice(0,1);
+    for(const [key,f]of group){folderKeys.add(key);for(const generated of [f.routerId,f.exitId,f.endId])if(S.doc.talks[generated]){removed.add(Number(generated));successors[generated]=successors[id];}}
+  }
+  // Walk across all selected lines first, so adjacent selections and cycles never leave dangling destinations.
+  const resolved=new Map();
+  const resolve=start=>{let id=start;const seen=new Set();while(removed.has(id)&&!seen.has(id)&&!resolved.has(id)){seen.add(id);id=successors[id]?.[0];}const target=resolved.get(id)||(!removed.has(id)&&S.doc.talks[id]?[id]:[]);for(const n of seen)resolved.set(n,target);return target;};
+  const replacements=Object.fromEntries([...removed].map(id=>[id,resolve(id)]));
+  const signature=currentSignature(),project=S.project.id,created=premiseHolders({talks:Object.fromEntries([...removed].map(id=>[id,S.doc.talks[id]]))}),remaining=premiseHolders({...S.doc,talks:Object.fromEntries(Object.entries(S.doc.talks).filter(([id])=>!removed.has(Number(id))))});
   const removedPremises=Object.entries(S.premises).filter(([,p])=>created.has(p.eventId+':'+p.slot)&&!remaining.has(p.eventId+':'+p.slot));
   if(removedPremises.length){
     const references=await Promise.all(removedPremises.map(async([key,p])=>({key,p,...await api('/api/premises/references',{projectId:project,eventId:p.eventId,slot:p.slot,talkId:p.talkId,...Object.fromEntries(MAPS.map(k=>[k,S.doc[k]]))})})));
@@ -464,21 +475,22 @@ async function deleteTalkChecked() {
     if(used.length&&!await new Promise(resolve=>{const d=document.createElement('dialog');d.className='save-review-dialog';d.innerHTML='<h2>删除对话及其前提？</h2>'+used.map(r=>'<p>'+h(r.references.join('、'))+' 引用了该对话创造的前提「'+h(r.p.name)+'」。</p>').join('')+'<p>确定删除后，会一并移除这些前提和对应的前提条件；其他条件保留。</p><footer><button data-delete-premise-cancel>取消</button><button data-delete-premise-confirm class="danger-button">确定删除</button></footer>';document.body.append(d);const end=v=>{d.close();d.remove();resolve(v);};d.querySelector('[data-delete-premise-cancel]').onclick=()=>end(false);d.querySelector('[data-delete-premise-confirm]').onclick=()=>end(true);d.oncancel=e=>{e.preventDefault();end(false);};d.showModal();}))return false;
     if(project!==S.project.id||signature!==currentSignature())throw Error('对话内容已变化，未执行删除，请重新点击。');
   }
-  const execute=replacements=>mutate('删除对话',()=>{
+  return mutate(selected.length>1?'批量删除 '+selected.length+' 句对话':'删除对话',()=>{
     removePremises(removedPremises.map(([key])=>key));
-    const id=t.id,index=S.order.indexOf(id);delete S.doc.talks[id];S.order=S.order.filter(x=>x!==id);S.deleted.push(id);S.replacements[id]=replacements;
-    delete S.doc.audioCues.sfx[id];if(S.doc.audioCues.nativeAudio)delete S.doc.audioCues.nativeAudio[id];S.doc.audioCues.bgm=S.doc.audioCues.bgm.map(g=>({...g,talkIds:ids(g.talkIds).filter(x=>x!==id)})).filter(g=>g.talkIds.length);
-    replaceEdges(id,replacements);
-    for(const [key,f]of Timeline.entries(S.branchFolders,id)){
-      for(const generated of new Set([f.routerId,f.exitId,f.endId]))if(S.doc.talks[generated]){delete S.doc.talks[generated];S.deleted.push(generated);S.replacements[generated]=replacements;replaceEdges(generated,replacements);S.order=S.order.filter(x=>x!==generated);}
-      delete S.branchFolders[key];
-    }
-    for(const oid of ids(t.option)){const shared=values(S.doc.talks).some(x=>ids(x.option).includes(oid))||values(S.doc.events).some(x=>ids(x.options).includes(oid));if(!shared)delete S.doc.options[oid];}
-    S.branchFolders=Branches.cleanup(S.doc,S.branchFolders,S.replacements);for(const parent of new Set(values(S.branchFolders).filter(f=>f.kind==='condition').map(f=>f.parentTalkId)))Timeline.sync(S.doc,S.branchFolders,parent);S.selected=S.order[Math.min(index,S.order.length-1)]||null;S.activeFolder=Branches.ownedBy(S.branchFolders,S.selected);
+    const index=Math.max(0,S.order.indexOf(selected[0])),optionIds=new Set(selected.flatMap(id=>ids(S.doc.talks[id]?.option)));
+    for(const id of removed){delete S.doc.talks[id];delete S.doc.audioCues.sfx[id];if(S.doc.audioCues.nativeAudio)delete S.doc.audioCues.nativeAudio[id];}
+    S.order=S.order.filter(id=>!removed.has(id));S.deleted=[...new Set([...S.deleted,...removed])];
+    for(const [id,targets]of Object.entries(S.replacements))S.replacements[id]=targets.flatMap(n=>removed.has(Number(n))?replacements[n]:[n]);
+    Object.assign(S.replacements,replacements);Timeline.replaceMany(S.doc,S.branchFolders,replacements);
+    S.doc.audioCues.bgm=S.doc.audioCues.bgm.map(g=>({...g,talkIds:ids(g.talkIds).filter(id=>!removed.has(id))})).filter(g=>g.talkIds.length);
+    for(const key of folderKeys)delete S.branchFolders[key];
+    const usedOptions=new Set([...values(S.doc.talks).flatMap(t=>ids(t.option)),...values(S.doc.events).flatMap(e=>ids(e.options))]);
+    for(const oid of optionIds)if(!usedOptions.has(oid))delete S.doc.options[oid];
+    S.branchFolders=Branches.cleanup(S.doc,S.branchFolders,S.replacements);for(const parent of new Set(values(S.branchFolders).filter(f=>f.kind==='condition').map(f=>f.parentTalkId)))Timeline.sync(S.doc,S.branchFolders,parent);
+    const visible=visibleIds();S.selected=visible.includes(S.selected)?S.selected:(replacements[selected[0]]?.find(id=>visible.includes(id))||visible[Math.min(index,visible.length-1)]||null);S.activeFolder=Branches.ownedBy(S.branchFolders,S.selected);
   });
-  execute(candidates.slice(0,1));
-
 }
+
 function deleteFolder(key){
  if(!editable())return;
  const doc=clone(S.doc),folders=clone(S.branchFolders),result=Timeline.removeFolder(doc,folders,key),removed=new Set(result.deleted);
@@ -788,7 +800,7 @@ async function save() {
   for(const id of Timeline.internals(S.branchFolders)){const t=S.doc.talks[id];if(!t)continue;if((t.content||'').trim()||t.roles?.length||t.option?.length||t.effect?.length||t.screenEffect?.length){t.content='';t.roles=[];t.option=[];t.effect=[];t.screenEffect=[];}}S.saving=true;renderChrome();const submittedSignature=currentSignature();
   const sentMappings=S.idMappings;S.idMappings={};
   try{const data=await api('/api/save',changedStoryPayload.call(null,sentMappings));S.revision=data.revision??S.revision;const inverse=Object.fromEntries(Object.entries(sentMappings||{}).map(([t,m])=>[t,Object.fromEntries(Object.entries(m).map(([a,b])=>[b,Number(a)]))]));for(const entry of [...S.undo,...S.redo])entry.idMappings=composeMappings(inverse,entry.idMappings||{});const unchanged=currentSignature()===submittedSignature;if(data.branchFolders&&unchanged)S.branchFolders=clone(data.branchFolders);if(data.premises&&unchanged)S.premises=clone(data.premises);S.saved=unchanged?currentSignature():submittedSignature;S.dirty=currentSignature()!==S.saved;if(data.warnings?.length)toast('已保存。'+data.warnings.join(' '),'note');else toast(S.dirty?'已保存此前的修改，继续编辑的内容仍待保存。':'模组已保存，修改前的文件已备份。');return !S.dirty;}
-  catch(error){S.idMappings=composeMappings(sentMappings,S.idMappings);fail(error);throw error;}finally{S.saving=false;renderChrome();scheduleRenumber();}
+  catch(error){S.idMappings=composeMappings(sentMappings,S.idMappings);fail(error);throw error;}finally{S.saving=false;renderChrome();storySelection.render();scheduleRenumber();}
 }
 function unassignedTalkIds() {
   const owned=new Set(graphOrder(values(S.doc?.events).flatMap(e=>ids(e.talkId))));
@@ -969,6 +981,7 @@ function renderEvents() {
   $('#event-select').innerHTML='<option value="all" disabled>请从事件列表选择事件</option>'+values(S.doc?.events).map(e=>`<option ${StudentAgeRecordLabels.option(e.id)} value="${e.id}" ${String(e.id)===String(S.event)?'selected':''}>${h(e.title||'未命名事件')}</option>`).join('');
   if(S.event==='all')$('#event-select').value='all';
 }
+const storySelection=StudentAgeDialogueSelection.create({host:document.querySelector('.workspace'),selector:'#talk-list .talk-card',attribute:'data-id',toolbar:()=>document.querySelector('#talk-count')?.parentElement,scope:()=>[S.project?.id,S.event,S.search,JSON.stringify(S.idMappings||{})].join('|'),allowed:()=>S.doc?visibleIds():[],editable:()=>!!S.project&&!S.project.readOnly&&!S.projectOpening&&!S.saving,signature:currentSignature,remove:deleteTalk,error:fail,draggable:true});
 function renderList() {
   if(!S.doc){$('#talk-list').innerHTML='<div class="small-empty">请打开或新建模组。</div>';return;}
   const visible=visibleIds(),allowed=new Set(visible),owners=new Map();for(const [key,f]of Object.entries(S.branchFolders))for(const id of ids(f.talkIds))owners.set(id,key);
@@ -992,6 +1005,7 @@ function renderList() {
   renderedIndex=S.listStart;let html=topLevel.slice(S.listStart,S.listStart+pageSize).map(id=>card(id)).join('');
   if(topLevel.length>pageSize)html+=`<div class="talk-pagination"><button data-action="talk-page" data-start="${Math.max(0,S.listStart-pageSize)}" ${S.listStart===0?'disabled':''}>上一页</button><span>${Math.floor(S.listStart/pageSize)+1} / ${Math.ceil(topLevel.length/pageSize)}</span><button data-action="talk-page" data-start="${S.listStart+pageSize}" ${S.listStart+pageSize>=topLevel.length?'disabled':''}>下一页</button></div>`;
   $('#talk-list').innerHTML=html||`<div class="small-empty">${S.search?'没有找到匹配的对话。':'尚无对话。<br>点击“添加对话”新建。'}</div>`;
+  storySelection.render();
 }
 function welcome() {
   return `<div class="empty-state"><span class="empty-symbol">✧</span><h2>${S.project?'添加对话':'打开模组'}</h2><p>${S.project?'添加对话、设置人物动作和分支。所有修改都可以撤销。':'选择本地或订阅模组，或创建一个新模组。保存后即可在游戏中继续预览。'}</p>${S.project?'<button class="primary" data-action="add-talk">＋ 添加对话</button>':'<button class="primary" data-action="create-project">＋ 新建模组</button><button data-game-location>选择本地模组目录</button>'}${S.project?`<div class="stat-row"><div class="stat-tile"><strong>${values(S.doc.events).length}</strong><span>剧情事件</span></div><div class="stat-tile"><strong>${values(S.doc.persons).filter(p=>!S.goalImageIds?.includes(String(p.id))).length}</strong><span>可用人物</span></div><div class="stat-tile"><strong>${values(S.doc.backgrounds).length+values(S.doc.cgs).length}</strong><span>场景与 CG</span></div></div>`:''}</div>`;
@@ -1549,7 +1563,7 @@ function updateTalkTextCard(){
 const actions={
   'refresh-projects':()=>refreshProjects(),'create-project':()=>unsaved(()=>newProject(false)),'copy-project':()=>newProject(true),'save':save,'undo':undo,'redo':redo,
   'talk-page':b=>{S.listStart=Number(b.dataset.start);renderList();$('#talk-list').scrollTop=0;},
-  'retry-conditions':()=>loadConditionCatalog(),'select-talk':b=>selectTalk(b.dataset.id),'add-blank-talk':()=>addTalk(false,{blank:true}),'add-talk':()=>addTalk(false),'duplicate-talk':()=>addTalk(true),'delete-talk':deleteTalk,'move-up':()=>moveTalk(-1),'move-down':()=>moveTalk(1),
+  'retry-conditions':()=>loadConditionCatalog(),'select-talk':b=>selectTalk(b.dataset.id),'add-blank-talk':()=>addTalk(false,{blank:true}),'add-talk':()=>addTalk(false),'duplicate-talk':()=>addTalk(true),'delete-talk':()=>storySelection.active?storySelection.remove():deleteTalk(),'move-up':()=>moveTalk(-1),'move-down':()=>moveTalk(1),
   'toggle-folder':b=>toggleFolder(b.dataset.folderKey),'folder-add-blank':b=>addFolderTalk(b.dataset.folderKey,false,null,{blank:true}),'folder-add':b=>addFolderTalk(b.dataset.folderKey),'reveal-folder':b=>{S.folderOpen[b.dataset.folderKey]=true;renderList();document.querySelector('[data-folder="'+b.dataset.folderKey+'"]')?.scrollIntoView({block:'nearest'});},
   'history-export':showHistoryExport,
   'dialogue-import':showDialogueImport,
@@ -1663,7 +1677,7 @@ document.addEventListener('keydown',event=>{
   if(command&&key==='f'&&!$('#modal').open){event.preventDefault();$('#talk-search').focus();$('#talk-search').select();return;}
   if(command&&key==='z'&&!editing&&!$('#modal').open){event.preventDefault();event.shiftKey?redo():undo();return;}
   if(command&&key==='y'&&!editing&&!$('#modal').open){event.preventDefault();redo();return;}
-  if(!editing&&!$('#modal').open&&(key==='delete'||key==='backspace')&&talk()){event.preventDefault();if(event.target.closest('#large-scene')&&S.previewRole!==null)removeStageRole(S.previewRole);else deleteTalk();}
+  if(!editing&&!$('#modal').open&&(key==='delete'||key==='backspace')&&talk()){event.preventDefault();if(event.target.closest('#large-scene')&&S.previewRole!==null)removeStageRole(S.previewRole);else if(storySelection.active)storySelection.remove();else deleteTalk();}
 });
 window.addEventListener('beforeunload',event=>{if(S.dirty){event.preventDefault();event.returnValue='当前模组还有未保存的修改。';}});
 window.STUDIO_HAS_UNSAVED_CHANGES=()=>S.dirty;
@@ -1849,6 +1863,6 @@ window.STUDIO_STORY_JSON={
  }
 };
 window.STUDIO_CURRENT_REVISION=()=>S.revision;
-window.StudentAgeStudioTest={S,addTalk,deleteTalk,undo,redo,renameEvent,addAfterBranches,addSpeaker,removeSpeaker,openJumpPicker,addOptionWithSettings,openScreenEffectMenu,openCGMenu,renumberEvent,renumberPlan,eventTraversal,branchBlock,selectTalk,save,toggleStoryAuto,setEventGrade,currentEventGrade,openStoryHistory,closeStoryHistory,scrollStoryHistory,importDialogueRows,exportDialogueRows,playCurrentLine,openStoryPreview,closeStoryPreview,Timeline,Branches,Conditions,Effects,HistoryExport,previewHistory,showHistoryExport,initialEntry,setInitialPosition,getScenePlayer:()=>scenePlayer,getSceneRenderer:()=>largeScene,reorderTalk,addConditionalBranch,addFolderTalk,setFolderContinuation,setFolderFailure,replaceEdges,graphOrder,moveTalk,normalizeTalk,nextId,currentStage,commitSceneDrag,refreshSceneAssets,enterSceneRole,removeStageRole,flipStageRole,applyBgmDraft,addSfx,audioNeedsPlugin,changedStoryPayload,getAudioPlayer:()=>stageAudio};
+window.StudentAgeStudioTest={S,addTalk,deleteTalk,storySelection,undo,redo,renameEvent,addAfterBranches,addSpeaker,removeSpeaker,openJumpPicker,addOptionWithSettings,openScreenEffectMenu,openCGMenu,renumberEvent,renumberPlan,eventTraversal,branchBlock,selectTalk,save,toggleStoryAuto,setEventGrade,currentEventGrade,openStoryHistory,closeStoryHistory,scrollStoryHistory,importDialogueRows,exportDialogueRows,playCurrentLine,openStoryPreview,closeStoryPreview,Timeline,Branches,Conditions,Effects,HistoryExport,previewHistory,showHistoryExport,initialEntry,setInitialPosition,getScenePlayer:()=>scenePlayer,getSceneRenderer:()=>largeScene,reorderTalk,addConditionalBranch,addFolderTalk,setFolderContinuation,setFolderFailure,replaceEdges,graphOrder,moveTalk,normalizeTalk,nextId,currentStage,commitSceneDrag,refreshSceneAssets,enterSceneRole,removeStageRole,flipStageRole,applyBgmDraft,addSfx,audioNeedsPlugin,changedStoryPayload,getAudioPlayer:()=>stageAudio};
 window.STUDIO_INITIALIZE=async()=>{await refreshProjects(null,true);};
 })();

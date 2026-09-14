@@ -80,6 +80,17 @@ function replace(doc,folders,from,to,except=new Set()){
  for(const table of [doc.options,doc.events])for(const r of Object.values(table||{})){r.talkId=repair(r.talkId);if('talkId2'in r)r.talkId2=repair(r.talkId2);}
  for(const f of Object.values(folders)){if(f.kind==='condition'){f.baseNext=repair(f.baseNext);if(Array.isArray(f.failureNext))f.failureNext=repair(f.failureNext);}if(f.continuation?.kind==='talk'&&Number(f.continuation.talkId)===from)f.continuation=to.length?{kind:'talk',talkId:to[0]}:{kind:'end'};if(f.continuation?.kind==='targets')f.continuation.targets=repair(f.continuation.targets);}
 }
+// Apply already-resolved deletion destinations in one pass; untouched rows stay lazy.
+function replaceMany(doc,folders,replacements){
+ const repair=(r,key)=>{const old=r[key];if(!Array.isArray(old)||!old.some(id=>Object.hasOwn(replacements,Number(id))))return;r[key]=old.flatMap(id=>Object.hasOwn(replacements,Number(id))?replacements[Number(id)]:[id]);};
+ for(const t of Object.values(doc.talks)){repair(t,'nextTalk');repair(t,'nextTalk2');}
+ for(const table of [doc.options,doc.events])for(const r of Object.values(table||{})){repair(r,'talkId');repair(r,'talkId2');}
+ for(const f of Object.values(folders)){
+  repair(f,'baseNext');repair(f,'failureNext');
+  const c=f.continuation;if(c?.kind==='talk'&&Object.hasOwn(replacements,Number(c.talkId))){const to=replacements[Number(c.talkId)];f.continuation=to.length?{kind:'talk',talkId:to[0]}:{kind:'end'};}
+  else if(c?.kind==='targets')repair(c,'targets');
+ }
+}
 function reorder(doc,folders,order,source,target,after=false){
  source=Number(source);target=Number(target);if(source===target)return order.slice();
  const lane=owner(folders,source);if(lane!==owner(folders,target))throw Error('请在同一个对话夹内拖动；分支会跟随所属对话。');
@@ -127,5 +138,5 @@ function removeFolder(doc,folders,key){
  return {parentId,deleted:[...dead],replacements};
 }
 
-return {ids,entries,internals,owner,next,setNext,setFailure,sync,blank,addCondition,insert,setContinuation,replace,reorder,removeFolder};
+return {ids,entries,internals,owner,next,setNext,setFailure,sync,blank,addCondition,insert,setContinuation,replace,replaceMany,reorder,removeFolder};
 });

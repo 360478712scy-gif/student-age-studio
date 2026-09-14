@@ -87,7 +87,7 @@ dialog.addEventListener('input',e=>{if(e.target.id==='record-id-value')queueWarn
 dialog.addEventListener('close',()=>{clearWarning();if(!dialog.open)draft=null;});
 dialog.addEventListener('cancel',e=>{if(working){e.preventDefault();return;}draft=null;});
 dialog.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.tagName==='INPUT'){e.preventDefault();apply().catch(notice);}});
-document.addEventListener('click',e=>{const b=e.target.closest('[data-record-table]');if(!b||b.disabled||e.target.closest('.record-id-inline-input'))return;e.preventDefault();e.stopImmediatePropagation();open(b.dataset.recordTable,b.dataset.recordId,b);},true);
+document.addEventListener('click',e=>{if(e.target.closest('.dialogue-selectable'))return;const b=e.target.closest('[data-record-table]');if(!b||b.disabled||e.target.closest('.record-id-inline-input'))return;e.preventDefault();e.stopImmediatePropagation();open(b.dataset.recordTable,b.dataset.recordId,b);},true);
 document.addEventListener('keydown',event=>{if(working||dialog.open||!(event.metaKey||event.ctrlKey)||event.target.closest('input,textarea,[contenteditable=true]'))return;const key=event.key.toLowerCase(),kind=key==='z'?(event.shiftKey?'redo':'undo'):key==='y'?'redo':null;if(kind&&canHistory(kind)){event.preventDefault();event.stopImmediatePropagation();history(kind).catch(notice);}},true);
 function editDraft({oldId,title='修改编号',commit}){
  if(working||draft)return;draft={oldId:Number(oldId),commit};
