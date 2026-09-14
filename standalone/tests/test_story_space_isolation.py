@@ -14,7 +14,7 @@ class StorySpaceIsolationTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         root=Path(self.tmp.name)
-        env=patch.dict(os.environ,{'STUDIO_CACHE_ROOT':str(root/'Cache')});env.start();self.addCleanup(env.stop)
+        env=patch.dict(os.environ,{'STUDIO_CACHE_ROOT':str(root/'Cache'),'STUDIO_USER_DATA_ROOT':str(root/'User')});env.start();self.addCleanup(env.stop)
         self.store=b.StudioStore(root/'Mods',root/'Workshop',root/'Game',asset_settings_path=root/'assets.json')
         self.ident=self.store.create('保存隔离验证')['id'];self.project=self.store.project(self.ident)
         self.cfg=self.project.path/'Cfgs/zh-cn'
