@@ -15,3 +15,66 @@ body dialog.external-purpose-dialog{width:min(860px,92vw)!important;min-width:0!
 .external-purpose-dialog [role=alert]{color:var(--danger,#d86b6b);white-space:normal}
 .external-shell [data-external-folder] small{display:block;font-size:.8em;opacity:.8;white-space:normal}
 @media(max-width:700px){.external-purpose-fields{grid-template-columns:1fr}}
+
+.external-shell{grid-template-columns:300px minmax(0,1fr)}
+.external-create-tools{display:flex;gap:8px;flex-wrap:nowrap}.external-create-tools button{padding:8px;white-space:nowrap;flex:1}
+.external-folder-actions{margin-top:auto;padding-top:12px}.external-shell .idle-records{flex:1}
+.studio-delete-menu button.menu-normal{color:var(--text)!important}.studio-delete-menu button.menu-danger,.external-shell button.danger,dialog.character-picker button.danger{color:var(--danger,#d86b6b)!important}
+@media(max-width:900px){.external-shell{grid-template-columns:260px minmax(0,1fr)}}
+.studio-delete-menu{display:flex;flex-direction:column;gap:4px;min-width:170px}.studio-delete-menu button{text-align:left}
+.external-shell .idle-stage-column>label{white-space:nowrap}.external-shell .idle-stage-column>label>.uc-select{min-width:0;flex:1}
+
+/* Dialogue workbenches share the editor palette and keep text on the stage. */
+.external-shell{grid-template-columns:280px minmax(0,1fr)}
+.external-edit{grid-template-columns:170px minmax(240px,1fr) 172px}
+.external-grade{display:flex;gap:4px;flex-shrink:0}.external-grade button[aria-pressed=true]{background:var(--glass-accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+.idle-stage-column .idle-tools{flex-wrap:wrap}.external-folder-settings{display:grid;gap:8px}
+.external-expression [data-external-face-roles],.external-expression [data-external-faces]{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.external-expression button{padding:8px 10px}.external-expression [data-external-portrait] img{width:100%;max-height:230px;object-fit:contain;object-position:top}
+body dialog.external-purpose-dialog{width:min(1100px,94vw)!important;max-width:94vw!important}
+.external-purpose-workbench{display:grid;grid-template-columns:240px minmax(0,1fr);gap:24px;min-height:420px}
+.external-purpose-workbench>aside{max-height:65vh;overflow:auto;padding-right:12px;border-right:1px solid var(--border)}
+.external-purpose-workbench>aside button{display:block;text-align:left;width:100%;margin-bottom:6px;white-space:normal}
+.external-purpose-workbench>section{min-width:0;max-height:65vh;overflow:auto}.external-purpose-workbench [data-use-remove]{margin-top:20px}
+.external-purpose-workbench button[aria-pressed=true]{background:var(--glass-accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+.external-purpose-dialog footer{display:flex;justify-content:flex-end;margin-top:12px}
+.wk-negotiation-chat{grid-template-columns:240px minmax(300px,1fr) 300px!important}
+.negotiation-chat-stage{min-height:360px;display:flex;align-items:center;justify-content:center;padding:26px;border-radius:16px;background:var(--glass-accent-soft)}
+.negotiation-chat-bubble{width:100%;padding:24px;border:1px solid var(--border);border-radius:20px;background:var(--panel);color:var(--text)}
+.negotiation-chat-bubble>strong{display:block;margin-bottom:12px}.negotiation-chat-bubble textarea{width:100%;min-height:160px;border:0!important;box-shadow:none!important;background:transparent!important;resize:vertical;color:inherit!important;line-height:1.8}
+.negotiation-chat-bubble p{white-space:pre-wrap;line-height:1.8}.negotiation-chat-preview{width:min(780px,92vw)}
+@media(max-width:1200px){.external-shell{grid-template-columns:250px minmax(0,1fr)}.external-edit{grid-template-columns:140px minmax(220px,1fr) 130px}.wk-negotiation-chat{grid-template-columns:200px minmax(280px,1fr) 250px!important}}
+@media(max-width:950px){.external-edit{grid-template-columns:130px minmax(220px,1fr)}.external-expression{grid-column:2}.external-purpose-workbench{grid-template-columns:180px minmax(0,1fr)}.external-purpose-fields{grid-template-columns:1fr}.wk-negotiation-chat{grid-template-columns:180px minmax(280px,1fr)!important}.wk-negotiation-chat #wk-preview{grid-column:2}}
+body dialog.external-purpose-dialog[open]{display:flex!important;flex-direction:column;height:min(86vh,820px);max-height:86vh!important;overflow:hidden!important}
+body dialog.external-purpose-dialog>header{flex-shrink:0}
+body dialog.external-purpose-dialog>.character-picker-body{display:flex;flex-direction:column;flex:1;min-height:0;max-height:none!important;overflow:hidden!important}
+.external-purpose-workbench{flex:1;min-height:0;overflow:hidden}.external-purpose-workbench>aside,.external-purpose-workbench>section{max-height:none;min-height:0}
+.external-purpose-dialog footer,.external-purpose-dialog .character-picker-body>[role=alert]{flex-shrink:0}
+
+/* Reuse the condition catalogue: every selected purpose stays editable on the right. */
+body dialog.external-purpose-dialog{width:min(1220px,96vw)!important;max-width:96vw!important}
+.external-purpose-dialog .condition-browser-layout{flex:1;min-height:0;grid-template-columns:minmax(240px,.8fr) minmax(0,1.2fr)}
+.external-purpose-dialog .condition-browser-catalog,.external-purpose-dialog .condition-browser-selected{min-height:0;min-width:0}
+.external-purpose-dialog .condition-selected-list{flex:1;overflow:auto;min-height:0}
+.external-purpose-dialog .external-use-card{flex-shrink:0;min-width:0}
+.external-use-card>header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.external-use-card>header button{flex:0 0 auto;padding:4px 12px}
+.external-use-card .helper{line-height:1.6;margin:8px 0 14px}
+.external-mini-binding{grid-column:1/-1;overflow-wrap:anywhere;line-height:1.6}
+.external-mini-binding p{margin:6px 0}
+.external-purpose-dialog>.condition-browser-actions{flex-shrink:0;gap:10px;padding:14px 24px;margin:0;border-top:1px solid var(--border)}
+.external-purpose-dialog>.condition-browser-actions>[role=alert]{margin-right:auto;font-size:13px}
+body dialog.external-confirm-dialog{width:min(520px,calc(100vw - 32px))!important;min-width:0!important;max-width:calc(100vw - 32px)!important;height:fit-content!important;min-height:0!important}
+.external-confirm-dialog>header{padding:18px 22px}.external-confirm-dialog>header h2{font-size:20px}
+.external-confirm-dialog>.character-picker-body{padding:18px 22px 22px}.external-confirm-dialog p{margin:0 0 20px}
+.external-confirm-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.external-confirm-actions button{flex:0 0 auto;font-size:14px;padding:10px 14px}
+@media(max-width:800px){.external-purpose-dialog .condition-browser-layout{grid-template-columns:minmax(160px,.65fr) minmax(0,1.35fr)}.external-purpose-dialog .condition-library-results{grid-template-columns:1fr}.external-purpose-fields{grid-template-columns:1fr}}
+
+.external-use-values{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;border:1px solid var(--border);border-radius:10px;padding:12px;min-width:0}.external-use-values legend{font-size:13px}.external-use-values input{width:100%;box-sizing:border-box}
+html body .external-purpose-dialog .condition-library-entry strong>span{color:inherit}
+html[data-theme="classic"] body :is(dialog.external-purpose-dialog,dialog.external-confirm-dialog) :is(button,input,select){background:var(--sg-field)!important;color:var(--sg-text)!important;border:1px solid var(--sg-line)!important}
+html[data-theme="classic"] body :is(dialog.external-purpose-dialog,dialog.external-confirm-dialog) button.danger{color:var(--sg-danger)!important}
+html[data-theme="classic"] body .external-purpose-dialog .condition-library-entry{background:var(--sg-raised)!important}
+
+[data-dialogue-stage-controls]{display:grid;gap:8px;margin:8px 0}.dialogue-cast,.dialogue-position{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.dialogue-position>span{margin-right:auto}.dialogue-position button{min-width:48px}.dialogue-cast [aria-pressed=true],.dialogue-position [aria-pressed=true]{background:var(--accent);color:var(--on-accent,#fff)}

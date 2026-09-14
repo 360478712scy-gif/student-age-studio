@@ -74,3 +74,36 @@ function open(options){
 }
 window.StudentAgeActionEditor={open,close:()=>active?.close(),refresh:()=>active?.refresh()};
 })();
+
+// Shared TalkCfg stage controls for non-event workbenches. Commands use the
+// same planner, native reconstruction and action editor as the story stage.
+(()=>{'use strict';
+const clone=structuredClone,esc=v=>StudentAgeCharacterUI.esc(v);
+function create(o){
+ let selected=null,disposed=false,ownsActions=false,menu=null;
+ const valid=()=>!disposed&&o.editable()&&o.talk(),doc=()=>o.doc();
+ function state(before=false,document=doc()){const ctx=o.context();return StudentAgeScene.reconstruct(document,o.talk()?.id,{...ctx,trace:before?ctx.trace.slice(0,-1):ctx.trace});}
+ const name=id=>doc().persons[id]?.name||(Number(id)===0?'白雨':'人物 '+id);
+ function actors(){const current=state(),previous=state(true),ids=new Set([...Object.values(current.roles).filter(r=>r.visible).map(r=>r.id),...Object.values(previous.roles).filter(r=>r.visible).map(r=>r.id),...(doc().talks[o.talk()?.id]?.roles||[]).map(r=>Number(r[0]))]);return [...ids].map(id=>current.roles[id]||previous.roles[id]||{id,visible:false});}
+ function choose(id){selected=Number(id);o.select?.(selected);render();}
+ function entry(role){
+  const d=doc(),s=state();
+  for(const id of [...s.trace].reverse()){const rows=d.talks[id]?.roles||[];for(let i=rows.length-1;i>=0;i--)if(Number(rows[i][0])===role&&[1001,1002,1003].includes(Number(rows[i][1])))return {id,index:i,axis:Number(rows[i][3]),rows};}
+  let before=StudentAgeScene.blank(s.reference);
+  for(const id of s.trace){const t=d.talks[id];before=StudentAgeScene.apply(d,before,t,o.context().grade,false);if(before.roles[role]?.visible){const rows=clone(t.roles||[]);for(const a of Object.values(before.roles).filter(r=>r.visible))if(!rows.some(r=>Number(r[0])===a.id&&[1001,1002,1003].includes(Number(r[1]))))rows.unshift([a.id,1001,a.layer||1,a.axis,0]);return {id,index:rows.findIndex(r=>Number(r[0])===role&&[1001,1002,1003].includes(Number(r[1]))),axis:before.roles[role].axis,rows};}}
+  return null;
+ }
+ function position(axis){if(!valid()||![1,2,3].includes(axis))return;const e=entry(selected);if(!e||e.axis===axis)return;const roles=clone(e.rows);roles[e.index][3]=axis;o.edit(e.id,t=>t.roles=roles);render();}
+ function drag(role,dx,dy,c){if(!valid()||Number(c?.talkId)!==Number(o.talk().id))return;try{const d=doc(),id=o.talk().id,s=state(false,d),actor=s.roles[role];if(!actor?.visible)return;const target={x:Math.round((c?.x??actor.x)+dx),y:Math.round((c?.y??actor.y)+dy)};const roles=StudentAgeScene.planSceneDrag(d.talks[id],s,role,target,roles=>state(false,{...d,talks:{...d.talks,[id]:{...d.talks[id],roles}}}));o.edit(id,t=>t.roles=roles);choose(role);}catch(e){o.status(e.message,true);}}
+ function appearance(id){const d=doc(),actor=state().roles[id]||state(true).roles[id],person=d.persons[id],grade=actor?.grade??o.context().grade,cloth=actor?.cloth||0;return {faces:StudentAgeExpressions.choices({person,faces:d.faces,roleId:id,grade,cloth,metadata:o.metadata?.(id,grade,cloth)}),clothes:[...new Set([0,cloth,...(person?.[grade?'url2':'url']||[]).map((v,i)=>v?i:0),...(person?.[grade?'l2d2':'l2d']||[]).map((v,i)=>v?i:0)])].sort((a,b)=>a-b)};}
+ function actions(){if(!valid())return;const id=o.talk().id,role=selected??actors()[0]?.id;if(role==null)return;const current=()=>valid()&&o.talk().id===id;
+  ownsActions=true;StudentAgeActionEditor.open({assetUrl:o.assetUrl,appearance,context:()=>current()?{doc:doc(),grade:o.context().grade,before:state(true),after:state(),row:doc().talks[id],role,name:name(role),...appearance(role)}:null,
+   add:(code,args)=>{if(!current())return null;const rows=clone(doc().talks[id].roles||[]),group=[1001,1002,1003].includes(code)?[1001,1002,1003]:[2001,2002].includes(code)?[2001,2002]:[code];const kept=rows.filter(r=>!(Number(r[0])===role&&group.includes(Number(r[1]))));kept.push([role,code,...args]);o.edit(id,t=>t.roles=kept);return kept.length-1;},
+   update:(index,args)=>{if(!current())return;const roles=clone(doc().talks[id].roles||[]),r=roles[index];if(!r)return;if(args)roles[index]=[r[0],r[1],...args];else roles.splice(index,1);o.edit(id,t=>t.roles=roles);},onClose:()=>{ownsActions=false;if(!disposed){o.draw();render();}}});
+ }
+ function render(){const el=o.host();if(!el||!o.talk())return;const list=actors();if(!list.some(r=>r.id===selected))selected=list[0]?.id??null;const e=selected===null?null:entry(selected),disabled=!valid();el.innerHTML=`<div class="dialogue-cast" role="group" aria-label="本句人物">${list.map(r=>`<button data-stage-role="${r.id}" aria-pressed="${selected===r.id}">[${r.id}] ${esc(name(r.id))}${r.visible?'':' · 已退场'}</button>`).join('')}</div><div class="dialogue-position"><span>初始站位</span>${[[1,'左'],[3,'中'],[2,'右']].map(([axis,label])=>`<button data-stage-axis="${axis}" aria-pressed="${e?.axis===axis}" ${disabled||!e?'disabled':''}>${label}</button>`).join('')}<button data-stage-actions ${disabled||selected===null?'disabled':''}>人物动作</button></div>`;
+ el.onclick=event=>{const b=event.target.closest('button');if(!b||b.disabled)return;event.stopPropagation();if(b.dataset.stageRole!==undefined)choose(b.dataset.stageRole);if(b.dataset.stageAxis)position(Number(b.dataset.stageAxis));if(b.hasAttribute('data-stage-actions'))actions();};
+ }
+ return {render,choose,rendererOptions:{onBeforeInteract:()=>!!valid(),onDrag:drag,onSelectRole:choose,onContextMenu:(id,x,y)=>{if(!valid())return;choose(id);StudentAgeContextMenu({target:o.host(),clientX:x,clientY:y,preventDefault(){},stopPropagation(){}},[{label:'人物动作',action:actions},...[[1,'左'],[3,'中'],[2,'右']].map(([axis,label])=>({label:'初始站位 · '+label,action:()=>position(axis)}))]);menu=document.querySelector('.studio-delete-menu');}},dispose(){disposed=true;menu?._dismiss?.();if(ownsActions)StudentAgeActionEditor.close();}};
+}
+window.StudentAgeDialogueStage={create};})();

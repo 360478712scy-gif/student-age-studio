@@ -66,6 +66,7 @@ def main():
     storage.mkdir(parents=True,exist_ok=True)
     import ctypes
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("StudentAgeStudio.WebView2")
+    os.environ['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS']=(os.environ.get('WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS','')+' --autoplay-policy=no-user-gesture-required').strip()
     require_modern_webview()
     host=server.create_server(args)
     threading.Thread(target=host.serve_forever,daemon=True).start()

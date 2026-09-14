@@ -1,0 +1,2266 @@
+{
+  "source": "CampusMinigames 0.9.2 / UP native social stage cfg",
+  "games": {
+    "9101": {
+      "id": 9101,
+      "name": "课间 UNO",
+      "tips": "先出完手牌获胜。",
+      "bgm": 8
+    },
+    "9102": {
+      "id": 9102,
+      "name": "五子棋",
+      "tips": "横竖斜连续五子获胜。",
+      "bgm": 8
+    },
+    "9103": {
+      "id": 9103,
+      "name": "课间泡泡",
+      "tips": "放下泡泡，转弯躲开水波，击败同桌。",
+      "bgm": 8
+    },
+    "9104": {
+      "id": 9104,
+      "name": "换盒寻物",
+      "tips": "跟住装着目标文具的盒子。",
+      "bgm": 8
+    },
+    "9105": {
+      "id": 9105,
+      "name": "算24点",
+      "tips": "四张扑克牌，算出24。",
+      "bgm": 8
+    },
+    "9106": {
+      "id": 9106,
+      "name": "俄罗斯方块",
+      "tips": "填满整行，达到消行目标。",
+      "bgm": 8
+    },
+    "9107": {
+      "id": 9107,
+      "name": "斗地主",
+      "tips": "地主对农民，先出完手牌的一方获胜。",
+      "bgm": 8
+    },
+    "9108": {
+      "id": 9108,
+      "name": "贪吃蛇",
+      "tips": "吃糖果，避开课桌和自己。",
+      "bgm": 8
+    },
+    "9109": {
+      "id": 9109,
+      "name": "吃豆人",
+      "tips": "穿过校园迷宫收集糖豆，躲开巡逻员。",
+      "bgm": 8
+    },
+    "9110": {
+      "id": 9110,
+      "name": "超级马里奥兄弟",
+      "tips": "经典关卡挑战。",
+      "bgm": 8
+    },
+    "9111": {
+      "id": 9111,
+      "name": "魂斗罗",
+      "tips": "经典关卡挑战。",
+      "bgm": 8
+    },
+    "9112": {
+      "id": 9112,
+      "name": "课间麻将",
+      "tips": "四人围桌，先凑成胡牌。",
+      "bgm": 8
+    }
+  },
+  "stages": {
+    "910101": {
+      "id": 910101,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        1
+      ]
+    },
+    "910102": {
+      "id": 910102,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        2
+      ]
+    },
+    "910103": {
+      "id": 910103,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        3
+      ]
+    },
+    "910104": {
+      "id": 910104,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        4
+      ]
+    },
+    "910105": {
+      "id": 910105,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        5
+      ]
+    },
+    "910201": {
+      "id": 910201,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        1
+      ]
+    },
+    "910202": {
+      "id": 910202,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        2
+      ]
+    },
+    "910203": {
+      "id": 910203,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        3
+      ]
+    },
+    "910204": {
+      "id": 910204,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        4
+      ]
+    },
+    "910205": {
+      "id": 910205,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        5
+      ]
+    },
+    "910301": {
+      "id": 910301,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        1
+      ]
+    },
+    "910302": {
+      "id": 910302,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        2
+      ]
+    },
+    "910303": {
+      "id": 910303,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        3
+      ]
+    },
+    "910304": {
+      "id": 910304,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        4
+      ]
+    },
+    "910305": {
+      "id": 910305,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        5
+      ]
+    },
+    "910401": {
+      "id": 910401,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        1
+      ]
+    },
+    "910402": {
+      "id": 910402,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        2
+      ]
+    },
+    "910403": {
+      "id": 910403,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        3
+      ]
+    },
+    "910404": {
+      "id": 910404,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        4
+      ]
+    },
+    "910405": {
+      "id": 910405,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        5
+      ]
+    },
+    "910501": {
+      "id": 910501,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        1
+      ]
+    },
+    "910502": {
+      "id": 910502,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        2
+      ]
+    },
+    "910503": {
+      "id": 910503,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        3
+      ]
+    },
+    "910504": {
+      "id": 910504,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        4
+      ]
+    },
+    "910505": {
+      "id": 910505,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        5
+      ]
+    },
+    "910601": {
+      "id": 910601,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        1
+      ]
+    },
+    "910602": {
+      "id": 910602,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        2
+      ]
+    },
+    "910603": {
+      "id": 910603,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        3
+      ]
+    },
+    "910604": {
+      "id": 910604,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        4
+      ]
+    },
+    "910605": {
+      "id": 910605,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        5
+      ]
+    },
+    "910701": {
+      "id": 910701,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        1
+      ]
+    },
+    "910702": {
+      "id": 910702,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        2
+      ]
+    },
+    "910703": {
+      "id": 910703,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        3
+      ]
+    },
+    "910704": {
+      "id": 910704,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        4
+      ]
+    },
+    "910705": {
+      "id": 910705,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        5
+      ]
+    },
+    "910801": {
+      "id": 910801,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        1
+      ]
+    },
+    "910802": {
+      "id": 910802,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        2
+      ]
+    },
+    "910803": {
+      "id": 910803,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        3
+      ]
+    },
+    "910804": {
+      "id": 910804,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        4
+      ]
+    },
+    "910805": {
+      "id": 910805,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        5
+      ]
+    },
+    "910901": {
+      "id": 910901,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        1
+      ]
+    },
+    "910902": {
+      "id": 910902,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        2
+      ]
+    },
+    "910903": {
+      "id": 910903,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        3
+      ]
+    },
+    "910904": {
+      "id": 910904,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        4
+      ]
+    },
+    "910905": {
+      "id": 910905,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        5
+      ]
+    },
+    "911001": {
+      "id": 911001,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        1
+      ]
+    },
+    "911002": {
+      "id": 911002,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        2
+      ]
+    },
+    "911003": {
+      "id": 911003,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        3
+      ]
+    },
+    "911004": {
+      "id": 911004,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        4
+      ]
+    },
+    "911005": {
+      "id": 911005,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        5
+      ]
+    },
+    "911006": {
+      "id": 911006,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        6
+      ]
+    },
+    "911007": {
+      "id": 911007,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        7
+      ]
+    },
+    "911008": {
+      "id": 911008,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        8
+      ]
+    },
+    "911101": {
+      "id": 911101,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        1
+      ]
+    },
+    "911201": {
+      "id": 911201,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        1
+      ]
+    },
+    "911202": {
+      "id": 911202,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        2
+      ]
+    },
+    "911203": {
+      "id": 911203,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        3
+      ]
+    },
+    "911204": {
+      "id": 911204,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        4
+      ]
+    },
+    "911205": {
+      "id": 911205,
+      "needRelation": 3,
+      "cost": 4.0,
+      "startTalk": 0,
+      "winTalk": 0,
+      "loseTalk": 0,
+      "effect": [],
+      "mode": 0,
+      "parms": [
+        5
+      ]
+    }
+  },
+  "settings": [
+    {
+      "section": "NDS",
+      "key": "RoundLimit",
+      "default": 3,
+      "min": 1,
+      "max": 30,
+      "desc": "所有游戏共享的每回合新通关额度。失败和已通关重玩不扣额度；F8主界面试玩不受限。",
+      "integer": true
+    },
+    {
+      "section": "NDS",
+      "key": "MarioHalfUnits",
+      "default": 1,
+      "min": 1,
+      "max": 6,
+      "desc": "马里奥首次通关消耗的半关单位数。1为半关，2为一关。其他游戏固定消耗2单位。",
+      "integer": true
+    },
+    {
+      "section": "NDS",
+      "key": "Price",
+      "default": 100,
+      "min": 0,
+      "max": 10000,
+      "desc": "商店NDS掌机价格；不会退补已经购买的金额。",
+      "integer": false
+    },
+    {
+      "section": "UNO",
+      "key": "InitialCards",
+      "default": 7,
+      "min": 3,
+      "max": 15,
+      "desc": "每位玩家起始手牌数。规则和108张牌库不变。",
+      "integer": true
+    },
+    {
+      "section": "UNO",
+      "key": "AiDelay",
+      "default": 1.2,
+      "min": 0.2,
+      "max": 5,
+      "desc": "电脑每次出牌前等待的秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Win1",
+      "default": 0.9,
+      "min": 0,
+      "max": 1,
+      "desc": "第1关：发现立即获胜落点的概率。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Win2",
+      "default": 0.94,
+      "min": 0,
+      "max": 1,
+      "desc": "第2关：发现立即获胜落点的概率。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Win3",
+      "default": 0.97,
+      "min": 0,
+      "max": 1,
+      "desc": "第3关：发现立即获胜落点的概率。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Win4",
+      "default": 0.99,
+      "min": 0,
+      "max": 1,
+      "desc": "第4关：发现立即获胜落点的概率。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Win5",
+      "default": 1,
+      "min": 0,
+      "max": 1,
+      "desc": "第5关：发现立即获胜落点的概率。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Block1",
+      "default": 0.65,
+      "min": 0,
+      "max": 1,
+      "desc": "第1关：堵住对方立即获胜落点的概率。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Block2",
+      "default": 0.72,
+      "min": 0,
+      "max": 1,
+      "desc": "第2关：堵住对方立即获胜落点的概率。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Block3",
+      "default": 0.79,
+      "min": 0,
+      "max": 1,
+      "desc": "第3关：堵住对方立即获胜落点的概率。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Block4",
+      "default": 0.85,
+      "min": 0,
+      "max": 1,
+      "desc": "第4关：堵住对方立即获胜落点的概率。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Block5",
+      "default": 0.9,
+      "min": 0,
+      "max": 1,
+      "desc": "第5关：堵住对方立即获胜落点的概率。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Lapse1",
+      "default": 0.35,
+      "min": 0,
+      "max": 1,
+      "desc": "第1关：普通局面忽略更优选择的概率；仍会沿合理棋形落子。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Lapse2",
+      "default": 0.3,
+      "min": 0,
+      "max": 1,
+      "desc": "第2关：普通局面忽略更优选择的概率；仍会沿合理棋形落子。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Lapse3",
+      "default": 0.25,
+      "min": 0,
+      "max": 1,
+      "desc": "第3关：普通局面忽略更优选择的概率；仍会沿合理棋形落子。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Lapse4",
+      "default": 0.2,
+      "min": 0,
+      "max": 1,
+      "desc": "第4关：普通局面忽略更优选择的概率；仍会沿合理棋形落子。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Lapse5",
+      "default": 0.15,
+      "min": 0,
+      "max": 1,
+      "desc": "第5关：普通局面忽略更优选择的概率；仍会沿合理棋形落子。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Defense1",
+      "default": 0.65,
+      "min": 0,
+      "max": 1,
+      "desc": "第1关：防守在落点评分中的权重；越大越重视防守。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Defense2",
+      "default": 0.74,
+      "min": 0,
+      "max": 1,
+      "desc": "第2关：防守在落点评分中的权重；越大越重视防守。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Defense3",
+      "default": 0.82,
+      "min": 0,
+      "max": 1,
+      "desc": "第3关：防守在落点评分中的权重；越大越重视防守。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Defense4",
+      "default": 0.9,
+      "min": 0,
+      "max": 1,
+      "desc": "第4关：防守在落点评分中的权重；越大越重视防守。",
+      "integer": false
+    },
+    {
+      "section": "Gomoku",
+      "key": "Defense5",
+      "default": 0.98,
+      "min": 0,
+      "max": 1,
+      "desc": "第5关：防守在落点评分中的权重；越大越重视防守。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "CloseSeconds1",
+      "default": 0.34,
+      "min": 0.04,
+      "max": 3,
+      "desc": "第1关：盒盖合拢耗时，秒；越小越难。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "CloseSeconds2",
+      "default": 0.29,
+      "min": 0.04,
+      "max": 3,
+      "desc": "第2关：盒盖合拢耗时，秒；越小越难。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "CloseSeconds3",
+      "default": 0.24,
+      "min": 0.04,
+      "max": 3,
+      "desc": "第3关：盒盖合拢耗时，秒；越小越难。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "CloseSeconds4",
+      "default": 0.16,
+      "min": 0.04,
+      "max": 3,
+      "desc": "第4关：盒盖合拢耗时，秒；越小越难。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "CloseSeconds5",
+      "default": 0.08,
+      "min": 0.04,
+      "max": 3,
+      "desc": "第5关：盒盖合拢耗时，秒；越小越难。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "SwapSeconds1",
+      "default": 0.96,
+      "min": 0.1,
+      "max": 3,
+      "desc": "第1关：每次换位耗时，秒；越小越难。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "SwapSeconds2",
+      "default": 0.81,
+      "min": 0.1,
+      "max": 3,
+      "desc": "第2关：每次换位耗时，秒；越小越难。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "SwapSeconds3",
+      "default": 0.66,
+      "min": 0.1,
+      "max": 3,
+      "desc": "第3关：每次换位耗时，秒；越小越难。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "SwapSeconds4",
+      "default": 0.44,
+      "min": 0.1,
+      "max": 3,
+      "desc": "第4关：每次换位耗时，秒；越小越难。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "SwapSeconds5",
+      "default": 0.22,
+      "min": 0.1,
+      "max": 3,
+      "desc": "第5关：每次换位耗时，秒；越小越难。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "MemorySeconds1",
+      "default": 3,
+      "min": 0.3,
+      "max": 15,
+      "desc": "第1关：记忆展示时间，秒。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "MemorySeconds2",
+      "default": 2.8,
+      "min": 0.3,
+      "max": 15,
+      "desc": "第2关：记忆展示时间，秒。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "MemorySeconds3",
+      "default": 2.6,
+      "min": 0.3,
+      "max": 15,
+      "desc": "第3关：记忆展示时间，秒。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "MemorySeconds4",
+      "default": 2.1,
+      "min": 0.3,
+      "max": 15,
+      "desc": "第4关：记忆展示时间，秒。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "MemorySeconds5",
+      "default": 1.6,
+      "min": 0.3,
+      "max": 15,
+      "desc": "第5关：记忆展示时间，秒。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "GapSeconds1",
+      "default": 0.15,
+      "min": 0,
+      "max": 2,
+      "desc": "第1关：两次换位之间的间隔，秒。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "GapSeconds2",
+      "default": 0.13,
+      "min": 0,
+      "max": 2,
+      "desc": "第2关：两次换位之间的间隔，秒。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "GapSeconds3",
+      "default": 0.1,
+      "min": 0,
+      "max": 2,
+      "desc": "第3关：两次换位之间的间隔，秒。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "GapSeconds4",
+      "default": 0.07,
+      "min": 0,
+      "max": 2,
+      "desc": "第4关：两次换位之间的间隔，秒。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "GapSeconds5",
+      "default": 0.04,
+      "min": 0,
+      "max": 2,
+      "desc": "第5关：两次换位之间的间隔，秒。",
+      "integer": false
+    },
+    {
+      "section": "Box",
+      "key": "Swaps1",
+      "default": 3,
+      "min": 1,
+      "max": 30,
+      "desc": "第1关：每轮交换次数。",
+      "integer": true
+    },
+    {
+      "section": "Box",
+      "key": "Swaps2",
+      "default": 4,
+      "min": 1,
+      "max": 30,
+      "desc": "第2关：每轮交换次数。",
+      "integer": true
+    },
+    {
+      "section": "Box",
+      "key": "Swaps3",
+      "default": 5,
+      "min": 1,
+      "max": 30,
+      "desc": "第3关：每轮交换次数。",
+      "integer": true
+    },
+    {
+      "section": "Box",
+      "key": "Swaps4",
+      "default": 7,
+      "min": 1,
+      "max": 30,
+      "desc": "第4关：每轮交换次数。",
+      "integer": true
+    },
+    {
+      "section": "Box",
+      "key": "Swaps5",
+      "default": 9,
+      "min": 1,
+      "max": 30,
+      "desc": "第5关：每轮交换次数。",
+      "integer": true
+    },
+    {
+      "section": "Box",
+      "key": "Rounds",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "desc": "一局总轮数。",
+      "integer": true
+    },
+    {
+      "section": "Box",
+      "key": "Wins",
+      "default": 2,
+      "min": 1,
+      "max": 10,
+      "desc": "获胜所需正确轮数；超过总轮数时按总轮数计算。",
+      "integer": true
+    },
+    {
+      "section": "TwentyFour",
+      "key": "Seconds1",
+      "default": 120,
+      "min": 10,
+      "max": 600,
+      "desc": "第1关：每题限时秒数；暂停菜单暂停计时。",
+      "integer": false
+    },
+    {
+      "section": "TwentyFour",
+      "key": "Seconds2",
+      "default": 120,
+      "min": 10,
+      "max": 600,
+      "desc": "第2关：每题限时秒数；暂停菜单暂停计时。",
+      "integer": false
+    },
+    {
+      "section": "TwentyFour",
+      "key": "Seconds3",
+      "default": 120,
+      "min": 10,
+      "max": 600,
+      "desc": "第3关：每题限时秒数；暂停菜单暂停计时。",
+      "integer": false
+    },
+    {
+      "section": "TwentyFour",
+      "key": "Seconds4",
+      "default": 120,
+      "min": 10,
+      "max": 600,
+      "desc": "第4关：每题限时秒数；暂停菜单暂停计时。",
+      "integer": false
+    },
+    {
+      "section": "TwentyFour",
+      "key": "Seconds5",
+      "default": 120,
+      "min": 10,
+      "max": 600,
+      "desc": "第5关：每题限时秒数；暂停菜单暂停计时。",
+      "integer": false
+    },
+    {
+      "section": "TwentyFour",
+      "key": "Answers1",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "desc": "第1关：本关答对题数。保持原题库与无限撤销。",
+      "integer": true
+    },
+    {
+      "section": "TwentyFour",
+      "key": "Answers2",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "desc": "第2关：本关答对题数。保持原题库与无限撤销。",
+      "integer": true
+    },
+    {
+      "section": "TwentyFour",
+      "key": "Answers3",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "desc": "第3关：本关答对题数。保持原题库与无限撤销。",
+      "integer": true
+    },
+    {
+      "section": "TwentyFour",
+      "key": "Answers4",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "desc": "第4关：本关答对题数。保持原题库与无限撤销。",
+      "integer": true
+    },
+    {
+      "section": "TwentyFour",
+      "key": "Answers5",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "desc": "第5关：本关答对题数。保持原题库与无限撤销。",
+      "integer": true
+    },
+    {
+      "section": "Tetris",
+      "key": "FallSeconds1",
+      "default": 1.05,
+      "min": 0.08,
+      "max": 3,
+      "desc": "第1关：自然下落一格的秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Tetris",
+      "key": "FallSeconds2",
+      "default": 0.85,
+      "min": 0.08,
+      "max": 3,
+      "desc": "第2关：自然下落一格的秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Tetris",
+      "key": "FallSeconds3",
+      "default": 0.68,
+      "min": 0.08,
+      "max": 3,
+      "desc": "第3关：自然下落一格的秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Tetris",
+      "key": "FallSeconds4",
+      "default": 0.53,
+      "min": 0.08,
+      "max": 3,
+      "desc": "第4关：自然下落一格的秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Tetris",
+      "key": "FallSeconds5",
+      "default": 0.42,
+      "min": 0.08,
+      "max": 3,
+      "desc": "第5关：自然下落一格的秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Tetris",
+      "key": "Lines1",
+      "default": 4,
+      "min": 1,
+      "max": 60,
+      "desc": "第1关：过关需要消除的行数。",
+      "integer": true
+    },
+    {
+      "section": "Tetris",
+      "key": "Lines2",
+      "default": 6,
+      "min": 1,
+      "max": 60,
+      "desc": "第2关：过关需要消除的行数。",
+      "integer": true
+    },
+    {
+      "section": "Tetris",
+      "key": "Lines3",
+      "default": 8,
+      "min": 1,
+      "max": 60,
+      "desc": "第3关：过关需要消除的行数。",
+      "integer": true
+    },
+    {
+      "section": "Tetris",
+      "key": "Lines4",
+      "default": 10,
+      "min": 1,
+      "max": 60,
+      "desc": "第4关：过关需要消除的行数。",
+      "integer": true
+    },
+    {
+      "section": "Tetris",
+      "key": "Lines5",
+      "default": 12,
+      "min": 1,
+      "max": 60,
+      "desc": "第5关：过关需要消除的行数。",
+      "integer": true
+    },
+    {
+      "section": "Tetris",
+      "key": "LockSeconds",
+      "default": 0.5,
+      "min": 0.1,
+      "max": 2,
+      "desc": "方块接触底部后的锁定等待秒数。",
+      "integer": false
+    },
+    {
+      "section": "Snake",
+      "key": "StepSeconds1",
+      "default": 0.31,
+      "min": 0.08,
+      "max": 1,
+      "desc": "第1关：移动一格的秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Snake",
+      "key": "StepSeconds2",
+      "default": 0.29,
+      "min": 0.08,
+      "max": 1,
+      "desc": "第2关：移动一格的秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Snake",
+      "key": "StepSeconds3",
+      "default": 0.27,
+      "min": 0.08,
+      "max": 1,
+      "desc": "第3关：移动一格的秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Snake",
+      "key": "StepSeconds4",
+      "default": 0.25,
+      "min": 0.08,
+      "max": 1,
+      "desc": "第4关：移动一格的秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Snake",
+      "key": "StepSeconds5",
+      "default": 0.2,
+      "min": 0.08,
+      "max": 1,
+      "desc": "第5关：移动一格的秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Snake",
+      "key": "Food1",
+      "default": 5,
+      "min": 1,
+      "max": 60,
+      "desc": "第1关：需要吃到的食物数量。",
+      "integer": true
+    },
+    {
+      "section": "Snake",
+      "key": "Food2",
+      "default": 6,
+      "min": 1,
+      "max": 60,
+      "desc": "第2关：需要吃到的食物数量。",
+      "integer": true
+    },
+    {
+      "section": "Snake",
+      "key": "Food3",
+      "default": 7,
+      "min": 1,
+      "max": 60,
+      "desc": "第3关：需要吃到的食物数量。",
+      "integer": true
+    },
+    {
+      "section": "Snake",
+      "key": "Food4",
+      "default": 9,
+      "min": 1,
+      "max": 60,
+      "desc": "第4关：需要吃到的食物数量。",
+      "integer": true
+    },
+    {
+      "section": "Snake",
+      "key": "Food5",
+      "default": 10,
+      "min": 1,
+      "max": 60,
+      "desc": "第5关：需要吃到的食物数量。",
+      "integer": true
+    },
+    {
+      "section": "Snake",
+      "key": "Obstacles1",
+      "default": 0,
+      "min": 0,
+      "max": 10,
+      "desc": "第1关：启用预设安全障碍位置的数量，上限10。",
+      "integer": true
+    },
+    {
+      "section": "Snake",
+      "key": "Obstacles2",
+      "default": 2,
+      "min": 0,
+      "max": 10,
+      "desc": "第2关：启用预设安全障碍位置的数量，上限10。",
+      "integer": true
+    },
+    {
+      "section": "Snake",
+      "key": "Obstacles3",
+      "default": 4,
+      "min": 0,
+      "max": 10,
+      "desc": "第3关：启用预设安全障碍位置的数量，上限10。",
+      "integer": true
+    },
+    {
+      "section": "Snake",
+      "key": "Obstacles4",
+      "default": 7,
+      "min": 0,
+      "max": 10,
+      "desc": "第4关：启用预设安全障碍位置的数量，上限10。",
+      "integer": true
+    },
+    {
+      "section": "Snake",
+      "key": "Obstacles5",
+      "default": 10,
+      "min": 0,
+      "max": 10,
+      "desc": "第5关：启用预设安全障碍位置的数量，上限10。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "Beans1",
+      "default": 24,
+      "min": 1,
+      "max": 80,
+      "desc": "第1关：需要吃掉的普通豆子数量。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "Beans2",
+      "default": 30,
+      "min": 1,
+      "max": 80,
+      "desc": "第2关：需要吃掉的普通豆子数量。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "Beans3",
+      "default": 36,
+      "min": 1,
+      "max": 80,
+      "desc": "第3关：需要吃掉的普通豆子数量。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "Beans4",
+      "default": 42,
+      "min": 1,
+      "max": 80,
+      "desc": "第4关：需要吃掉的普通豆子数量。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "Beans5",
+      "default": 48,
+      "min": 1,
+      "max": 80,
+      "desc": "第5关：需要吃掉的普通豆子数量。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "Guards1",
+      "default": 1,
+      "min": 1,
+      "max": 3,
+      "desc": "第1关：幽灵数量。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "Guards2",
+      "default": 1,
+      "min": 1,
+      "max": 3,
+      "desc": "第2关：幽灵数量。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "Guards3",
+      "default": 2,
+      "min": 1,
+      "max": 3,
+      "desc": "第3关：幽灵数量。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "Guards4",
+      "default": 2,
+      "min": 1,
+      "max": 3,
+      "desc": "第4关：幽灵数量。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "Guards5",
+      "default": 3,
+      "min": 1,
+      "max": 3,
+      "desc": "第5关：幽灵数量。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "GuardPeriod1",
+      "default": 4,
+      "min": 1,
+      "max": 10,
+      "desc": "第1关：玩家每走多少步幽灵走一步；越大越容易。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "GuardPeriod2",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "desc": "第2关：玩家每走多少步幽灵走一步；越大越容易。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "GuardPeriod3",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "desc": "第3关：玩家每走多少步幽灵走一步；越大越容易。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "GuardPeriod4",
+      "default": 2,
+      "min": 1,
+      "max": 10,
+      "desc": "第4关：玩家每走多少步幽灵走一步；越大越容易。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "GuardPeriod5",
+      "default": 2,
+      "min": 1,
+      "max": 10,
+      "desc": "第5关：玩家每走多少步幽灵走一步；越大越容易。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "Lives",
+      "default": 3,
+      "min": 1,
+      "max": 9,
+      "desc": "初始生命数。",
+      "integer": true
+    },
+    {
+      "section": "Pacman",
+      "key": "StepSeconds",
+      "default": 0.17,
+      "min": 0.08,
+      "max": 0.8,
+      "desc": "玩家走一格的秒数。",
+      "integer": false
+    },
+    {
+      "section": "Pacman",
+      "key": "PowerSteps",
+      "default": 42,
+      "min": 5,
+      "max": 180,
+      "desc": "能量豆效果持续的移动步数。",
+      "integer": true
+    },
+    {
+      "section": "Bubble",
+      "key": "AiSeconds1",
+      "default": 0.7,
+      "min": 0.1,
+      "max": 2,
+      "desc": "第1关：电脑行动间隔秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Bubble",
+      "key": "AiSeconds2",
+      "default": 0.53,
+      "min": 0.1,
+      "max": 2,
+      "desc": "第2关：电脑行动间隔秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Bubble",
+      "key": "AiSeconds3",
+      "default": 0.39,
+      "min": 0.1,
+      "max": 2,
+      "desc": "第3关：电脑行动间隔秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Bubble",
+      "key": "AiSeconds4",
+      "default": 0.29,
+      "min": 0.1,
+      "max": 2,
+      "desc": "第4关：电脑行动间隔秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Bubble",
+      "key": "AiSeconds5",
+      "default": 0.23,
+      "min": 0.1,
+      "max": 2,
+      "desc": "第5关：电脑行动间隔秒数；越小越快。",
+      "integer": false
+    },
+    {
+      "section": "Bubble",
+      "key": "AiLives1",
+      "default": 1,
+      "min": 1,
+      "max": 9,
+      "desc": "第1关：电脑初始生命数。",
+      "integer": true
+    },
+    {
+      "section": "Bubble",
+      "key": "AiLives2",
+      "default": 2,
+      "min": 1,
+      "max": 9,
+      "desc": "第2关：电脑初始生命数。",
+      "integer": true
+    },
+    {
+      "section": "Bubble",
+      "key": "AiLives3",
+      "default": 2,
+      "min": 1,
+      "max": 9,
+      "desc": "第3关：电脑初始生命数。",
+      "integer": true
+    },
+    {
+      "section": "Bubble",
+      "key": "AiLives4",
+      "default": 2,
+      "min": 1,
+      "max": 9,
+      "desc": "第4关：电脑初始生命数。",
+      "integer": true
+    },
+    {
+      "section": "Bubble",
+      "key": "AiLives5",
+      "default": 2,
+      "min": 1,
+      "max": 9,
+      "desc": "第5关：电脑初始生命数。",
+      "integer": true
+    },
+    {
+      "section": "Bubble",
+      "key": "Lives",
+      "default": 2,
+      "min": 1,
+      "max": 9,
+      "desc": "玩家初始生命数。",
+      "integer": true
+    },
+    {
+      "section": "Bubble",
+      "key": "Range",
+      "default": 2,
+      "min": 1,
+      "max": 5,
+      "desc": "玩家初始泡泡范围，格数。",
+      "integer": true
+    },
+    {
+      "section": "Bubble",
+      "key": "Capacity",
+      "default": 1,
+      "min": 1,
+      "max": 3,
+      "desc": "玩家初始可同时放置的泡泡数。",
+      "integer": true
+    },
+    {
+      "section": "Landlord",
+      "key": "AiLevel1",
+      "default": 1,
+      "min": 1,
+      "max": 5,
+      "desc": "第1关：电脑策略等级；1较弱，5较强。提示按钮仍使用最强策略。",
+      "integer": true
+    },
+    {
+      "section": "Landlord",
+      "key": "AiLevel2",
+      "default": 2,
+      "min": 1,
+      "max": 5,
+      "desc": "第2关：电脑策略等级；1较弱，5较强。提示按钮仍使用最强策略。",
+      "integer": true
+    },
+    {
+      "section": "Landlord",
+      "key": "AiLevel3",
+      "default": 3,
+      "min": 1,
+      "max": 5,
+      "desc": "第3关：电脑策略等级；1较弱，5较强。提示按钮仍使用最强策略。",
+      "integer": true
+    },
+    {
+      "section": "Landlord",
+      "key": "AiLevel4",
+      "default": 4,
+      "min": 1,
+      "max": 5,
+      "desc": "第4关：电脑策略等级；1较弱，5较强。提示按钮仍使用最强策略。",
+      "integer": true
+    },
+    {
+      "section": "Landlord",
+      "key": "AiLevel5",
+      "default": 5,
+      "min": 1,
+      "max": 5,
+      "desc": "第5关：电脑策略等级；1较弱，5较强。提示按钮仍使用最强策略。",
+      "integer": true
+    },
+    {
+      "section": "Mahjong",
+      "key": "AiLevel1",
+      "default": 1,
+      "min": 1,
+      "max": 5,
+      "desc": "第1关：电脑策略等级；1较弱，5较强。提示按钮仍使用最强策略。",
+      "integer": true
+    },
+    {
+      "section": "Mahjong",
+      "key": "AiLevel2",
+      "default": 2,
+      "min": 1,
+      "max": 5,
+      "desc": "第2关：电脑策略等级；1较弱，5较强。提示按钮仍使用最强策略。",
+      "integer": true
+    },
+    {
+      "section": "Mahjong",
+      "key": "AiLevel3",
+      "default": 3,
+      "min": 1,
+      "max": 5,
+      "desc": "第3关：电脑策略等级；1较弱，5较强。提示按钮仍使用最强策略。",
+      "integer": true
+    },
+    {
+      "section": "Mahjong",
+      "key": "AiLevel4",
+      "default": 4,
+      "min": 1,
+      "max": 5,
+      "desc": "第4关：电脑策略等级；1较弱，5较强。提示按钮仍使用最强策略。",
+      "integer": true
+    },
+    {
+      "section": "Mahjong",
+      "key": "AiLevel5",
+      "default": 5,
+      "min": 1,
+      "max": 5,
+      "desc": "第5关：电脑策略等级；1较弱，5较强。提示按钮仍使用最强策略。",
+      "integer": true
+    },
+    {
+      "section": "Mario",
+      "key": "Lives",
+      "default": 3,
+      "min": 1,
+      "max": 9,
+      "desc": "初始生命数。",
+      "integer": true
+    },
+    {
+      "section": "Contra",
+      "key": "Lives",
+      "default": 3,
+      "min": 1,
+      "max": 9,
+      "desc": "初始生命数。",
+      "integer": true
+    },
+    {
+      "section": "Mario",
+      "key": "TimeScale",
+      "default": 1,
+      "min": 0.25,
+      "max": 4,
+      "desc": "关卡原始计时额度的倍率；越大时间越充裕。",
+      "integer": false
+    },
+    {
+      "section": "Mario",
+      "key": "StarSeconds",
+      "default": 10,
+      "min": 1,
+      "max": 60,
+      "desc": "无敌星持续秒数。",
+      "integer": false
+    },
+    {
+      "section": "Mario",
+      "key": "HurtGraceSeconds",
+      "default": 2,
+      "min": 0.2,
+      "max": 10,
+      "desc": "大马里奥受伤缩小后的无敌秒数。",
+      "integer": false
+    },
+    {
+      "section": "Contra",
+      "key": "BossHP",
+      "default": 32,
+      "min": 1,
+      "max": 150,
+      "desc": "丛林关底设施生命值。",
+      "integer": true
+    },
+    {
+      "section": "Contra",
+      "key": "BatteryHP",
+      "default": 5,
+      "min": 1,
+      "max": 30,
+      "desc": "固定炮台生命值。",
+      "integer": true
+    },
+    {
+      "section": "Contra",
+      "key": "RespawnGraceSeconds",
+      "default": 3,
+      "min": 0.2,
+      "max": 15,
+      "desc": "复活后的无敌秒数。",
+      "integer": false
+    },
+    {
+      "section": "Audio",
+      "key": "TableBgmVolume",
+      "default": 0.38,
+      "min": 0,
+      "max": 1,
+      "desc": "UNO、五子棋、泡泡、寻物、24点、方块、斗地主、贪吃蛇、吃豆人、麻将及NDS菜单的本地背景音乐音量。",
+      "integer": false
+    },
+    {
+      "section": "Audio",
+      "key": "MarioBgmVolume",
+      "default": 0.75,
+      "min": 0,
+      "max": 1,
+      "desc": "马里奥背景音乐音量。",
+      "integer": false
+    },
+    {
+      "section": "Audio",
+      "key": "ContraBgmVolume",
+      "default": 1,
+      "min": 0,
+      "max": 1,
+      "desc": "魂斗罗背景音乐音量。",
+      "integer": false
+    }
+  ],
+  "upRegistration": {
+    "minigames": [
+      {
+        "id": 9101,
+        "type": "external",
+        "dll": "CampusMinigames.UP.dll",
+        "class": "StudentAge.CampusMinigames.UnoEntry",
+        "parameters": {
+          "deferStart": "true"
+        }
+      },
+      {
+        "id": 9102,
+        "type": "external",
+        "dll": "CampusMinigames.UP.dll",
+        "class": "StudentAge.CampusMinigames.GomokuEntry",
+        "parameters": {
+          "deferStart": "true"
+        }
+      },
+      {
+        "id": 9103,
+        "type": "external",
+        "dll": "CampusMinigames.UP.dll",
+        "class": "StudentAge.CampusMinigames.BubbleEntry",
+        "parameters": {
+          "deferStart": "true"
+        }
+      },
+      {
+        "id": 9104,
+        "type": "external",
+        "dll": "CampusMinigames.UP.dll",
+        "class": "StudentAge.CampusMinigames.BoxEntry",
+        "parameters": {
+          "deferStart": "true"
+        }
+      },
+      {
+        "id": 9105,
+        "type": "external",
+        "dll": "CampusMinigames.UP.dll",
+        "class": "StudentAge.CampusMinigames.TwentyFourEntry",
+        "parameters": {
+          "deferStart": "true"
+        }
+      },
+      {
+        "id": 9106,
+        "type": "external",
+        "dll": "CampusMinigames.UP.dll",
+        "class": "StudentAge.CampusMinigames.FallingBlocksEntry",
+        "parameters": {
+          "deferStart": "true"
+        }
+      },
+      {
+        "id": 9107,
+        "type": "external",
+        "dll": "CampusMinigames.UP.dll",
+        "class": "StudentAge.CampusMinigames.LandlordEntry",
+        "parameters": {
+          "deferStart": "true"
+        }
+      },
+      {
+        "id": 9108,
+        "type": "external",
+        "dll": "CampusMinigames.UP.dll",
+        "class": "StudentAge.CampusMinigames.SnakeEntry",
+        "parameters": {
+          "deferStart": "true"
+        }
+      },
+      {
+        "id": 9109,
+        "type": "external",
+        "dll": "CampusMinigames.UP.dll",
+        "class": "StudentAge.CampusMinigames.MazeEntry",
+        "parameters": {
+          "deferStart": "true"
+        }
+      },
+      {
+        "id": 9110,
+        "type": "external",
+        "dll": "CampusMinigames.UP.dll",
+        "class": "StudentAge.CampusMinigames.MarioEntry",
+        "parameters": {
+          "deferStart": "true"
+        }
+      },
+      {
+        "id": 9111,
+        "type": "external",
+        "dll": "CampusMinigames.UP.dll",
+        "class": "StudentAge.CampusMinigames.ContraEntry",
+        "parameters": {
+          "deferStart": "true"
+        }
+      },
+      {
+        "id": 9112,
+        "type": "external",
+        "dll": "CampusMinigames.UP.dll",
+        "class": "StudentAge.CampusMinigames.MahjongEntry",
+        "parameters": {
+          "deferStart": "true"
+        }
+      }
+    ]
+  },
+  "bundled": {
+    "format": 1,
+    "purpose": "Editor configuration definitions; game plugins must be installed separately.",
+    "plugins": [
+      {
+        "id": "sa.EC2B.UnofficialPatch",
+        "name": "UP 非官方补丁",
+        "authors": [
+          "lfw / lfwing",
+          "雾雁"
+        ],
+        "contracts": [
+          "MinigameCfg",
+          "MinigameActionCfg",
+          "CustomMinigamecfg: template, overrides.tuning"
+        ],
+        "runtime": "local plugin-mode build; public 1.0.21 does not support template/overrides"
+      },
+      {
+        "id": "studio.studentage.campusuno",
+        "name": "校园小游戏拓展",
+        "contracts": [
+          "studio.studentage.minigames.cfg",
+          "MinigameTuning"
+        ]
+      }
+    ],
+    "files": {
+      "campus/settings.json": {
+        "source": "../student-age-bepinex/tools/tuning/settings.json",
+        "sha256": "149ffb0e076749fc854499d18ddcb2cc166c537f5259a581646b9e8e8310001f"
+      },
+      "campus/MinigameCfg.json": {
+        "source": "../student-age-bepinex/integration/mod/Cfgs/zh-cn/MinigameCfg.json",
+        "sha256": "af5669967352229ce7a14e756a61510f6f353856821daf90c79f7c2528d3a745"
+      },
+      "campus/MinigameActionCfg.json": {
+        "source": "../student-age-bepinex/integration/mod/Cfgs/zh-cn/MinigameActionCfg.json",
+        "sha256": "d8f58cbaf6c4252ef8e211a1cb495977ea8cd9a356d5e31c97f6cf8cba66250e"
+      },
+      "up/CustomMinigamecfg.json": {
+        "source": "../student-age-bepinex/integration/mod/EC2BUnofficialPatch/CustomMinigamecfg.json",
+        "sha256": "6a887138c51dbecd975f830dd9b8aedc198705d0bbceab60e1a38c459ddd64e5"
+      }
+    }
+  }
+}

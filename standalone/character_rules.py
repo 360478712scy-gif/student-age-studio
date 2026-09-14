@@ -37,7 +37,14 @@ def native_rules(game):
 def references(store, project):
     import copy
     result = copy.deepcopy(native_rules(store.game))
+    import plugin_mode, sys
+    games, stages, plugin_ids = plugin_mode.references(project, sys.modules[type(store).__module__])
+    result["MinigameCfg"].update(games)
+    result["MinigameActionCfg"].update(stages)
     for name in result:
         result[name].update(store.catalog_rows(name))
         result[name].update(store.social.local(project,name))
+    for name in ('MinigameCfg','MinigameActionCfg'):
+        result[name]=plugin_mode.visible(project,sys.modules[type(store).__module__],name,result[name])
+    result["pluginGameIds"] = plugin_ids
     return result

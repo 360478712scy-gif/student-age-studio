@@ -42,8 +42,9 @@ def save(store,payload,api):
         # Only submitted changed records are merged. Unedited records/files stay untouched.
         interactions=copy.deepcopy(current['interactions']);all_talks=copy.deepcopy(current['talks'])
         deleted={str(v) for v in payload.get('deleted',[])}
-        old={k:v for k,v in interactions.items() if k in deleted or k in incoming}
-        previous_owned=interaction_talks(old,all_talks,current.get('options',{}))
+        # Editing a later line can change the chain without changing InteractCfg.
+        # Compare ownership before/after across all interactions, including shared chains.
+        previous_owned=interaction_talks(interactions,all_talks,current.get('options',{}))
         for key in deleted:interactions.pop(key,None)
         interactions.update(incoming);all_talks.update(talks)
         legacy,legacy_events=legacy_rows(current)

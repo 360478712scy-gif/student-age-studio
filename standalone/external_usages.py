@@ -15,9 +15,9 @@ define('interact', '闲聊互动结束', 'InteractCfg', 'talkId', 'scalar', ('np
        help='角色的闲聊进度条完成时播放；条件为空时不限制，地点为空时不限地点。')
 define('item', '使用物品', 'ItemCfg', 'talkId', 'scalar', (), help='在已有物品的原版使用流程中播放，不改变物品类型及使用效果。')
 for kind,label,field in [('goal-finish','目标完成','finishTalk'),('goal-fail','目标失败','failTalk')]:
-    define(kind,label,'IntentCfg',field,fields=('name','npc','condition','demand','reward','fail','round'),help='在所选目标判定完成或失败时播放，不改变目标本身的达成规则。')
+    define(kind,label,'IntentCfg',field,fields=('name','npc','condition','demand','reward','fail','round'),help='在所选目标判定完成或失败时播放；右侧参数属于该目标本身，修改后也会改变目标规则。')
 for kind,label,field in [('mini-start','小游戏开场','startTalk'),('mini-win','小游戏胜利','winTalk'),('mini-lose','小游戏失败','loseTalk')]:
-    define(kind,label,'MinigameActionCfg',field,'mini',(),help='沿用人物界面绑定的小游戏，选择第 1～5 关。同一小游戏被多个人物共用时，这些人物也共用关卡对话。')
+    define(kind,label,'MinigameActionCfg',field,'mini',('cost','needRelation','mode','parms','effect'),help='沿用人物界面绑定的小游戏，选择已有的第 1～5 关。游戏按当前进度播放开场、胜利或失败对话；绑定不会重置进度。原版还要求非假期、关系达标及消耗足够；同一小游戏的关卡参数、对话与进度由使用它的人物共用。')
 define('cg','CG 回忆开场','CGCfg','startTalks','first',(),help='从回忆画廊打开所选 CG 时播放；不改变 CG 图片与剧情中的插图。')
 define('love-draw','恋爱画作获得','LoveDrawCfg','talkId',fields=('cond',),help='沿用已有画作和解锁条件，获得画作并展示时播放。')
 for gender,field in [('男主','talks'),('女主','talks2')]:
@@ -37,6 +37,14 @@ EXTRA_TABLES = ('LoveDrawCfg','LoveGreetingCfg','NpcActivityCfg','TalkInputMinig
 
 def rows_for(store, project, name):
     native = {}
+    if name in ('MinigameCfg','MinigameActionCfg'):
+        # Runtime references remain valid when the UI plugin mode is closed.
+        import plugin_mode,sys
+        api=sys.modules[type(store).__module__]
+        cfg=plugin_mode.state(project,api)
+        if plugin_mode.CAMPUS in cfg.get('enabled',[]):
+            native=plugin_mode.catalog(api)['games' if name=='MinigameCfg' else 'stages']
+        return {**native,**store.catalog_rows(name),**store.editing_rows(project,name)}
     if name in EXTRA_TABLES:
         from character_rules import native_rules
         native = native_rules(store.game).get(name,{})
@@ -54,7 +62,8 @@ def catalog(store, project_id, api):
         for templates in commands.values():
             if isinstance(templates,list):
                 names.update(p['range']['table'] for t in templates for p in t.get('parameters',[]) if p.get('range',{}).get('table') and ' / ' not in p['range']['table'])
-        refs = {n: rows_for(store,project,n) for n in sorted(names)}
+        import plugin_mode
+        refs = {n: plugin_mode.visible(project,api,n,rows_for(store,project,n)) for n in sorted(names)}
         return dict(definitions=DEFINITIONS, schemas=SCHEMAS, refs=refs, commands=commands, revision=store.revision(project))
 
 
@@ -89,6 +98,8 @@ def _int(value, label, api, minimum=1, maximum=2147483647):
 def apply(store,project,groups,previous,all_maps,touched,api):
     """Resolve real CFG targets, merge only edited fields, reject collisions, then write atomically."""
     groups=copy.deepcopy(groups)
+    from external_sequence import compile_sequences
+    compile_sequences(store,groups,previous,all_maps,touched,api)
     old={}
     for fid,folder in previous.items():
         for u in folder.get('uses',[]):
@@ -132,6 +143,7 @@ def apply(store,project,groups,previous,all_maps,touched,api):
             if not isinstance(params,dict):raise api.ApiError('用途参数无效。')
             if shape=='mini':
                 npc=_int(u.get('npc'),'小游戏人物',api);level=_int(u.get('level'),'小游戏关卡',api,1,5)
+                if str(npc) not in table('PersonCfg'):raise api.ApiError('小游戏人物不存在。')
                 game=table('PersonGrowCfg').get(str(npc),{}).get('minigame',0)
                 if not game or str(game) not in table('MinigameCfg'):raise api.ApiError('该人物尚未绑定小游戏，请先到人物界面设置。')
                 rid=game*100+level

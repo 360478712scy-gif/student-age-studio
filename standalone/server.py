@@ -741,7 +741,7 @@ class StudioStore:
             paths = [path for relative,path in self.json_document_files(project).items() if relative != 'manifest.json']
             paths += [project.path / "manifest.json", project.path / "StudentAgeStudio/deleted-talks.json",
                       project.path / "StudentAgeStudio/editor-state.json", project.path / "StudentAgeStudio/audio-cues.json",
-                      project.path / "StudentAgeStudio/original-edits.json", project.path / "StudentAgeStudio/social-state.json", project.path / "StudentAgeStudio/character-outfits.json", project.path / "StudentAgeStudio/character-romance.json", project.path / "StudentAgeStudio/space-layouts.json"]
+                      project.path / "StudentAgeStudio/original-edits.json", project.path / "StudentAgeStudio/social-state.json", project.path / "StudentAgeStudio/character-outfits.json", project.path / "StudentAgeStudio/character-romance.json", project.path / "StudentAgeStudio/space-layouts.json", project.path / "StudentAgeStudio/plugins.json", project.path / "EC2BUnofficialPatch/CustomMinigamecfg.json"]
             catalog_path = game_cache(self.game) / 'game-catalog.json'
             def fingerprint(path):
                 try:
@@ -1694,6 +1694,15 @@ class StudioStore:
                 state["order"] = order
             if state != old_state:
                 changes["StudentAgeStudio/editor-state.json"] = json_bytes(state)
+            # Story actions have no native references into these space settings.
+            # Refuse the entire transaction if future normalization/ID code ever
+            # attempts to cross this boundary; never silently reset or drop fields.
+            space_settings = {'KZoneProfileCfg.json', 'KZoneAvatarCfg.json',
+                              'KZoneFontCfg.json', 'KZoneColorCfg.json'}
+            unexpected = touched & space_settings
+            if unexpected:
+                raise ApiError('剧情保存意外涉及空间设置，已取消本次写入并保留草稿：' +
+                               '、'.join(sorted(unexpected)), 409, 'save_scope')
             changes.update({"Cfgs/zh-cn/" + filename: json_bytes(all_maps[filename]) for filename in touched})
             backup = self.commit(project, changes, expected)
             return {"ok": True, "revision": self.revision(project), "backup": backup, "repairedIds": list(redirects),
@@ -1796,7 +1805,7 @@ class StudioStore:
         schemas = catalog.get("schemas", catalog.get("tableSchemas", {}))
         schema = schemas.get(name, {}) if isinstance(schemas, dict) else {}
         schema = copy.deepcopy(schema) if isinstance(schema, dict) else {}
-        if name == 'GiftEvtCfg' and not schema:
+        if name in ('MinigameCfg', 'MinigameActionCfg', 'LovePhotoboothCfg', 'NegotiationChatCfg') or name == 'GiftEvtCfg' and not schema:
             schema = copy.deepcopy(json.loads((Path(__file__).parent / 'catalog-schema.json').read_text(encoding='utf-8'))['schemas'][name])
         if name in gameplay_features.schemas():
             schema = copy.deepcopy(gameplay_features.schemas()[name])
@@ -1891,7 +1900,9 @@ class StudioStore:
             if not isinstance(resolution, list) or len(resolution) != 2 or any(not isinstance(value, (int, float)) or value <= 0 for value in resolution):
                 resolution = [2560, 1440]
             commands = self.command_catalog(project_id)["commands"]
-            return {"project": project.public(), "revision": self.revision(project), "tables": result,
+            import plugin_mode
+            _, _, plugin_ids = plugin_mode.references(project,sys.modules[__name__])
+            return {"pluginEditing": plugin_mode.editing(project), "allPluginGameIds":plugin_mode.game_ids(project,sys.modules[__name__]), "pluginGameIds": plugin_ids, "project": project.public(), "revision": self.revision(project), "tables": result,
                     "features": self.workshop_features(result), "warnings": warnings_list,
                     "supported": [entry["name"] for entry in result], "catalogAvailable": bool(catalog.get("schemas")),
                     "operations": catalog.get("operations", []), "commands": commands,
@@ -1926,6 +1937,10 @@ class StudioStore:
             revision = self.revision(project)
             local = read_json(safe_path(project.path, "Cfgs/zh-cn/" + name + ".json"), {})
             inherited = self.catalog_rows(name)
+            import plugin_mode
+            if name in ('MinigameCfg','MinigameActionCfg'):
+                games,stages,_=plugin_mode.references(project,sys.modules[__name__])
+                inherited={**(games if name=='MinigameCfg' else stages),**inherited}
             if name == 'MinigameActionCfg':
                 from character_rules import native_rules
                 inherited = {**native_rules(self.game).get(name, {}), **inherited}
@@ -1948,7 +1963,7 @@ class StudioStore:
             local_rows = copy.deepcopy(rows) if project.original_mode else {key: copy.deepcopy(rows[key]) for key in local if key in rows}
             if name == "PersonCfg":
                 for ident in read_json(project.path/"StudentAgeStudio/goal-images.json", {}): rows.pop(ident, None)
-            return {"project": project.public(), "name": name, "rows": rows, "referenceRows": copy.deepcopy(inherited), "localRows": local_rows, "localIds": list(local_rows), "schema": self.table_schema(name, rows), "revision": revision, "warnings": warnings_list}
+            return {"project": project.public(), "name": name, "rows": plugin_mode.visible(project,sys.modules[__name__],name,rows), "referenceRows": plugin_mode.visible(project,sys.modules[__name__],name,copy.deepcopy(inherited)), "localRows": local_rows, "localIds": list(local_rows), "schema": self.table_schema(name, rows), "revision": revision, "warnings": warnings_list}
 
     def validate_fields(self, name, rows, previous):
         # Work in progress is saveable; these editors do not gate on completeness.
@@ -3541,6 +3556,15 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.store.table(query.get("projectId", [""])[0], query.get("name", [""])[0]))
             if route == "/api/manifest":
                 return self.send_json(self.server.store.manifest(query.get("projectId", [""])[0]))
+            if route == "/api/editor-music":
+                import editor_music
+                return self.send_json(editor_music.access(self.server.store,sys.modules[__name__]))
+            if route == "/api/editor-music-file":
+                import editor_music
+                return self.send_file(editor_music.media(sys.modules[__name__],query.get("id",["tooi-sora"])[0]))
+            if route == "/api/plugins":
+                import plugin_mode
+                return self.send_json(plugin_mode.load(self.server.store,query.get("projectId",[""])[0],sys.modules[__name__]))
             if route == "/api/audio":
                 return self.send_json(self.server.store.audio_files(query.get("projectId", [""])[0]))
             if route == "/api/reuse-assets":
@@ -3639,7 +3663,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 page = page.replace("</head>", bootstrap + "</head>", 1) if "</head>" in page else bootstrap + page
                 policy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval' 'nonce-" + nonce + "'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
                 return self.send_data(page.encode(), "text/html; charset=utf-8", extra={"Content-Security-Policy": policy})
-            if route in ("/character-images.js", "/external-dialogues.js", "/external-uses.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-ui.css", "/locations.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
+            if route in ("/plugin-mode.js", "/plugin-mode.css", "/editor-music.js", "/editor-music.css", "/character-images.js", "/external-dialogues.js", "/external-uses.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-ui.css", "/locations.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
                 file = self.server.web_root / route.lstrip("/")
                 if file.is_file():
                     data = file.read_bytes()
@@ -3825,6 +3849,15 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.audio_resources.start(), 202)
             if route == "/api/resource-refresh":
                 return self.send_json(self.server.resources.start(), 202)
+            if route == "/api/editor-music":
+                import editor_music
+                return self.send_json(editor_music.access(self.server.store,sys.modules[__name__],payload))
+            if route == "/api/project-remove":
+                import project_removal
+                return self.send_json(project_removal.remove(self.server.store,payload,sys.modules[__name__]))
+            if route == "/api/plugins":
+                import plugin_mode
+                return self.send_json(plugin_mode.save(self.server.store,payload,sys.modules[__name__]))
             if route == "/api/create":
                 return self.send_json(self.server.store.create(payload.get("name")), 201)
             if route == "/api/copy":

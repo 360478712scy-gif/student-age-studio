@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
         window.title = "拾光工坊·模组编辑器-\(version)"; window.minSize = NSSize(width: 1000,height: 680); if let screen = NSScreen.main { window.setFrame(screen.visibleFrame, display: false) }; window.delegate = self
         window.backgroundColor = NSColor(red: 0.957,green: 0.965,blue: 0.980,alpha: 1)
         let config = WKWebViewConfiguration(); config.websiteDataStore = .nonPersistent()
+        config.mediaTypesRequiringUserActionForPlayback = []
         config.userContentController.add(self, name: "studioCloseDecision")
         config.userContentController.add(self, name: "studioAssetFolder")
         web = WKWebView(frame: window.contentView!.bounds, configuration: config)

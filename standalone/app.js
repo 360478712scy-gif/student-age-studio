@@ -1033,6 +1033,7 @@ function applyExpression() {
 let largeScene=null,scenePlayer=null,sceneMode='edit',sceneSyncing=false,stageAudio=null;
 let linePlayback=null,storyPreview=null;
 function stopLinePlayback(redraw=true){
+ window.StudentAgeAudioFocus?.set('story-line',false);
  if(!linePlayback)return;clearTimeout(linePlayback.frame);clearTimeout(linePlayback.timer);linePlayback=null;
  largeScene?.container.getAnimations?.({subtree:true}).forEach(a=>a.cancel());stageAudio?.stop();sceneMode='edit';
  if($('[data-scene="play"]'))$('[data-scene="play"]').textContent='播放';if(redraw)renderPreview();
@@ -1040,7 +1041,7 @@ function stopLinePlayback(redraw=true){
 function playCurrentLine(){
  if(!talk())return;stopLinePlayback(false);ensureScene();scenePlayer.pause();stageAudio.stop();
  const before=currentStage(true),after=currentStage();prepareSceneExpressions(before);prepareSceneExpressions(after);
- sceneMode='clip';const playback=linePlayback={};
+ sceneMode='clip';const playback=linePlayback={};window.StudentAgeAudioFocus?.set('story-line',true);
  $('[data-scene="play"]').textContent='停止播放';
  largeScene.draw(S.doc,after,{edit:false,animate:true,fromState:before});stageAudio.enter(after.talkId,after.trace);
  const duration=Math.max(1500,StudentAgeScreenEffects.duration(after),...(after.motions||[]).map(m=>(Math.max(0,m.delay||0)+Math.max(.4,m.duration||0,m.shake||0))*1000+150));
@@ -1115,6 +1116,7 @@ storyExitDialog.querySelector('[data-preview-confirm-exit]').onclick=()=>{storyE
 storyExitDialog.addEventListener('cancel',event=>{event.preventDefault();keepStoryPreview();});
 function requestStoryExit(){if(!storyPreview||storyExitDialog.open)return;if(scenePlayer?.ended){closeStoryPreview();return;}if($('#story-history').open){closeStoryHistory();return;}storyPreview.exiting=true;scenePlayer?.schedule();storyExitDialog.showModal();storyExitDialog.querySelector('[data-preview-keep]').focus();}
 function closeStoryPreview(){
+ window.StudentAgeAudioFocus?.set('story-preview',false);
  if(!storyPreview)return;if(storyExitDialog.open)storyExitDialog.close();closeStoryHistory(false);const prior=storyPreview;storyPreview=null;scenePlayer?.pause();stageAudio?.stop();largeScene?.container.getAnimations?.({subtree:true}).forEach(a=>a.cancel());
  for(const {node,marker} of prior.portals||[]){marker.replaceWith(node);}
  document.body.classList.remove('story-fullscreen');$('#story-preview-controls').hidden=true;sceneMode='edit';
@@ -1273,6 +1275,7 @@ function openActorMenu(id,x,y) {
   menu.hidden=false;menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';
 }
 function scenePlayerRender(state,flags) {
+ window.StudentAgeAudioFocus?.set('story-preview',!!storyPreview&&!flags.ended);
   if(!state||!largeScene)return;
   if(flags.ended&&storyPreview){closeStoryPreview();return;}
   const menu=$('#scene-context-menu');if(!menu.hidden&&(menu.dataset.project!==S.project?.id||Number(menu.dataset.talk)!==S.selected||!state.roles[menu.dataset.role]?.visible||sceneMode!=='edit'))closeContextMenu();$('#scene-panel').hidden=!talk();
@@ -1656,6 +1659,7 @@ window.STUDIO_HAS_UNSAVED_CHANGES=()=>S.dirty;
 window.STUDIO_CURRENT_PROJECT=()=>S.project?.id||null;
 window.STUDIO_BACKUP_PROJECT=async()=>{if(!editable())throw Error('请先打开可编辑的本地模组。');const result=await api('/api/backup',{projectId:S.project.id,kind:'manual',requestId:crypto.randomUUID()});toast(result.warning||'手动备份已完成，可在工坊设置中查看备份文件夹。',result.warning?'note':undefined);return result;};
 window.STUDIO_PROJECTS=()=>S.projects;
+window.STUDIO_REFRESH_PROJECTS=()=>refreshProjects();
 window.STUDIO_NEW_PROJECT=copy=>newProject(!!copy);
 window.STUDIO_PAUSE_PREVIEW=()=>{StudentAgeActionEditor.close();stopLinePlayback();closeStoryPreview();scenePlayer?.pause();stageAudio?.stop();stopAudition();};
 async function selectProjectHome(id,keepSource=false){

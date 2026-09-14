@@ -732,7 +732,7 @@ class Player {
 }
 class AudioPlayer {
   constructor(options){this.options=options;this.bgm=null;this.group=null;this.nativeBgm=null;this.sfx=[];this.lastTalk=null;this.pendingMusic=null;this.desiredMusic=null;this.failedMusic=null;}
-  create(id,volume,loop=false,resource){const url=resource===undefined?this.options.getUrl(Number(id)):resource;if(!url){this.options.onWarning?.('所选声音尚未读取到本地，无法试听。');return null;}const audio=this.options.createAudio?this.options.createAudio(url):new Audio(url);audio.volume=Math.max(0,Math.min(1,Number.isFinite(Number(volume))?Number(volume):1));audio.loop=!!loop;audio.play()?.catch?.(()=>this.options.onWarning?.('声音未能播放，请检查本地素材。'));return audio;}
+  create(id,volume,loop=false,resource){const url=resource===undefined?this.options.getUrl(Number(id)):resource;if(!url){this.options.onWarning?.('所选声音尚未读取到本地，无法试听。');return null;}const audio=this.options.createAudio?this.options.createAudio(url):new Audio(url);window.StudentAgeAudioFocus?.track(audio);audio.volume=Math.max(0,Math.min(1,Number.isFinite(Number(volume))?Number(volume):1));audio.loop=!!loop;audio.play()?.catch?.(()=>this.options.onWarning?.('声音未能播放，请检查本地素材。'));return audio;}
   cancelPendingMusic(){const pending=this.pendingMusic;if(!pending)return;this.pendingMusic=null;pending.audio.removeEventListener?.('error',pending.fail);pending.audio.pause();}
   switchMusic(key,track){
     const attempt=JSON.stringify([key,track?.url||null]);
@@ -749,7 +749,7 @@ class AudioPlayer {
     let audio;
     try{audio=this.options.createAudio?this.options.createAudio(track.url):new Audio(track.url);}
     catch{warn();return;}
-    audio.volume=Math.max(0,Math.min(1,Number.isFinite(Number(track.volume))?Number(track.volume):1));audio.loop=!!track.loop;
+    window.StudentAgeAudioFocus?.track(audio);audio.volume=Math.max(0,Math.min(1,Number.isFinite(Number(track.volume))?Number(track.volume):1));audio.loop=!!track.loop;
     const pending={key,attempt,audio,url:track.url};this.pendingMusic=pending;
     const fail=()=>{if(this.pendingMusic!==pending)return;this.cancelPendingMusic();warn();};pending.fail=fail;
     // The game keeps the old channel until the replacement clip has loaded.

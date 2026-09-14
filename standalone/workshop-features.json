@@ -921,10 +921,16 @@
   {
     "id": "minigames",
     "label": "小游戏",
-    "description": "设置原版小游戏的名称、玩法提示和背景音乐",
+    "description": "修改原版小游戏和社交关卡的参数、消耗与对话",
     "primaryTable": "MinigameCfg",
     "tables": [
-      "MinigameCfg"
+      "MinigameCfg",
+      "MinigameActionCfg",
+      "HandicraftMiniGameCfg",
+      "LineMatchMinigameCfg",
+      "NegotiationMiniGameCfg",
+      "NegotiationMiniGameCardCfg",
+      "NegotiationMiniGameCardTypeCfg"
     ],
     "entry": {
       "kind": "table",
@@ -933,7 +939,17 @@
     "group": "玩法与配置",
     "native": true,
     "homeCategory": "builtin",
-    "createLabel": "添加小游戏"
+    "editExistingOnly": true,
+    "module": true,
+    "tableLabels": {
+      "MinigameCfg": "小游戏设置",
+      "MinigameActionCfg": "社交关卡参数",
+      "HandicraftMiniGameCfg": "手工拼装",
+      "LineMatchMinigameCfg": "生日连线",
+      "NegotiationMiniGameCfg": "交涉规则",
+      "NegotiationMiniGameCardCfg": "交涉牌组",
+      "NegotiationMiniGameCardTypeCfg": "牌型与克制"
+    }
   },
   {
     "id": "television",
@@ -951,22 +967,5 @@
     "native": true,
     "homeCategory": "builtin",
     "createLabel": "添加电视节目"
-  },
-  {
-    "id": "photobooth",
-    "label": "大头贴",
-    "description": "编辑大头贴相框装饰；人物照片在人物图片页预览调整",
-    "primaryTable": "LovePhotoboothCfg",
-    "tables": [
-      "LovePhotoboothCfg"
-    ],
-    "entry": {
-      "kind": "table",
-      "table": "LovePhotoboothCfg"
-    },
-    "group": "玩法与配置",
-    "native": true,
-    "homeCategory": "builtin",
-    "createLabel": "添加大头贴"
   }
 ]

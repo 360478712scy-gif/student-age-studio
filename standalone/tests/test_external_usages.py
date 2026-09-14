@@ -31,6 +31,38 @@ class ExternalUsesTests(unittest.TestCase):
         d=ext.load(self.store,self.ident,b)
         return dict(projectId=self.ident,revision=d['revision'],talks=d['talks'],folders={'one':{'name':'夹子','talkIds':[9001,9002],'uses':uses}})
     def save(self,uses):return ext.save(self.store,self.request(uses),b)
+    def test_parameter_contract_uses_current_schema_even_with_old_catalog(self):
+        with patch.object(self.store, 'catalog', return_value={'schemas':{}}):
+            schema=self.store.table_schema('MinigameActionCfg')
+            self.assertTrue(schema['editExistingOnly'])
+            self.assertTrue(next(f for f in schema['fields'] if f['name']=='parms')['visualList'])
+            self.assertFalse(self.store.table_schema('LovePhotoboothCfg')['nativePage'])
+        previous=self.read('MinigameActionCfg');rows=copy.deepcopy(previous);rows['701']['parms'][0]=9
+        self.store.table_save(dict(projectId=self.ident,revision=self.store.revision(self.project),name='MinigameActionCfg',scope='local',rows=rows))
+        actual=self.read('MinigameActionCfg');self.assertEqual(set(actual),set(previous));self.assertEqual(actual['701']['parms'],[9,7])
+        self.assertEqual(actual['702'],previous['702'])
+
+    def test_mini_parameters_and_bindings_preserve_other_stage_fields(self):
+        before=self.read('MinigameActionCfg')
+        u=self.use('mini-start',npc=3,level=5)
+        u['baseParams']={'cost':0,'needRelation':0,'mode':0,'parms':[3,7],'effect':[[1,100,3]]}
+        u['params']={**copy.deepcopy(u['baseParams']),'cost':8,'parms':[9,7]}
+        self.save([u])
+        after=self.read('MinigameActionCfg')
+        self.assertEqual(after['705']['startTalk'],9001)
+        self.assertEqual(after['705']['cost'],8)
+        self.assertEqual(after['705']['parms'],[9,7])
+        self.assertEqual(after['705']['effect'],before['705']['effect'])
+        self.assertEqual(after['705']['winTalk'],0)
+        self.assertEqual(after['704'],before['704'])
+
+    def test_mini_orphan_person_is_rejected_without_writes(self):
+        self.write('PersonCfg',{'4':{'id':4,'name':'人物乙'}})
+        before=self.read('MinigameActionCfg')
+        with self.assertRaisesRegex(b.ApiError,'人物不存在'):
+            self.save([self.use('mini-start',npc=3,level=1)])
+        self.assertEqual(self.read('MinigameActionCfg'),before)
+
     def test_gift_native_selection_and_next_dialogue(self):
         d=self.save([self.use('gift',npc=3,item=10,giftMode=0)])
         row=next(iter(self.read('GiftEvtCfg').values()))
@@ -40,6 +72,22 @@ class ExternalUsesTests(unittest.TestCase):
         self.assertEqual(self.read('TalkCfg')['9001']['nextTalk'],[9002]);self.assertEqual(self.read('TalkCfg')['9001']['future'],{'keep':9})
         again=self.save(d['folders']['one']['uses']);self.assertEqual(again['folders'],d['folders'])
         self.assertEqual(len(self.read('GiftEvtCfg')),1)
+    def test_ordered_folder_relinks_native_chain_and_trigger_without_extra_rows(self):
+        p=self.request([self.use('gift',npc=3,item=10,giftMode=0)])
+        p['folders']['one'].update(sequence=True,talkIds=[9002,9001])
+        p['talks']['9002'].update(check=[[1,101,1]],effect=[[1,100,3]])
+        d=ext.save(self.store,p,b)
+        rows=self.read('TalkCfg');self.assertEqual(set(rows),{'9001','9002'})
+        self.assertEqual(rows['9002']['nextTalk'],[9001]);self.assertEqual(rows['9001']['nextTalk'],[])
+        self.assertEqual(rows['9002']['check'],[[1,101,1]]);self.assertEqual(rows['9002']['effect'],[[1,100,3]])
+        gift=next(iter(self.read('GiftEvtCfg').values()));self.assertEqual(gift['talkId'],[[9002]])
+        self.assertEqual(d['folders']['one']['uses'][0]['entryId'],9002)
+        p=dict(projectId=self.ident,revision=d['revision'],talks=d['talks'],folders=d['folders'])
+        p['folders']['one']['talkIds']=[9001,9002]
+        ext.save(self.store,p,b)
+        self.assertEqual(next(iter(self.read('GiftEvtCfg').values()))['talkId'],[[9001]])
+        self.assertEqual(self.read('TalkCfg')['9001']['future'],{'keep':9})
+
     def test_existing_multi_recipient_gift_preserves_other_slots_and_fields(self):
         self.write('GiftEvtCfg',{'55':{'id':55,'item':10,'npc':[4,3],'talkId':[[8001,8002],[8011,8012]],'type':[1,0],'cond':[],'future':42}})
         d=self.save([self.use('gift',npc=3,item=10,giftMode=1,gender_override='unused')])

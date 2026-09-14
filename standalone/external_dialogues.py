@@ -29,7 +29,7 @@ def load(store,project_id,api):
             for ident in group.get('talkIds',[]):
                 if str(ident) in talks and ident not in used:keep.append(ident);used.add(ident)
             group['talkIds']=keep
-        refs={n:store.table(project.id,n)['rows'] for n in ('PersonCfg','BgCfg','ModFaceCfg','CGCfg','ItemCfg')}
+        refs={n:store.table(project.id,n)['rows'] for n in ('PersonCfg','BgCfg','MapCfg','ModFaceCfg','CGCfg','ItemCfg')}
         return {'talks':talks,'folders':groups,'doc':doc,'refs':refs,'revision':store.revision(project)}
 
 def save(store,payload,api):

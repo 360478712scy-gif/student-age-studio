@@ -73,7 +73,7 @@ class SpaceEditor:
                 layouts[key]={**old_layouts.get(key,{}),**layout}
             fields = {'profiles':PROFILE,'messages':BOARD,'avatars':AVATAR}
             old = {key:self.store.preserve_editing_rows(p,name,self.local(p,name)) for key,name in fields.items()}
-            rows = {key:self.store.social.merged_incoming(payload.get(key),old[key],name) for key,name in fields.items()}
+            rows = {key:self.store.social.merged_incoming(payload[key],old[key],name) if key in payload else copy.deepcopy(old[key]) for key,name in fields.items()}
             rows = {key:self.store.preserve_editing_rows(p,name,rows[key]) for key,name in fields.items()}
             merged = {key:{**self.store.catalog_rows(name),**rows[key]} for key,name in fields.items()}
             people = self.merged(p,'PersonCfg'); themes = self.merged(p,'KZoneColorCfg'); audio = self.merged(p,'AudioCfg')
@@ -124,7 +124,7 @@ class SpaceEditor:
                         parent = merged['messages'].get(str(reply))
                         if not parent or reply == row['id'] or parent.get('roles',[None,None])[1] != roles[1]: raise self.b.ApiError('留言回复必须属于同一个空间。')
                 if any(str(row.get('reply',0)) in removed_messages for row in merged['messages'].values()): raise self.b.ApiError('这条留言仍有回复，请先移除回复。')
-            changes = {'Cfgs/zh-cn/'+name+'.json':self.b.json_bytes(rows[key]) for key,name in fields.items()}
+            changes = {'Cfgs/zh-cn/'+name+'.json':self.b.json_bytes(rows[key]) for key,name in fields.items() if key in payload and rows[key] != old[key]}
             if layouts != old_layouts: changes['StudentAgeStudio/space-layouts.json']=self.b.json_bytes(layouts)
             backup = self.store.commit(p,changes,revision)
             rows = {key:self.local(p, name) for key,name in fields.items()}

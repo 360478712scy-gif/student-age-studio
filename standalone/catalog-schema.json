@@ -10546,7 +10546,8 @@
             "table": "AudioCfg"
           }
         }
-      ]
+      ],
+      "editExistingOnly": true
     },
     "TVCfg": {
       "name": "TVCfg",
@@ -10619,7 +10620,7 @@
       "label": "大头贴相框",
       "filename": "LovePhotoboothCfg.json",
       "category": "玩法与配置",
-      "nativePage": true,
+      "nativePage": false,
       "allowIncomplete": true,
       "fields": [
         {
@@ -10647,6 +10648,94 @@
           "required": false
         }
       ]
+    },
+    "MinigameActionCfg": {
+      "fields": [
+        {
+          "name": "cost",
+          "type": "float",
+          "label": "基础信任消耗",
+          "default": 0,
+          "section": "关卡设置"
+        },
+        {
+          "name": "effect",
+          "type": "list<list<float>>",
+          "label": "胜利效果",
+          "default": [],
+          "editorType": "Effect",
+          "section": "对话与效果",
+          "listDepth": 2
+        },
+        {
+          "name": "id",
+          "type": "int",
+          "label": "id",
+          "default": 0,
+          "section": "对话与效果"
+        },
+        {
+          "name": "loseTalk",
+          "type": "int",
+          "label": "失败对话",
+          "default": 0,
+          "section": "对话与效果",
+          "range": {
+            "table": "TalkCfg"
+          }
+        },
+        {
+          "name": "mode",
+          "type": "int",
+          "label": "玩法模式",
+          "default": 0,
+          "section": "关卡设置"
+        },
+        {
+          "name": "needRelation",
+          "type": "int",
+          "label": "关系要求",
+          "default": 0,
+          "range": {
+            "table": "RelationCfg"
+          },
+          "section": "关卡设置"
+        },
+        {
+          "name": "parms",
+          "type": "list<float>",
+          "label": "玩法参数",
+          "default": [],
+          "section": "关卡设置",
+          "visualList": true
+        },
+        {
+          "name": "startTalk",
+          "type": "int",
+          "label": "开场对话",
+          "default": 0,
+          "section": "对话与效果",
+          "range": {
+            "table": "TalkCfg"
+          }
+        },
+        {
+          "name": "winTalk",
+          "type": "int",
+          "label": "胜利对话",
+          "default": 0,
+          "section": "对话与效果",
+          "range": {
+            "table": "TalkCfg"
+          }
+        }
+      ],
+      "label": "社交关卡参数",
+      "nativePage": true,
+      "category": "玩法与配置",
+      "description": "修改已有社交小游戏关卡；人物所用的小游戏在人物页绑定。",
+      "editExistingOnly": true,
+      "layout": "sections"
     }
   },
   "features": [

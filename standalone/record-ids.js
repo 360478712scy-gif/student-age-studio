@@ -68,7 +68,7 @@ function inline(anchor,{oldId,commit}){
  };
  input.onkeydown=e=>{e.stopPropagation();if(e.key==='Escape'){e.preventDefault();if(!busy)finish();}else if(e.key==='Enter'){e.preventDefault();submit();}};
  input.oninput=()=>{error.textContent='';input.removeAttribute('aria-invalid');};input.onblur=()=>{if(!closed&&!busy)submit();};
- anchor.addEventListener('click',e=>{if(!closed)e.stopPropagation();},{capture:true,once:true});input.focus();input.select();
+ input.onclick=e=>e.stopPropagation();input.ondblclick=e=>e.stopPropagation();input.focus();input.select();
 }
 async function commitStored(table,oldId,newId){
  if(linked[table])throw Error('此编号与所属内容绑定，请修改 '+linked[table]+' 的编号。');

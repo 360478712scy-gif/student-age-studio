@@ -712,13 +712,13 @@
       {
         "name": "cost",
         "type": "float",
-        "label": "消耗",
+        "label": "基础信任消耗",
         "default": 0
       },
       {
         "name": "effect",
         "type": "list<list<float>>",
-        "label": "触发效果",
+        "label": "胜利效果",
         "default": [],
         "editorType": "Effect"
       },
