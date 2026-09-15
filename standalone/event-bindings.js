@@ -46,7 +46,7 @@ function syncSocialEffects(doc){
   }
  }
  const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b),talks=doc.talks||{};
- for(const t of Object.values(talks)){if(!t.studioSocialEffects)continue;
+ for(const id of StudentAgeIndexedTalks.keysWithField(talks,'studioSocialEffects')){const t=talks[id];
   for(const rows of Object.values(t.studioSocialEffects))for(const r of rows){const i=(t.effect||[]).findIndex(v=>same(v,r));if(i>=0)t.effect.splice(i,1);}t.studioSocialEffects={};
  }
  const append=(t,eventId,rows)=>{if(!t)return;t.effect??=[];t.studioSocialEffects??={};const added=rows.filter(r=>!t.effect.some(v=>same(v,r)));t.effect.push(...copy(added));(t.studioSocialEffects[eventId]??=[]).push(...copy(added));};

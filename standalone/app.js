@@ -99,7 +99,7 @@ async function deletePremise(rowOrId){
 window.STUDIO_DELETE_PREMISE=deletePremise;
 function eventRoots(e){return [...ids(e.talkId),...ids(e.options).flatMap(id=>[...ids(S.doc.options[id]?.talkId),...ids(S.doc.options[id]?.talkId2)])];}
 function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));fn();StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds);cleanLostPremises(writers);updateDirty();if(redraw)render();scheduleRenumber();return true;}
-let textDirtyTimer=null;
+let textDirtyTimer=null,textSearchTimer=null;
 function updateTextDirty(){
  // Input changes the live row immediately. Full-document comparison waits for a pause.
  S.dirty=true;renderChrome();clearTimeout(textDirtyTimer);
@@ -755,7 +755,7 @@ async function loadProject(id,preserve=false) {
   const computedOrder=initialOrder();const storedOrder=ids(data.order).filter(id=>S.doc.talks[id]);S.order=[...new Set([...storedOrder,...computedOrder])];S.event=preserve&&(oldEvent==='all'||S.doc.events[oldEvent])?oldEvent:(values(S.doc.events)[0]?.id || 'all');
   S.search='';$('#talk-search').value='';S.selected=preserve&&S.doc.talks[oldSelection]?oldSelection:(visibleIds()[0]||null);
   S.pinned={talks:new Set((data.pinnedIds?.talks||[]).map(Number)),options:new Set((data.pinnedIds?.options||[]).map(Number)),events:new Set((data.pinnedIds?.events||[]).map(Number))};S.catalogAll=Object.fromEntries(MAPS.map(k=>[k,new Set((data.catalogIds?.[k]||[]).map(String))]));
-  S.catalogTalkIds=new Set(Object.keys(S.doc.talks).map(Number).filter(id=>!(S.localIds.talks||[]).map(Number).includes(id)));S.catalogIds=Object.fromEntries(MAPS.map(k=>{const local=new Set((S.localIds[k]||[]).map(String));return [k,new Set(Object.keys(S.doc[k]||{}).filter(id=>!local.has(String(id))))];}));S.idMappings={};S.deleted=[];S.replacements={};S.undo=[];S.redo=[];S.coalesce=null;S.saved=currentSignature();S.dirty=false;
+  const localTalkIds=new Set((S.localIds.talks||[]).map(Number));S.catalogTalkIds=new Set(Object.keys(S.doc.talks).map(Number).filter(id=>!localTalkIds.has(id)));S.catalogIds=Object.fromEntries(MAPS.map(k=>{const local=new Set((S.localIds[k]||[]).map(String));return [k,new Set(Object.keys(S.doc[k]||{}).filter(id=>!local.has(String(id))))];}));S.idMappings={};S.deleted=[];S.replacements={};S.undo=[];S.redo=[];S.coalesce=null;S.saved=currentSignature();S.dirty=false;
   if(S.previewRole===null||!S.doc.persons[S.previewRole])S.previewRole=values(S.doc.persons).filter(p=>!S.goalImageIds?.includes(String(p.id)))[0]?.id??null;
   const t=talk();if(t&&ids(t.roleIds).length)S.previewRole=ids(t.roleIds)[0];syncFaceFromTalk();
   S.conditionTemplates=[];S.effectTemplates=[];S.conditionRefs={};S.conditionLocalIds={};S.conditionsLoading=true;
@@ -796,7 +796,7 @@ function changedStoryPayloadFrom(){
 }
 async function save() {
   if(!editable()||S.saving)return false;document.activeElement?.blur?.();if(textDirtyTimer!==null)updateDirty();const invalid=document.querySelector('.effect-editor [data-effect-invalid]');if(invalid){for(let parent=invalid.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;toast('有效果参数尚未填好（'+invalid.dataset.effectInvalid+'），已按上一次有效值保存。','note');}if(!S.dirty)return true;
-  StudentAgeEventBindings.syncSocialEffects(S.doc);for(const id of S.project.originalMode?[]:S.localIds.talks||[]){const t=S.doc.talks[id];if(t)StudentAgeScene.normalizeNativeMoves(t);}
+  StudentAgeEventBindings.syncSocialEffects(S.doc);
   for(const id of Timeline.internals(S.branchFolders)){const t=S.doc.talks[id];if(!t)continue;if((t.content||'').trim()||t.roles?.length||t.option?.length||t.effect?.length||t.screenEffect?.length){t.content='';t.roles=[];t.option=[];t.effect=[];t.screenEffect=[];}}S.saving=true;renderChrome();const submittedSignature=currentSignature();
   const sentMappings=S.idMappings;S.idMappings={};
   try{const data=await api('/api/save',changedStoryPayload.call(null,sentMappings));S.revision=data.revision??S.revision;const inverse=Object.fromEntries(Object.entries(sentMappings||{}).map(([t,m])=>[t,Object.fromEntries(Object.entries(m).map(([a,b])=>[b,Number(a)]))]));for(const entry of [...S.undo,...S.redo])entry.idMappings=composeMappings(inverse,entry.idMappings||{});const unchanged=currentSignature()===submittedSignature;if(data.branchFolders&&unchanged)S.branchFolders=clone(data.branchFolders);if(data.premises&&unchanged)S.premises=clone(data.premises);S.saved=unchanged?currentSignature():submittedSignature;S.dirty=currentSignature()!==S.saved;if(data.warnings?.length)toast('已保存。'+data.warnings.join(' '),'note');else toast(S.dirty?'已保存此前的修改，继续编辑的内容仍待保存。':'模组已保存，修改前的文件已备份。');return !S.dirty;}
@@ -983,6 +983,7 @@ function renderEvents() {
 }
 const storySelection=StudentAgeDialogueSelection.create({host:document.querySelector('.workspace'),selector:'#talk-list .talk-card',attribute:'data-id',toolbar:()=>document.querySelector('#talk-count')?.parentElement,scope:()=>[S.project?.id,S.event,S.search,JSON.stringify(S.idMappings||{})].join('|'),allowed:()=>S.doc?visibleIds():[],editable:()=>!!S.project&&!S.project.readOnly&&!S.projectOpening&&!S.saving,signature:currentSignature,remove:deleteTalk,error:fail,draggable:true});
 function renderList() {
+  clearTimeout(textSearchTimer);textSearchTimer=null;
   if(!S.doc){$('#talk-list').innerHTML='<div class="small-empty">请打开或新建模组。</div>';return;}
   const visible=visibleIds(),allowed=new Set(visible),owners=new Map();for(const [key,f]of Object.entries(S.branchFolders))for(const id of ids(f.talkIds))owners.set(id,key);
   if(S.search){for(const start of visible){let id=start;const seen=new Set();while(owners.has(id)&&!seen.has(id)){seen.add(id);const f=S.branchFolders[owners.get(id)];allowed.add(f.parentTalkId);S.folderOpen[owners.get(id)]=true;id=f.parentTalkId;}}}
@@ -1553,10 +1554,11 @@ function updatePreviewText() {
   for(const node of $$('#large-scene .scene-speaker-name strong,.preview-caption strong'))node.textContent=name;
   for(const node of $$('#large-scene .scene-dialogue p,.preview-caption p'))node.textContent=content||'输入对话内容';
 }
-function updateTalkTextCard(){
-  if(S.search){renderList();return;}
+function updateTalkTextCard(speakerChanged=false){
+  // Text is already in the live row. Search across the entire mod only after a pause.
+  if(S.search){clearTimeout(textSearchTimer);textSearchTimer=setTimeout(renderList,600);}
   const card=$('#talk-list .talk-card[data-id="'+S.selected+'"]');if(!card)return;const t=talk(),name=speaker(t);
-  card.querySelector('.talk-snippet').textContent=t.content||'空白对话';card.querySelector('strong').innerHTML=StudentAgeRecordLabels.html(t.id,name);card.querySelector('.speaker-dot').textContent=name.slice(0,1);
+  card.querySelector('.talk-snippet').textContent=t.content||'空白对话';if(speakerChanged)card.querySelector('strong').innerHTML=StudentAgeRecordLabels.html(t.id,name);
 }
 
 
@@ -1620,7 +1622,7 @@ document.addEventListener('input',event=>{
   if(e.dataset.sfxVolume!==undefined){if(!editable())return;history('调整音效音量','sfx-volume:'+S.selected+':'+e.dataset.sfxVolume);S.doc.audioCues.sfx[S.selected][Number(e.dataset.sfxVolume)].volume=Number(e.value);updateDirty();return;}
   if(e.id==='talk-search'){S.search=e.value;S.listStart=0;S.listAnchor=S.selected;renderList();return;}
   if(e.dataset.edit&&e.tagName!=='SELECT'&&talk()){
-    if(!editable())return;history('编辑对话文字','text:'+S.selected+':'+e.dataset.edit);talk()[e.dataset.edit]=e.value;updateTextDirty();updateTalkTextCard();updatePreviewText();if(e.dataset.edit==='content'){const count=$('#character-count');if(count)count.textContent=e.value.length+' 字';}return;
+    if(!editable())return;history('编辑对话文字','text:'+S.selected+':'+e.dataset.edit);talk()[e.dataset.edit]=e.value;updateTextDirty();updateTalkTextCard(e.dataset.edit!=='content');updatePreviewText();if(e.dataset.edit==='content'){const count=$('#character-count');if(count)count.textContent=e.value.length+' 字';}return;
   }
   if(e.dataset.optionField&&e.tagName!=='SELECT'){
     if(!editable())return;const o=S.doc.options[e.dataset.optionId];if(!o)return;history('编辑选项文字','option:'+o.id);o[e.dataset.optionField]=e.value;updateDirty();renderList();return;

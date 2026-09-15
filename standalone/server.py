@@ -1414,7 +1414,14 @@ class StudioStore:
                 for key, row in incoming.items():
                     if key not in old and inherited.get(key) == row:
                         continue
-                    revised[key] = {**old.get(key, {}), **copy.deepcopy(row)}
+                    # all_maps is a private working copy from disk; original_maps
+                    # above is the independent rollback/comparison snapshot. Reuse
+                    # unchanged working rows instead of deep-copying every dialogue
+                    # again when the user changed only one line in a large table.
+                    if key in old and row == old[key] and not (filename == "TalkCfg.json" and row.get("roleName") == ""):
+                        revised[key] = old[key]
+                    else:
+                        revised[key] = {**old.get(key, {}), **copy.deepcopy(row)}
                     if filename == "TalkCfg.json" and revised[key].get("roleName") == "":
                         revised[key]["roleName"] = None
                 all_maps[filename] = revised

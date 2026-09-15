@@ -106,4 +106,7 @@ function create(o){
  }
  return {render,choose,rendererOptions:{onBeforeInteract:()=>!!valid(),onDrag:drag,onSelectRole:choose,onContextMenu:(id,x,y)=>{if(!valid())return;choose(id);StudentAgeContextMenu({target:o.host(),clientX:x,clientY:y,preventDefault(){},stopPropagation(){}},[{label:'人物动作',action:actions},...[[1,'左'],[3,'中'],[2,'右']].map(([axis,label])=>({label:'初始站位 · '+label,action:()=>position(axis)}))]);menu=document.querySelector('.studio-delete-menu');}},dispose(){disposed=true;menu?._dismiss?.();if(ownsActions)StudentAgeActionEditor.close();}};
 }
-window.StudentAgeDialogueStage={create};})();
+// NewTalkView keeps the previous cast and adds movement deltas to its targets.
+// A continuation inherits that state through nextTalk, not by replaying commands.
+function continuation(previous,id){return {...clone(previous||{}),id,content:'',roles:[],bg:0,audio:0,screenEffect:[],nextTalk:[],nextTalk2:[],option:[],check:[],effect:[],effect2:[]};}
+window.StudentAgeDialogueStage={create,continuation};})();

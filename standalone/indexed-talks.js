@@ -77,7 +77,7 @@ function table(base,changes){
   }
   return Object.fromEntries([...out].sort(([a],[b])=>Number(a)-Number(b)));
  }
- tables.set(proxy,{base,state,stats:()=>({total:Reflect.ownKeys(proxy).length,decoded:cache.size,edited:edited.size,changes:Object.keys(state()).length}),raw});return proxy;
+ tables.set(proxy,{base,state,keysWithField:field=>Reflect.ownKeys(proxy).filter(id=>!!read(id)?.[field]),stats:()=>({total:Reflect.ownKeys(proxy).length,decoded:cache.size,edited:edited.size,changes:Object.keys(state()).length}),raw});return proxy;
 }
 function pack(value){const info=value&&tables.get(value);return info?{__studioIndexedTalks:info.base.id,changes:info.state()}:value;}
 function revive(_,value){
@@ -100,6 +100,8 @@ function delta(current,before){
  return {version:1,upsert,deleted};
 }
 function stats(value){return tables.get(value)?.stats();}
+// Read-only scans need not allocate a Proxy and finalizer for every untouched row.
+function keysWithField(value,field){return tables.get(value)?.keysWithField(field)??Object.keys(value||{}).filter(id=>!!value[id]?.[field]);}
 function retain(value){const base=tables.get(value)?.base;for(const id of bases.keys())if(id!==base?.id)bases.delete(id);}
-return {create,pack,stringify,parse,clone,delta,stats,retain};
+return {create,pack,stringify,parse,clone,delta,stats,keysWithField,retain};
 });

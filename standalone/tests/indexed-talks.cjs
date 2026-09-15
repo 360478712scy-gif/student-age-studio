@@ -3,6 +3,11 @@ const rows=Object.fromEntries(Array.from({length:1000},(_,i)=>[String(i+1),{id:i
 const make=()=>T.create(Object.entries(rows).map(([k,v])=>[k,JSON.stringify(v)]));
 let a=make(),before=T.clone(a);
 assert.equal(T.stats(a).decoded,0);
+assert.deepEqual(T.keysWithField(a,'studioSocialEffects'),[]);assert(T.stats(a).decoded<=64);assert.equal(T.stats(a).edited,0);
+a[2].studioSocialEffects={7:[[1,2,3]]};a[1001]={id:1001,studioSocialEffects:{}};delete a[3];
+assert.deepEqual(T.keysWithField(a,'studioSocialEffects'),['2','1001']);assert.deepEqual(T.keysWithField(before,'studioSocialEffects'),[]);
+assert.deepEqual(T.keysWithField(JSON.parse(JSON.stringify(a)),'studioSocialEffects'),['2','1001']);
+delete a[2].studioSocialEffects;delete a[1001];a[3]=rows[3];
 const held=a[1].unknown.values;for(const row of Object.values(a))assert(row.id>0);
 assert(T.stats(a).decoded<=64);held[2].text='修改';held.push(7);a[1].roles[0].splice(1,1,3004);delete a[1].content;
 assert.deepEqual(JSON.parse(JSON.stringify(a[1])),{id:1,nextTalk:[2],roles:[[3,3004,1]],unknown:{values:[1,2,{text:'修改'},7]}});
