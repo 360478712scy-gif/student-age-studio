@@ -1821,7 +1821,15 @@ function openAssetPicker(kind,options={}) {
   if(!editable())return;
   if(options.intent==='add-cg'&&!externalSession&&!S.doc?.events[S.event]){toast('先选择一个事件，再添加 CG。','note');return;}
   if(options.intent!=='add-cg'&&!talk()){toast('先添加或选择一句对话。','note');return;}
-  return window.STUDIO_ASSET_PICKER.open(kind,{...options,selected:S.selected,event:S.event,folderKey:options.folderKey??S.activeFolder});
+  return window.STUDIO_ASSET_PICKER.open(kind,{...(kind==='background'&&!phoneEvent()?{selectDialogues:selectBackgroundDialogues}:{}),...options,selected:S.selected,event:S.event,folderKey:options.folderKey??S.activeFolder});
+}
+async function selectBackgroundDialogues(previous=[]){
+ const project=S.project.id,scope=externalSession?externalScope():S.order.filter(id=>(S.doc.talkOwners?.[id]||[]).includes(Number(S.event))),hidden=Timeline.internals(S.branchFolders),allowed=scope.filter(id=>!hidden.has(id)&&S.doc.talks[id]),chosen=new Set(previous.filter(id=>allowed.includes(id)));
+ if(!allowed.length)return null;
+ const panel=document.createElement('dialog');panel.className='background-dialogue-picker';panel.innerHTML=`<header><h2>选择要换背景的对话</h2><button data-bg-cancel>关闭</button></header><p>${externalSession?'当前对话夹':'当前事件'} · 共 ${allowed.length} 句。选好后返回场景目录，再点击背景。</p><div class="bg-selection-tools"><button data-bg-all>全选</button><button data-bg-clear>清空</button><span data-bg-count></span></div><div class="bg-dialogue-list"></div><footer><button data-bg-prev>上一页</button><span data-bg-page></span><button data-bg-next>下一页</button><button class="primary" data-bg-confirm>选择背景</button></footer>`;document.body.append(panel);panel.showModal();let page=0,seq=0;
+ const count=()=>{panel.querySelector('[data-bg-count]').textContent=`已选 ${chosen.size} 句`;panel.querySelector('[data-bg-confirm]').disabled=!chosen.size;};
+ async function paint(){const stamp=++seq,list=allowed.slice(page*80,(page+1)*80),host=panel.querySelector('.bg-dialogue-list');host.textContent='正在读取对话…';panel.querySelector('[data-bg-prev]').disabled=page===0;panel.querySelector('[data-bg-next]').disabled=(page+1)*80>=allowed.length;panel.querySelector('[data-bg-page]').textContent=`${page+1} / ${Math.ceil(allowed.length/80)}`;count();try{await Remote.ensure(S.doc.talks,list);if(!panel.isConnected||stamp!==seq)return;host.innerHTML=list.map(id=>`<label><input type="checkbox" data-bg-talk="${id}" ${chosen.has(id)?'checked':''}><span><strong>${h(speaker(S.doc.talks[id]))} · ${id}</strong><span>${h(talkText(S.doc.talks[id])||'（空白对话）')}</span></span></label>`).join('');}catch(error){host.textContent=error.message;}}
+ return new Promise(resolve=>{const end=value=>{seq++;panel.close();panel.remove();resolve(value)};panel.querySelector('[data-bg-cancel]').onclick=()=>end(null);panel.oncancel=e=>{e.preventDefault();end(null)};panel.querySelector('[data-bg-confirm]').onclick=()=>end(S.project?.id===project?[...chosen]:null);panel.querySelector('[data-bg-all]').onclick=()=>{allowed.forEach(id=>chosen.add(id));void paint()};panel.querySelector('[data-bg-clear]').onclick=()=>{chosen.clear();void paint()};panel.querySelector('[data-bg-prev]').onclick=()=>{page--;void paint()};panel.querySelector('[data-bg-next]').onclick=()=>{page++;void paint()};panel.onchange=e=>{if(e.target.matches('[data-bg-talk]')){const id=Number(e.target.dataset.bgTalk);e.target.checked?chosen.add(id):chosen.delete(id);count();}};void paint();});
 }
 async function pickScenePerson(){
  if(!editable()||!talk())return;
@@ -1850,6 +1858,7 @@ window.STUDIO_USE_PICKED_ASSET=async(result,options={})=>{
     S.previewRole=id;enterSceneRole(id,{cloth:result.cloth==null?undefined:Number(result.cloth)});syncFaceFromTalk();
   }else if(kind==='background'){
     if(!S.doc.backgrounds[id])throw Error('场景尚未载入，请重新打开素材目录。');
+    if(options.backgroundTalkIds?.length){const targets=[...new Set(options.backgroundTalkIds)],allowed=new Set(externalSession?externalScope():S.order.filter(t=>(S.doc.talkOwners?.[t]||[]).includes(Number(S.event))));if(targets.some(t=>!allowed.has(t)||!S.doc.talks[t]))throw Error('所选对话已变化，请重新选择。');await Remote.ensure(S.doc.talks,targets);mutate('批量更换背景',()=>{for(const t of targets)S.doc.talks[t].bg=id;});return true;}
     mutate('设置场景',()=>{if(phoneEvent())configurePhone(phoneEvent(),Number(phoneEvent().npc)||0,id);else talk().bg=id;});
   }else if(kind==='cg'){
     if(!S.doc.cgs[id])throw Error('CG 尚未载入，请重新打开素材目录。');
