@@ -29,7 +29,7 @@ function draw(renderer,doc,scene,animate){const root=renderer.container;for(cons
 }
 function duration(scene){const row=scene?.screen?.command||[],id=Number(row[0]);return Math.max(scene?.transition?.kind==='wipe'?1200:scene?.transition?750:0,id===4006?2800:id===4013?5000:id===4001?(row[1]||.15)*1000:id===4012?Math.max(1,row[1]||1)*200:id===4011?400:0);}
 async function edit({projectId,api,talk,persons={},allowPaper=false}){
- const UI=StudentAgeCharacterUI,esc=UI.esc,current=structuredClone(talk),items=[...entries,...(allowPaper?[{id:'paper',name:'纸条'}]:[]),{id:'clear',name:'移除本句屏幕效果'}];
+ const UI=StudentAgeCharacterUI,esc=UI.esc,current=JSON.parse(JSON.stringify(talk)),items=[...entries,...(allowPaper?[{id:'paper',name:'纸条'}]:[]),{id:'clear',name:'移除本句屏幕效果'}];
  const selected=await UI.choices('屏幕效果',items,{selected:current.screenEffect?.[0]});if(!selected)return null;
  if(selected.id==='paper')return {paper:true};if(selected.id==='clear')return {screenEffect:[]};
  const config=entries.find(r=>r.id===selected.id),value=current.screenEffect?.[0]===config.id?current.screenEffect.slice():[config.id];

@@ -124,6 +124,7 @@ function nativePositionFrames(track){
  return {duration,frames};
 }
 function apply(doc,prior,talk,grade=1,recordTrace=true) {
+  if(globalThis.StudentAgeRemoteTalks?.nodeInfo(talk))talk=StudentAgeRemoteTalks.sceneRecord(talk);
   const state=copy({...prior,trace:[]});state.motionStarts=copy(prior.roles);state.motions=[];state.positionTracks={};state.paperId=0;state.talkId=talk.id;state.trace=recordTrace?[...prior.trace,talk.id]:[];
   // NewTalkView retains roleCloths independently of the visible cast.
   state.roleCloths??={};
@@ -285,13 +286,22 @@ function planSceneDrag(selected,before,roleId,target,evaluate){
  }
  throw Error('当前动作组合无法安全调整位置，已保留原指令。');
 }
+const diskStageCaches=new WeakMap();
 function reconstruct(doc,target,options={}) {
+  const remote=globalThis.StudentAgeRemoteTalks?.info(doc.talks),source=doc.talks;
+  const cacheKey=remote?JSON.stringify([remote.graphVersion,options.grade,options.reference,options.roots,options.event,doc.protagonistGender,doc.persons,doc.faces,doc.backgrounds,doc.options,doc.branchFolders]):null;
+  if(remote)doc={...doc,talks:StudentAgeRemoteTalks.sceneTable(doc.talks,target)};
   const roots=options.roots?.length?options.roots:Object.values(doc.events||{}).flatMap(e=>list(e.talkId));
   const route=options.trace?{path:options.trace,found:true}:pathTo(doc,target,roots);
-  let state=blank(options.reference||[2560,1440]),trace=[];
+  let state=blank(options.reference||[2560,1440]),trace=[],start=0;
   const event=options.event||Object.values(doc.events||{}).find(e=>list(e.talkId).includes(route.path[0]));
   if(event&&[70,71].includes(Number(event.type)))state.phoneEvent=copy(event);
-  for(const id of route.path){const talk=doc.talks?.[id];if(talk){if(state.talkId!==null&&routes(doc,doc.talks[state.talkId]).some(r=>r.id===Number(id)&&r.reset)){state=blank(options.reference||[2560,1440]);trace=[];}state=apply(doc,state,talk,options.grade??1,false);trace.push(talk.id);}}
+  let cache=remote?diskStageCaches.get(source):null;
+  if(remote&&cache?.key!==cacheKey){cache={key:cacheKey,path:[],points:[],bytes:0};diskStageCaches.set(source,cache);}
+  if(cache){let common=0;while(common<Math.min(cache.path.length,route.path.length)&&cache.path[common]===route.path[common])common++;const checkpoint=cache.points.filter(p=>p.index<=common&&p.index<route.path.length).at(-1);if(checkpoint){start=checkpoint.index;state=copy(checkpoint.state);trace=checkpoint.trace.slice();}cache.points=cache.points.filter(p=>p.index<=start);cache.bytes=cache.points.reduce((n,p)=>n+p.bytes,0);cache.path=route.path.slice();}
+  for(let index=start;index<route.path.length;index++){const id=route.path[index],talk=doc.talks?.[id];if(talk){if(state.talkId!==null&&routes(doc,doc.talks[state.talkId]).some(r=>r.id===Number(id)&&r.reset)){state=blank(options.reference||[2560,1440]);trace=[];}state=apply(doc,state,talk,options.grade??1,false);trace.push(talk.id);}
+    if(cache&&(index+1)%64===0){const point={index:index+1,state:copy(state),trace:trace.slice()};point.state.content='';point.bytes=JSON.stringify(point).length*2;cache.points.push(point);cache.bytes+=point.bytes;while(cache.points.length>64||cache.bytes>4*1024*1024){const old=cache.points.shift();cache.bytes-=old.bytes;}}
+  }
   state.trace=trace;
   if(route.inferred)state.warnings.push('这段尚未设置事件入口，按已连接的前后对话还原。');
   if(!route.found&&state.talkId!==null)state.warnings.push('找不到通向这句的事件入口。这里只能从这句开始还原，前一幕状态未知。');
@@ -702,7 +712,9 @@ class Renderer {
 class Player {
   constructor(options){this.options=options;this.trace=[];this.playing=false;this.timer=null;this.scene=null;this.ended=false;this.historyStarted=false;}
   get doc(){return this.options.getDoc();}
-  select(id,trace=null){this.pause();this.ended=false;this.historyStarted=false;this.scene=reconstruct(this.doc,id,{...this.options.getContext(),trace:trace||undefined});this.trace=this.scene.trace.slice();this.render(false);}
+  select(id,trace=null){
+    if(this.options.loadTalk&&globalThis.StudentAgeRemoteTalks?.info(this.doc.talks)&&!StudentAgeRemoteTalks.ready(this.doc.talks,id)){this.pause();const sequence=this.loadSequence=(this.loadSequence||0)+1,doc=this.doc.talks;this.options.loadTalk(id).then(()=>{if(sequence===this.loadSequence&&doc===this.doc.talks)this.select(id,trace);}).catch(error=>this.options.onWarning?.(error.message));return;}
+    this.loadSequence=(this.loadSequence||0)+1;this.pause();this.ended=false;this.historyStarted=false;this.scene=reconstruct(this.doc,id,{...this.options.getContext(),trace:trace||undefined});this.trace=this.scene.trace.slice();this.render(false);}
   refresh(){if(this.trace.length){this.scene=reconstruct(this.doc,this.trace[this.trace.length-1],{...this.options.getContext(),trace:this.trace});this.render(false);}}
   choices(){return this.options.getChoices?.(this.scene)??this.scene.routeChoices??[];}
   render(animate){this.options.onRender(this.scene,{animate,playing:this.playing,ended:this.ended});}
@@ -721,7 +733,9 @@ class Player {
     if(!choices[0].available){this.pause();this.options.onChoices?.(choices);this.options.onWarning?.('下一句属于当前模组之外，载入对应内容后才能继续预览。');return;}
     this.choose(choices[0]);
   }
-  choose(route){if(!route.available)return;this.recordStart('choice');if(route.optionId!==undefined||route.conditional||route.type==='alternate')this.options.onHistory?.({kind:'choice',route:copy(route)});if(route.end){this.ended=true;this.pause();this.options.onHistory?.({kind:'end'});this.render(false);return;}
+  async choose(route){if(!route.available)return;
+    if(this.options.loadTalk&&!route.end){const sequence=this.loadSequence=(this.loadSequence||0)+1,scene=this.scene;try{await this.options.loadTalk(route.id);}catch(error){this.pause();this.options.onWarning?.(error.message);return;}if(sequence!==this.loadSequence||scene!==this.scene)return;}
+this.recordStart('choice');if(route.optionId!==undefined||route.conditional||route.type==='alternate')this.options.onHistory?.({kind:'choice',route:copy(route)});if(route.end){this.ended=true;this.pause();this.options.onHistory?.({kind:'end'});this.render(false);return;}
     if(this.trace.length>=2000){this.pause();this.options.onWarning?.('这次预览已经经过很多句，请重置后继续。');return;}
     if(route.reset)this.trace=[];if(this.resumeAfterChoice){this.playing=true;this.resumeAfterChoice=false;}this.trace.push(route.id);this.scene=reconstruct(this.doc,route.id,{...this.options.getContext(),trace:this.trace});
     this.options.onHistory?.({kind:'line',talkId:route.id,scene:copy(this.scene)});this.options.onSelect?.(route.id);this.render(true);if(this.playing)this.schedule();

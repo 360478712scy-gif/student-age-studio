@@ -1,0 +1,10 @@
+'use strict';
+const assert=require('assert/strict'),fs=require('fs'),path=require('path'),vm=require('vm'),R=require('../remote-talks.js');
+const sandbox={window:{},StudentAgeRemoteTalks:R,setTimeout,clearTimeout};vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../scene.js'),'utf8'),sandbox);const Scene=sandbox.window.StudentAgeScene;
+const rows={};for(let id=1;id<=250;id++)rows[id]={id,content:'完整正文 '+id,roleIds:[3],roles:id===1?[[3,1002,1,1]]:id===150?[[3,3004,100,0,0],[3,3006,2]]:id===200?[[3,3004,-100,0,0],[3,3006,3]]:[],nextTalk:id<250?[id+1]:[]};
+const descriptor={version:1,generation:'scene',ids:Object.keys(rows),summaries:Object.fromEntries(Object.entries(rows).map(([id,{content,...record}])=>[id,{record,fields:Object.keys(rows[id]),excerpt:content,hasText:true}]))};
+const request=async(_,body)=>({generation:'scene',revision:'r',rows:body.ids.map(id=>[id,JSON.stringify(rows[id])]),remaining:[]});
+(async()=>{const talks=R.create(descriptor,request,'r'),doc={talks,persons:{3:{id:3,name:'人物'}},events:{1:{id:1,talkId:[1]}},options:{},faces:{},backgrounds:{},branchFolders:{},protagonistGender:1};await R.ensure(talks,[250]);
+const pathA=Array.from({length:180},(_,i)=>i+1).concat([250]),pathB=Array.from({length:100},(_,i)=>i+1).concat(Array.from({length:40},(_,i)=>200+i),[250]);
+for(const trace of [pathA,pathB,pathA,pathB])for(const grade of [1,2]){const options={roots:[1],trace,grade},actual=Scene.reconstruct(doc,250,options),expected=Scene.reconstruct({...doc,talks:rows},250,options);assert.deepEqual(JSON.parse(JSON.stringify(actual)),JSON.parse(JSON.stringify(expected)));}
+talks[150].roles[0][2]=350;rows[150].roles[0][2]=350;assert.deepEqual(JSON.parse(JSON.stringify(Scene.reconstruct(doc,250,{trace:pathA,roots:[1]}))),JSON.parse(JSON.stringify(Scene.reconstruct({...doc,talks:rows},250,{trace:pathA,roots:[1]}))));assert.equal(R.stats(talks).loaded,1);console.log('REMOTE_SCENE_BRANCH_PARITY_OK');})().catch(e=>{console.error(e);process.exitCode=1;});

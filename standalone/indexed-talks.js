@@ -3,6 +3,7 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.StudentAgeIndexedTalks=api;})(typeof window==='object'?window:globalThis,()=>{
 'use strict';
 const tables=new WeakMap(),nodes=new WeakSet(),bases=new Map();let sequence=0;
+const Remote=typeof module==='object'&&module.exports?require('./remote-talks.js'):globalThis.StudentAgeRemoteTalks;
 const copy=v=>v===undefined?undefined:JSON.parse(JSON.stringify(v));
 function create(rows){
  if(!Array.isArray(rows))throw Error('对话索引无法读取，请重新打开模组。');
@@ -79,8 +80,9 @@ function table(base,changes){
  }
  tables.set(proxy,{base,state,keysWithField:field=>Reflect.ownKeys(proxy).filter(id=>!!read(id)?.[field]),stats:()=>({total:Reflect.ownKeys(proxy).length,decoded:cache.size,edited:edited.size,changes:Object.keys(state()).length}),raw});return proxy;
 }
-function pack(value){const info=value&&tables.get(value);return info?{__studioIndexedTalks:info.base.id,changes:info.state()}:value;}
+function pack(value){const remote=Remote?.pack(value);if(remote!==value)return remote;const info=value&&tables.get(value);return info?{__studioIndexedTalks:info.base.id,changes:info.state()}:value;}
 function revive(_,value){
+ const remote=Remote?.revive(value);if(remote!==value)return remote;
  if(value&&typeof value==='object'&&/^talk-base-[0-9]+$/.test(value.__studioIndexedTalks)&&Object.keys(value).length===2&&Object.hasOwn(value,'changes')){
   const base=bases.get(value.__studioIndexedTalks);if(!base)throw Error('对话只读底稿已过期，不能恢复到错误的模组。');
   return table(base,value.changes);
@@ -91,6 +93,7 @@ function stringify(value){return JSON.stringify(value,(_,v)=>pack(v));}
 function parse(text){return JSON.parse(text,revive);}
 function clone(value){return parse(stringify(value));}
 function delta(current,before){
+ const remote=Remote?.delta(current,before);if(remote)return remote;
  const a=tables.get(current),b=tables.get(before);if(!a||!b||a.base!==b.base)return null;
  const now=a.state(),old=b.state(),upsert={},deleted=[];
  for(const id of new Set([...Object.keys(now),...Object.keys(old)])){
@@ -99,9 +102,9 @@ function delta(current,before){
  }
  return {version:1,upsert,deleted};
 }
-function stats(value){return tables.get(value)?.stats();}
+function stats(value){return Remote?.stats(value)||tables.get(value)?.stats();}
 // Read-only scans need not allocate a Proxy and finalizer for every untouched row.
-function keysWithField(value,field){return tables.get(value)?.keysWithField(field)??Object.keys(value||{}).filter(id=>!!value[id]?.[field]);}
-function retain(value){const base=tables.get(value)?.base;for(const id of bases.keys())if(id!==base?.id)bases.delete(id);}
-return {create,pack,stringify,parse,clone,delta,stats,keysWithField,retain};
+function keysWithField(value,field){if(Remote?.info(value))return Object.keys(value).filter(id=>field==='content'?!!Remote.summary(value[id]):!!value[id][field]);return tables.get(value)?.keysWithField(field)??Object.keys(value||{}).filter(id=>!!value[id]?.[field]);}
+function retain(value){Remote?.retain(value);const base=tables.get(value)?.base;for(const id of bases.keys())if(id!==base?.id)bases.delete(id);}
+return {create,pack,stringify,parse,clone,delta,stats,keysWithField,retain,Remote};
 });

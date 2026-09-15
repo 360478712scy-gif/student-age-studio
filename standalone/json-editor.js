@@ -33,6 +33,7 @@ function tick(){const button=ensureCorner();const show=!!projectId()&&!window.ST
 setInterval(tick,700);document.addEventListener('DOMContentLoaded',tick);
 
 async function open(preferred){
+ await window.STUDIO_STORY_JSON?.prepare?.();
  if(dialog||opening)return;opening=true;const id=projectId();if(!id)throw Error('请先打开模组。');
  let list;try{list=await api('/api/json-files?projectId='+encodeURIComponent(id));}finally{opening=false;}
  dialog=document.createElement('dialog');dialog.className='json-editor-dialog';dialog.id='json-editor';
@@ -126,7 +127,7 @@ async function open(preferred){
  function goto(index){const e=state.errors[index];if(!e)return;const lines=text.value.split('\n');let pos=0;for(let n=1;n<e.fixLine&&n<=lines.length;n++)pos+=lines[n-1].length+1;pos+=Math.max(0,e.fixCol-1);text.focus();text.setSelectionRange(pos,pos);buildMirror();text.scrollTop=Math.max(0,lineTop(e.fixLine)-text.clientHeight/2);paintErrors();}
  function undo(){if(!state.history.length)return;state.future.push(state.current);state.current=text.value=state.history.pop();state.lastPush=0;refreshButtons();scheduleMirror();scheduleCheck(0);}
  function redo(){if(!state.future.length)return;state.history.push(state.current);state.current=text.value=state.future.pop();state.lastPush=0;refreshButtons();scheduleMirror();scheduleCheck(0);}
- async function close(){if(state.busy)return;await check();stash();clearTimeout(timer);window.STUDIO_LAYERING?.release(dialog);dialog.close();dialog.remove();dialog=null;state=null;syncDrawer=null;closeDrawer=null;locateInDrawer=null;document.body.classList.remove('json-drawer-open');window.dispatchEvent(new Event('resize'));}
+ async function close(){if(state.busy)return;await check();stash();clearTimeout(timer);window.STUDIO_LAYERING?.release(dialog);dialog.close();dialog.remove();dialog=null;state=null;syncDrawer=null;closeDrawer=null;locateInDrawer=null;document.body.classList.remove('json-drawer-open');window.STUDIO_STORY_JSON?.finish?.();window.dispatchEvent(new Event('resize'));}
  closeDrawer=close;
  text.addEventListener('input',()=>{state.pending=true;push();refreshButtons();scheduleMirror();scheduleCheck(180);});
  text.addEventListener('scroll',()=>{mirror.style.transform=`translate(${-text.scrollLeft}px,${-text.scrollTop}px)`;paintGutter();});

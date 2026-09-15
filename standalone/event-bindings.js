@@ -1,5 +1,5 @@
 /* Native ActionEvtCfg / ActionCfg and InteractCfg bindings, edited beside event types. */
-(()=>{'use strict';const UI=()=>StudentAgeCharacterUI,esc=v=>UI().esc(v),copy=v=>structuredClone(v);
+(()=>{'use strict';const UI=()=>StudentAgeCharacterUI,esc=v=>UI().esc(v),copy=v=>window.StudentAgeIndexedTalks?StudentAgeIndexedTalks.clone(v):JSON.parse(JSON.stringify(v));
 async function actionPicker(projectId,rows,selected=[],settings={}){
  const d=document.createElement('dialog');d.className='character-picker action-library';document.body.append(d);let source='all',group='全部',q='';const chosen=new Set(selected.map(Number));
  const maps=(await UI().api('table?'+new URLSearchParams({projectId,name:'MapCfg'}))).rows;

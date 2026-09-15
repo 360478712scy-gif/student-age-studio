@@ -483,6 +483,8 @@ class StudioStore:
         self.social = SocialEditor(self, sys.modules[__name__])
         self.space = SpaceEditor(self, sys.modules[__name__])
         self.record_ids = RecordIds(self, sys.modules[__name__])
+        from talk_segments import SegmentService
+        self.talk_segments = SegmentService(self, sys.modules[__name__])
 
     def _project_root(self, path, readonly):
         if readonly:
@@ -1065,7 +1067,18 @@ class StudioStore:
         with lock_path.open("a+b") as lock_file:
             lock_file_acquire(lock_file)
             try:
-                return self._commit_unlocked(project, changes, expected_revision, allowed_record_ids=allowed_record_ids, raw=raw)
+                context = self.talk_segments.request_context
+                generation = None
+                if getattr(context, 'token', None):
+                    candidate = self.talk_segments.generations.get(context.token)
+                    if candidate and candidate.identity['path'] == str(project.path.resolve()):
+                        generation = self.talk_segments.get(project.id, context.token)
+                result = self._commit_unlocked(project, changes, expected_revision, allowed_record_ids=allowed_record_ids, raw=raw)
+                if generation:
+                    revision = self.revision(project)
+                    if self.talk_segments.saved(project, generation.generation, revision):
+                        context.advanced = (generation.generation, revision, generation.write_epoch)
+                return result
             finally:
                 unlock_file(lock_file)
 
@@ -1361,6 +1374,10 @@ class StudioStore:
             expected = payload.get("revision")
             if not isinstance(expected, str) or not hmac.compare_digest(expected, self.revision(project)):
                 raise ApiError("模组已变化或缺少版本信息，请重新载入后再保存。", 409, "conflict")
+            if 'talkGeneration' in payload:
+                self.talk_segments.get(project.id, payload['talkGeneration'])
+                if 'talks' in payload:
+                    raise ApiError('分段会话只能显式增量提交对话，不能提交部分完整表。')
             catalog = self.catalog()
             all_maps, unreadable = self.readable_maps(project)
             payload = dict(payload)
@@ -1746,7 +1763,10 @@ class StudioStore:
                                '、'.join(sorted(unexpected)), 409, 'save_scope')
             changes.update({"Cfgs/zh-cn/" + filename: json_bytes(all_maps[filename]) for filename in touched})
             backup = self.commit(project, changes, expected)
-            return {"ok": True, "revision": self.revision(project), "backup": backup, "repairedIds": list(redirects),
+            revision = self.revision(project)
+            generation_advanced = self.talk_segments.saved(project, payload.get('talkGeneration'), revision) if 'talkGeneration' in payload else None
+            return {"ok": True, "revision": revision, "backup": backup, "repairedIds": list(redirects),
+                    **({'talkGenerationAdvanced': generation_advanced} if generation_advanced is not None else {}),
                     "branchFolders": folders, "premises": premises, "talkOwners": state["talkOwners"],
                     "warnings": [error.message + '。此次保存保留了此文件的原始内容。' for error in unreadable.values()] + save_warnings + list(getattr(self, 'commit_warnings', []))}
 
@@ -3431,7 +3451,10 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def send_json(self, value, status=200):
-        self.send_data(json_bytes(value), "application/json; charset=utf-8", status)
+        advanced = getattr(self.server.store.talk_segments.request_context, 'advanced', None)
+        extra = {'X-Studio-Talk-Generation': advanced[0], 'X-Studio-Talk-Revision': advanced[1],
+                 'X-Studio-Talk-Epoch': str(advanced[2])} if advanced and status < 400 else None
+        self.send_data(json_bytes(value), "application/json; charset=utf-8", status, extra=extra)
 
     def send_file(self, path):
         stat = path.stat()
@@ -3585,13 +3608,27 @@ class StudioHandler(BaseHTTPRequestHandler):
                     diagnostic=self.error_response(error,'自动播放修复未完成，仍可继续编辑。','playback_repair_failed',method)
                     repair_warning='自动播放修复未完成，已跳过；仍可继续编辑。'+(' 错误日志：'+diagnostic['errorLog'] if diagnostic.get('errorLog') else '')
                 self.server.store.clean_orphan_dialogues(query.get("id", [""])[0])
-                data=self.server.store.load(query.get("id", [""])[0])
-                if query.get('talkStorage', [''])[0] == 'indexed' and not data.get('unreadableTables', {}).get('talks'):
+                if query.get('talkStorage', [''])[0] == 'segmented':
+                    from talk_segments import SegmentError
+                    try:
+                        data=self.server.store.talk_segments.open(query.get('id', [''])[0])
+                    except (SegmentError, OSError, UnicodeError, json.JSONDecodeError) as error:
+                        data=self.server.store.load(query.get('id', [''])[0])
+                        data.setdefault('warnings', []).append('分段缓存暂不可用，已使用完整读取：' + str(error))
+                else:
+                    data=self.server.store.load(query.get("id", [""])[0])
+                if query.get('talkStorage', [''])[0] in ('indexed', 'segmented') and 'segmentedTalks' not in data and not data.get('unreadableTables', {}).get('talks'):
                     # Keep a read-only JSON base in the browser. Rows are decoded on access,
                     # and history stores only changed rows instead of cloning the full table.
                     data['indexedTalks'] = {'version': 1, 'rows': [[key, json.dumps(row, ensure_ascii=False, separators=(',', ':'))] for key, row in data.pop('talks', {}).items()]}
                 if repair_warning:data.setdefault('warnings',[]).append(repair_warning)
                 return self.send_json(data)
+            if route == "/api/talk-segments/project":
+                from talk_segments import SegmentError
+                try:
+                    return self.send_json(self.server.store.talk_segments.open(query.get('projectId', [''])[0]))
+                except SegmentError as error:
+                    raise ApiError(str(error), 422, 'segment_unavailable') from error
             if route == "/api/commands":
                 return self.send_json(self.server.store.command_catalog(query.get("projectId", [""])[0]))
             if route == "/api/workshop":
@@ -3708,7 +3745,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 page = page.replace("</head>", bootstrap + "</head>", 1) if "</head>" in page else bootstrap + page
                 policy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval' 'nonce-" + nonce + "'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
                 return self.send_data(page.encode(), "text/html; charset=utf-8", extra={"Content-Security-Policy": policy})
-            if route in ("/plugin-mode.js", "/plugin-mode.css", "/editor-music.js", "/editor-music.css", "/character-images.js", "/external-dialogues.js", "/external-uses.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/indexed-talks.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/dialogue-selection.js", "/dialogue-selection.css", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-ui.css", "/locations.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
+            if route in ("/plugin-mode.js", "/plugin-mode.css", "/editor-music.js", "/editor-music.css", "/character-images.js", "/external-dialogues.js", "/external-uses.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/indexed-talks.js", "/remote-talks.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/dialogue-selection.js", "/dialogue-selection.css", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-ui.css", "/locations.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
                 file = self.server.web_root / route.lstrip("/")
                 if file.is_file():
                     data = file.read_bytes()
@@ -3819,6 +3856,16 @@ class StudioHandler(BaseHTTPRequestHandler):
                 try: result=expression_status(self.server.store.game, payload.get("role"),payload.get("grade"),payload.get("cloth"),payload.get("face",0),request=True,gender=payload.get("gender",1))
                 except ValueError as error: raise ApiError(str(error))
                 return self.send_json(result)
+            if route in ('/api/talk-segments/page', '/api/talk-segments/search'):
+                from talk_segments import SegmentError
+                try:
+                    with self.server.store.lock:
+                        generation = self.server.store.talk_segments.get(payload.get('projectId'), payload.get('generation'))
+                        result = (generation.page(payload.get('ids')) if route.endswith('/page') else
+                                  generation.search(payload.get('query'), payload.get('offset', 0), content_only=payload.get('contentOnly', False), body_only=payload.get('bodyOnly', False)))
+                        return self.send_json(result)
+                except SegmentError as error:
+                    raise ApiError(str(error), 422, 'segment_unavailable') from error
             if route == "/api/save":
                 return self.send_json(save_review.perform(self.server.store.save, payload, ApiError))
             if route == "/api/story/renumber":
@@ -3959,7 +4006,14 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.handle_request("GET")
 
     def do_POST(self):
-        self.handle_request("POST")
+        context = self.server.store.talk_segments.request_context
+        context.token = self.headers.get('X-Studio-Talk-Generation')
+        context.advanced = None
+        try:
+            self.handle_request("POST")
+        finally:
+            context.token = None
+            context.advanced = None
 
     def do_OPTIONS(self):
         self.handle_request("OPTIONS")
