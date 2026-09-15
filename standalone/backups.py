@@ -21,7 +21,10 @@ _LOCK = threading.RLock()
 class ModBackups:
     def __init__(self, store, api, root=None):
         self.store, self.api = store, api
-        self.root = Path(root or os.environ.get('STUDIO_BACKUP_ROOT') or settings_path().parent / 'ModBackups').expanduser().resolve()
+        self.location_path = settings_path().with_name('backup-location.json')
+        self.fixed_root = root or os.environ.get('STUDIO_BACKUP_ROOT')
+        config = api.read_json(self.location_path, {}) if not self.fixed_root else {}
+        self.root = Path(self.fixed_root or config.get('path') or settings_path().parent / 'ModBackups').expanduser().resolve()
 
     @contextmanager
     def locked(self):
@@ -87,19 +90,46 @@ class ModBackups:
         return removed
 
     def configure(self, payload):
-        enabled = payload.get('autoCleanup')
-        if not isinstance(enabled, bool):
-            raise self.api.ApiError('请选择是否自动清理旧备份。')
-        with self.locked():
-            # Read first: do not silently overwrite malformed existing settings.
-            self.settings()
-            self.api.atomic_write(self.root / 'settings.json', self.api.json_bytes({'autoCleanup': enabled}))
-            removed = 0
-            if enabled:
-                for folder in self.root.iterdir():
-                    if re.fullmatch(r'(?:.+--)?[0-9a-f]{24}', folder.name) and folder.is_dir() and not folder.is_symlink():
-                        removed += self.prune(folder)
-            return dict(self.settings(), removed=removed)
+        with self.store.lock, _LOCK:
+            previous = self.root
+            current = self.settings()
+            enabled = payload.get('autoCleanup', current['autoCleanup'])
+            if not isinstance(enabled, bool):
+                raise self.api.ApiError('请选择是否自动清理旧备份。')
+            path = payload.get('path', str(previous))
+            if not isinstance(path, str) or not path.strip() or not Path(path).expanduser().is_absolute():
+                raise self.api.ApiError('请填写备份文件夹的完整路径。')
+            target = Path(path).expanduser().resolve()
+            if target != previous:
+                protected = [self.store.mods, self.store.workshop, self.store.game, *self.store.extra_mods]
+                if any(self.api.inside(p, target) or self.api.inside(target, p) for p in protected):
+                    raise self.api.ApiError('请选择游戏和模组目录以外的独立备份文件夹。')
+                if any((p / MARKER).exists() for p in (target, *target.parents)):
+                    raise self.api.ApiError('不能将已有的备份内容作为备份文件夹。')
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+                probe = target / ('.write-test-' + uuid.uuid4().hex)
+                try:
+                    with probe.open('xb') as stream:
+                        stream.write(b'backup')
+                finally:
+                    probe.unlink(missing_ok=True)
+                self.root = target
+                with self.locked():
+                    self.settings()
+                    self.api.atomic_write(target / 'settings.json', self.api.json_bytes({'autoCleanup': enabled}))
+                    if not self.fixed_root:
+                        self.api.atomic_write(self.location_path, self.api.json_bytes({'path': str(target)}))
+                    removed = 0
+                    # Moving location never cleans up existing snapshots in either folder.
+                    if enabled and target == previous:
+                        for folder in target.iterdir():
+                            if re.fullmatch(r'(?:.+--)?[0-9a-f]{24}', folder.name) and folder.is_dir() and not folder.is_symlink():
+                                removed += self.prune(folder)
+                    return dict(self.settings(), removed=removed)
+            except Exception:
+                self.root = previous
+                raise
 
     def copy_mod(self, source, target):
         def copy_dir(directory, destination, ancestors=()):

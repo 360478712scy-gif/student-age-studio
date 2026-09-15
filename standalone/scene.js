@@ -568,6 +568,7 @@ class Renderer {
       }
   }
   refreshPortraits(){
+    if(this.drag)return;
     if(this.disposed||!this.doc||!this.state)return;
     // Decoded images can arrive mid-motion. Replace only artwork, never redraw
     // positions or cancel the running Web Animations/exit lifecycle.
@@ -597,7 +598,7 @@ class Renderer {
   updateUIScale(){this.container.style.setProperty('--game-ui-scale',this.unitScale(this.state?.reference||[2560,1440]));}
   stageRect(){return (this.actorLayer||this.container).getBoundingClientRect();}
   unitScale(reference){const box=this.stageRect();return Math.min(box.width/reference[0],box.height/reference[1])||1;}
-  artBox(node,role){const img=node.querySelector('.scene-actor-art img');const box=portraitBox(this.doc,role,img,img?.dataset.scenePath||'');
+  artBox(node,role){if(this.drag?.node===node&&this.drag.art)return this.drag.art;const img=node.querySelector('.scene-actor-art img');const box=portraitBox(this.doc,role,img,img?.dataset.scenePath||'');
     // Geometry still loading: keep the last resolved box for this actor rather than jumping to the generic size.
     if(box.fallback){const last=node.sceneLastBox;if(last&&last.id===role.id)return last.box;return box;}
     node.sceneLastBox={id:role.id,box};return box;}
@@ -671,8 +672,9 @@ class Renderer {
     if(event.button!==0)return;this.cancelDrag();if(this.options.onBeforeInteract?.()===false||!this.edit)return;
     const role=this.state.roles[target.dataset.role],node=this.actors.get(Number(target.dataset.role));if(!role?.visible||!node)return;
     event.preventDefault();const rect=this.stageRect();if(rect.width<=0||rect.height<=0)return;
-    this.drag={node,role:copy(role),talkId:this.state.talkId,doc:this.doc,reference:this.state.reference.slice(),rect,startX:event.clientX,startY:event.clientY,pointer:event.pointerId,dx:0,dy:0,moved:false};
-    node.getAnimations?.().forEach(a=>a.cancel());node.sceneMotionState=null;this.drag.unit=this.unitScale(this.drag.reference);this.drag.bounds=this.dragBounds(this.drag);
+    const art=copy(this.artBox(node,role));
+    this.drag={node,art,role:copy(role),talkId:this.state.talkId,doc:this.doc,reference:this.state.reference.slice(),rect,startX:event.clientX,startY:event.clientY,pointer:event.pointerId,dx:0,dy:0,moved:false};
+    node.getAnimations?.().forEach(a=>a.cancel());node.querySelector('.scene-actor-art')?.getAnimations?.().forEach(a=>a.cancel());node.sceneMotionState=null;this.drag.unit=this.unitScale(this.drag.reference);this.drag.bounds=this.dragBounds(this.drag);
     try{node.setPointerCapture(event.pointerId);}catch{ /* Window listeners still finish drags when WebKit rejects capture. */ }
     node.classList.add('dragging');this.options.onSelectRole?.(role.id);
   }

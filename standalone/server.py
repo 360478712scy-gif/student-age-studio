@@ -3385,7 +3385,9 @@ class StudioServer(ThreadingHTTPServer):
 
     def use_location(self, row, migrate_cache=True):
         if hasattr(self, "media_warmup"): self.media_warmup.close()
+        backup_override = self.store.backups.fixed_root
         self.store = StudioStore(row['mods'],row['workshop'],row['game'],row.get('extraMods', []), self.store.asset_catalog.settings_path, self.store.backups.root, migrate_cache=migrate_cache)
+        self.store.backups.fixed_root = backup_override
         self.resources = ResourceJobs(self.store,self.web_root / 'extract_game_assets.py')
         self.audio_resources = ResourceJobs(self.store,self.web_root / 'extract_audio_assets.py')
         self.store.asset_catalog.request_resources = self.request_asset_resources

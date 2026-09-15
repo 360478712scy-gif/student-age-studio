@@ -14,3 +14,8 @@ assert.deepEqual(Text.parse(Text.serialize(mixed.rows),persons).rows.map(r=>[r.s
 assert.equal(Text.parse('没有人名。\n'.repeat(2001),persons).errors.length,1);
 assert.deepEqual(Text.parse('\n  \r\n',persons).rows,[]);
 console.log('Plain narration: mixed speakers, CRLF/BOM, blank lines, known-name prefix, escaping, round trip and limit passed.');
+const structured='旁白 开始\n选项 今天去吃烤肉\n白雨 烤肉\n选项：今天去吃萨莉亚\n梁超杰 披萨\n选项:空选项\n。\n旁白 正文\n分支2\n旁白 支线\n。\n分支\n旁白 另一支线\n。\n旁白 结束';
+const tree=Text.parse(structured,persons);assert.deepEqual(tree.errors,[]);assert.equal(tree.rows.length,7);assert.deepEqual(tree.rows.sections.map(x=>[x.kind,x.parent,x.title,x.number]),[['option',0,'今天去吃烤肉',null],['option',0,'今天去吃萨莉亚',null],['option',0,'空选项',null],['condition',3,'',2],['condition',3,'',null]]);for(const sep of [' ',':','：']){const p=Text.parse(Text.serialize(tree.rows,sep),persons);assert.deepEqual(p.errors,[]);assert.deepEqual(p.rows.sections,tree.rows.sections);assert.deepEqual(p.rows.map(r=>[r.content,r.section]),tree.rows.map(r=>[r.content,r.section]));}
+assert(Text.parse('旁白 a\n分支0\n旁白 b\n。',persons).errors.length);assert(Text.parse('。',persons).errors.length);assert.deepEqual(Text.parse('旁白 。\n旁白 选项:文本\n旁白 分支1',persons).rows.map(r=>r.content),['。','选项:文本','分支1']);
+const nested=Text.parse('旁白 a\n选项 a\n旁白 b\n\t选项 b\n旁白 c\n\t。\n旁白 d\n。\n旁白 e',persons);assert.deepEqual(nested.errors,[]);assert.deepEqual(nested.rows.sections.map(s=>s.parent),[0,1]);assert.deepEqual(nested.rows.map(r=>r.section),[undefined,0,1,0,undefined]);
+console.log('Structured TXT: sibling options, empty folder, colon forms, numbered/automatic branches, nested folders and round trip passed.');

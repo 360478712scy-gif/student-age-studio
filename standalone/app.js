@@ -607,7 +607,22 @@ function historyScene(scene){
 function recordPreviewHistory(event){if(!S.project)return;const recorder=previewHistory();if(event.kind==='start')recorder.begin(S.doc,event.talkId,{title:S.doc.events[S.event]?.title||S.project.name,reason:event.reason,scene:historyScene(event.scene)});else if(event.kind==='line')recorder.visit(S.doc,event.talkId,historyScene(event.scene));else if(event.kind==='choice')recorder.choice(event.route);else if(event.kind==='end')recorder.finish();const count=$('#preview-history-count');if(count)count.textContent='已预演 '+recorder.count()+' 句';}
 function exportDialogueRows(){
  const hidden=Timeline.internals(S.branchFolders),doc=externalSession?{...S.doc,events:{},talks:Object.fromEntries(externalScope().map(id=>[id,S.doc.talks[id]]))}:S.doc,document=HistoryExport.fullStory(doc,S.event,externalSession?externalScope():S.order);
- return document.sessions.flatMap(session=>session.entries).filter(row=>row.kind==='dialogue'&&!hidden.has(row.talkId));
+ const folders={...S.branchFolders};
+ // Unmanaged native options still export their linear dialogue paths.
+ for(const t of Object.values(doc.talks))for(const oid of ids(t.option))if(!folders[Branches.key(t.id,oid)]){
+  const members=[],visited=new Set([Number(t.id),...Timeline.next(doc,folders,t.id)]);let id=ids(doc.options[oid]?.talkId)[0];
+  while(id&&doc.talks[id]&&!visited.has(id)){visited.add(id);if(!hidden.has(id))members.push(id);id=Timeline.next(doc,folders,id)[0];}
+  folders[Branches.key(t.id,oid)]={parentTalkId:Number(t.id),optionId:oid,talkIds:members};
+ }
+ const rows=document.sessions.flatMap(session=>session.entries).filter(row=>row.kind==='dialogue'&&!hidden.has(row.talkId)),byId=new Map(rows.map(r=>[r.talkId,r])),tokens=[],seen=new Set();
+ function emit(row,depth=0){if(!row||seen.has(row.talkId))return;seen.add(row.talkId);tokens.push(row);
+  const groups=Object.values(folders).filter(f=>Number(f.parentTalkId)===row.talkId).sort((a,b)=>(a.branchId||0)-(b.branchId||0));
+  for(const f of groups){tokens.push({marker:'\t'.repeat(depth)+(f.kind==='condition'?'分支'+f.branchId:'选项 '+StudentAgeDialogueText.encode(S.doc.options[f.optionId]?.content||'未命名选项'))});for(const id of ids(f.talkIds))emit(byId.get(id),depth+1);if(f.kind==='condition')tokens.push({marker:'\t'.repeat(depth)+'。'});}
+  if(groups.some(f=>f.kind!=='condition'))tokens.push({marker:'\t'.repeat(depth)+'。'});
+ }
+ for(const row of rows)if(!Timeline.owner(folders,row.talkId))emit(row);
+ for(const row of rows)emit(row);
+ Object.defineProperty(rows,'tokens',{value:tokens});return rows;
 }
 async function showHistoryExport(){
  if(!S.project)return;await Remote.ensure(S.doc.talks);stopLinePlayback();scenePlayer?.pause();
@@ -630,14 +645,45 @@ function importDialogueRows(rows){
   if(descriptor)S.activeFolder=descriptor.key;
   let previous=talk(),insertion=S.selected;
   if(folder&&!ids(folder.talkIds).includes(insertion)){insertion=ids(folder.talkIds).at(-1)||null;previous=S.doc.talks[insertion||folder.parentTalkId];state=stageAt(previous.id);}
-  for(const imported of rows){
-   const id=newTalkId(),row=continuationTalk(id,previous,state);row.content=imported.content;row.roleIds=imported.roleIds.slice();row.roleName=row.roleIds.length&&row.roleIds.map(personName).join('、')!==imported.speaker?imported.speaker:'';row.screenEffect=state.cg?[4017]:[];
-   let occupied=values(state.roles).filter(role=>role.visible);
-   for(const roleId of row.roleIds)if(!state.roles[roleId]?.visible){const axis=occupied.length===0?1:!occupied.some(role=>role.axis===2)?2:3;row.roles.push([roleId,1002,1,axis,0]);occupied.push({id:roleId,axis});}
-   if(folder)Timeline.insert(S.doc,S.branchFolders,folder,row,insertion);
-   else{row.nextTalk=previous?Timeline.next(S.doc,S.branchFolders,previous.id):[];if(previous)Timeline.setNext(S.doc,S.branchFolders,previous.id,[id]);else if(!externalSession)S.doc.events[S.event].talkId=[id];S.doc.talks[id]=row;}
-   const index=S.order.indexOf(previous?.id);S.order.splice(index<0?S.order.length:index+1,0,id);S.selected=id;created.push(id);state=StudentAgeScene.apply(S.doc,state,row,S.grade);previous=row;insertion=id;
+  const mainPrevious=previous,states=new Map(),made=new Map(),sectionFolders=new Map();
+  const sections=rows.sections||[];
+  function ensureSection(index){
+   if(sectionFolders.has(index))return sectionFolders.get(index);
+   const spec=sections[index],parent=spec.parent<0?mainPrevious:S.doc.talks[created[spec.parent]];
+   if(!parent)throw Error('选项或分支前需要有一句对话。');
+   let f,key;
+   if(spec.kind==='option'){
+    if(Timeline.entries(S.branchFolders,parent.id).length)throw Error('同一句不能同时导入选项和条件分支。');
+    const optionId=nextId(S.doc.options,eventForTalk()*100+1);
+    S.doc.options[optionId]={id:optionId,content:spec.title,talkId:[],talkId2:[],effect:[],effect2:[],check:[],precondition:[]};parent.option=[...ids(parent.option),optionId];
+    f=Branches.create(S.doc,S.branchFolders,parent.id,optionId);key=Branches.key(parent.id,optionId);
+   }else{
+    const result=Timeline.addCondition(S.doc,S.branchFolders,parent.id,newTalkId);f=result.folder;key=result.key;
+    if(spec.number!==null){if(Timeline.entries(S.branchFolders,parent.id).some(([k,g])=>k!==key&&g.branchId===spec.number))throw Error('同一句下面的分支编号重复。');delete S.branchFolders[key];f.branchId=spec.number;key=parent.id+':branch:'+spec.number;S.branchFolders[key]=f;Timeline.sync(S.doc,S.branchFolders,parent.id);}
+   }
+   S.folderOpen[key]=true;sectionFolders.set(index,f);states.set(index,states.get('row:'+spec.parent)||stageAt(parent.id));return f;
   }
+  for(const [rowIndex,imported] of rows.entries()){
+   const section=imported.section,branch=section!==undefined?ensureSection(section):null;
+   const rowPrevious=branch?S.doc.talks[made.get(section)||branch.parentTalkId]:previous,rowState=branch?states.get(section):state;
+   const id=newTalkId(),row=continuationTalk(id,rowPrevious,rowState);row.content=imported.content;row.roleIds=imported.roleIds.slice();row.roleName=row.roleIds.length&&row.roleIds.map(personName).join('、')!==imported.speaker?imported.speaker:'';row.screenEffect=rowState.cg?[4017]:[];
+   let occupied=values(rowState.roles).filter(role=>role.visible);
+   for(const roleId of row.roleIds)if(!rowState.roles[roleId]?.visible){const axis=occupied.length===0?1:!occupied.some(role=>role.axis===2)?2:3;row.roles.push([roleId,1002,1,axis,0]);occupied.push({id:roleId,axis});}
+   function insertInto(f,after){const savedOptions=rowPrevious?.option;if(created.includes(rowPrevious?.id))rowPrevious.option=[];try{Timeline.insert(S.doc,S.branchFolders,f,row,after);}finally{if(rowPrevious&&savedOptions!==undefined)rowPrevious.option=savedOptions;}}
+   if(branch)insertInto(branch,made.get(section)||null);
+   else if(folder)insertInto(folder,insertion);
+   else{row.nextTalk=previous?Timeline.next(S.doc,S.branchFolders,previous.id):[];if(previous)Timeline.setNext(S.doc,S.branchFolders,previous.id,[id]);else if(!externalSession)S.doc.events[S.event].talkId=[id];S.doc.talks[id]=row;}
+   const index=S.order.indexOf(rowPrevious?.id);S.order.splice(index<0?S.order.length:index+1,0,id);created.push(id);
+   const nextState=StudentAgeScene.apply(S.doc,rowState,row,S.grade);states.set('row:'+rowIndex,nextState);
+   if(branch){made.set(section,id);states.set(section,nextState);}else{state=nextState;previous=row;insertion=id;}
+  }
+  sections.forEach((_,i)=>ensureSection(i));
+  for(const f of sectionFolders.values()){
+   const last=S.doc.talks[ids(f.talkIds).at(-1)],savedOptions=last?.option;if(last)last.option=[];
+   try{Timeline.setContinuation(S.doc,S.branchFolders,f,{kind:'following'});}finally{if(last&&savedOptions!==undefined)last.option=savedOptions;}
+  }
+  // An outer folder can set the continuation of a nested option's parent.
+  for(const f of [...sectionFolders.values()].reverse())if(f.kind!=='condition'&&f.talkIds.length)Timeline.setNext(S.doc,S.branchFolders,f.talkIds.at(-1),Timeline.next(S.doc,S.branchFolders,f.parentTalkId));
   if(folder){folder.collapsed=false;S.folderOpen[S.activeFolder]=true;}S.search='';$('#talk-search').value='';
  });
  }catch(error){S.undo=undoBefore;S.redo=redoBefore;restore(prior);throw error;}
@@ -645,7 +691,7 @@ function importDialogueRows(rows){
 }
 function showDialogueImport(){
  if(!editable())return;stopLinePlayback();const project=S.project.id,anchor=S.selected,folder=S.activeFolder,bindings={};let parsed={rows:[],errors:[],unmatched:[]};
- modal('导入对话',`<p>导入位置：${anchor?'当前所选对话之后':'当前事件开头'}。导入后选中最后一句，继续导入会接在它后面。</p><p>每行支持：人物 对话、人物：对话、人物:对话。不带人名和分隔符的行自动识别为旁白。按名字识别人物，导入后自动登场，并沿用背景与已有在场人物。</p><label class="dialogue-file-label">读取 TXT 文件<input type="file" id="dialogue-import-file" accept=".txt,text/plain"></label><textarea id="dialogue-import-text" rows="9" placeholder="白雨 今天去哪里？&#10;梁超杰 去操场吧。&#10;两个人走出教室。"></textarea><p class="helper">也可直接粘贴。正文中的换行用 \\n 表示。新对话会接在当前句后，可一次撤销。</p><div id="dialogue-import-match"></div><p id="dialogue-import-count" role="status"></p>`,[{label:'取消',run:closeModal},{label:'导入对话',primary:true,run:()=>{
+ modal('导入对话',`<p>导入位置：${anchor?'当前所选对话之后':'当前事件开头'}。导入后选中最后一句，继续导入会接在它后面。</p><p>每行支持：人物 对话、人物：对话、人物:对话。不带人名和分隔符的行自动识别为旁白。按名字识别人物，导入后自动登场，并沿用背景与已有在场人物。</p><label class="dialogue-file-label">读取 TXT 文件<input type="file" id="dialogue-import-file" accept=".txt,text/plain"></label><textarea id="dialogue-import-text" rows="9" placeholder="白雨 今天去哪里？&#10;梁超杰 去操场吧。&#10;两个人走出教室。"></textarea><p class="helper">也可直接粘贴。正文中的换行用 \\n 表示。新对话会接在当前句后，可一次撤销。选项用“选项 名称”（也支持冒号），分支用“分支”或“分支1”；单独一行“。”结束对话夹并回到正文。</p><div id="dialogue-import-match"></div><p id="dialogue-import-count" role="status"></p>`,[{label:'取消',run:closeModal},{label:'导入对话',primary:true,run:()=>{
   if(S.project.id!==project||S.selected!==anchor||S.activeFolder!==folder)throw Error('导入位置已变化，请重新打开导入窗口。');refresh();if(parsed.errors.length||parsed.unmatched.length||!parsed.rows.length)throw Error('请检查文本格式并匹配人物。');
   const count=parsed.rows.length;importDialogueRows(parsed.rows);closeModal();toast('已导入 '+count+' 句对话。');
  }}]);
