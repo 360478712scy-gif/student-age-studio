@@ -31,6 +31,7 @@ jobs:
       - run: python -B -m unittest discover -s standalone/tests -p test_segment_search.py
       - run: node standalone/tests/bulk-references.cjs
       - run: node qa/tests/dialogue-text.cjs
+      - run: node qa/tests/scene-engine.cjs
       - run: python -B -m unittest discover -s standalone/tests -p test_backup_location.py
       - run: python -B -m unittest discover -s standalone/tests -p test_app_updates.py
       - run: python -B -m unittest discover -s standalone/tests -p test_external_usages.py

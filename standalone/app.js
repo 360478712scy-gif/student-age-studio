@@ -664,6 +664,7 @@ function importDialogueRows(rows){
    S.folderOpen[key]=true;sectionFolders.set(index,f);states.set(index,states.get('row:'+spec.parent)||stageAt(parent.id));return f;
   }
   for(const [rowIndex,imported] of rows.entries()){
+   sections.forEach((spec,index)=>{if(spec.start===rowIndex)ensureSection(index);});
    const section=imported.section,branch=section!==undefined?ensureSection(section):null;
    const rowPrevious=branch?S.doc.talks[made.get(section)||branch.parentTalkId]:previous,rowState=branch?states.get(section):state;
    const id=newTalkId(),row=continuationTalk(id,rowPrevious,rowState);row.content=imported.content;row.roleIds=imported.roleIds.slice();row.roleName=row.roleIds.length&&row.roleIds.map(personName).join('、')!==imported.speaker?imported.speaker:'';row.screenEffect=rowState.cg?[4017]:[];
