@@ -73,7 +73,7 @@ def save(store,payload,api):
                     entered={r[0] for r in line['roles'] if r[1] in (1001,1002,1003)}
                     line['roles']=[r for r in [[0,1002,1,1,0],[npc,1002,1,2,0]] if r[0] not in entered]+line['roles']
                 # bg=0 inherits the native clicked location, including its grade-specific variant.
-                line['bg']=0  # Screen effects are executed by native NewTalkView for event-less dialogue too.
+                line.setdefault('bg',0)  # Preserve an explicitly authored scene; 0 uses the clicked location.
                 all_talks[tid]=line
         next_owned=interaction_talks(interactions,all_talks,current.get('options',{}))
         # Event-owned shared dialogue remains governed by its event.

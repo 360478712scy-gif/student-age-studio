@@ -78,3 +78,20 @@ html[data-theme="classic"] body :is(dialog.external-purpose-dialog,dialog.extern
 html[data-theme="classic"] body .external-purpose-dialog .condition-library-entry{background:var(--sg-raised)!important}
 
 [data-dialogue-stage-controls]{display:grid;gap:8px;margin:8px 0}.dialogue-cast,.dialogue-position{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.dialogue-position>span{margin-right:auto}.dialogue-position button{min-width:48px}.dialogue-cast [aria-pressed=true],.dialogue-position [aria-pressed=true]{background:var(--accent);color:var(--on-accent,#fff)}
+
+/* The native story workspace is moved here, not duplicated. */
+.external-shared-editor #workshop #wk-main{padding:0;overflow:hidden}
+.external-shared-shell{display:grid;grid-template-columns:190px minmax(0,1fr);height:100%;min-height:0}
+.external-folder-column{padding:16px 10px;overflow:auto;border-right:1px solid var(--sg-border,#405568);display:flex;flex-direction:column;gap:12px}
+.external-folder-column h3{margin:0 0 4px}
+.external-folder-list,.external-folder-actions{display:flex;flex-direction:column;gap:8px}
+.external-folder-list button{text-align:left;white-space:normal;overflow-wrap:anywhere}
+.external-folder-list small{display:block;margin-top:5px;opacity:.7}
+.external-folder-list [aria-pressed=true]{border-color:var(--sg-gold,#8db4dd);background:var(--glass-accent-soft,#40526a)}
+.external-editor-host{min-width:0;min-height:0;height:100%;overflow:hidden}
+.external-shared-editor #workshop .workspace{display:grid;height:100%;grid-template-columns:270px minmax(400px,1fr) 270px;min-width:0}
+.external-shared-editor .workspace .event-list-back,.external-shared-editor .workspace .event-controls{display:none}
+@media(max-width:1450px){.external-shared-shell{grid-template-columns:165px minmax(0,1fr)}.external-shared-editor #workshop .workspace{grid-template-columns:220px minmax(360px,1fr) 235px}}
+
+.external-shared-editor #wk-external-dialogues{height:100%;min-height:0}
+.external-folder-column{box-sizing:border-box;padding-bottom:100px}

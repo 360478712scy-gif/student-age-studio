@@ -325,7 +325,7 @@ async function resourceState(){clearTimeout(resourceTimer);if(W.mode!=='resource
 async function action(name){
  if(name==='space-person')return openSpace(Number(W.selected));
  if(special()&&['undo','redo','delete'].includes(name))return social[name]?.();
- if(['close','story'].includes(name)){if(!await guard())return;social?.pause?.();W.busy=true;renderStatus();try{clearTimeout(resourceTimer);await window.STUDIO_REFRESH_CURRENT_PROJECT?.(true);if(name==='story'){if(typeof window.STUDIO_OPEN_EVENTS!=='function')throw Error('事件编辑尚未就绪，请重新打开工作台。');const opened=await window.STUDIO_OPEN_EVENTS();if(opened===false)return;}host.hidden=true;}finally{W.busy=false;renderStatus();}return;}
+ if(['close','story'].includes(name)){if(!await guard())return;if(W.mode==='external-dialogues'){social?.destroy();social=null;W.mode=null;}else social?.pause?.();W.busy=true;renderStatus();try{clearTimeout(resourceTimer);await window.STUDIO_REFRESH_CURRENT_PROJECT?.(true);if(name==='story'){if(typeof window.STUDIO_OPEN_EVENTS!=='function')throw Error('事件编辑尚未就绪，请重新打开工作台。');const opened=await window.STUDIO_OPEN_EVENTS();if(opened===false)return;}host.hidden=true;}finally{W.busy=false;renderStatus();}return;}
  if(name==='save')return save();
  if(name==='remove-project')return removeProject();if(name==='home')return home();if(name==='create-project'||name==='copy-project'){if(!await guard())return;window.STUDIO_NEW_PROJECT?.(name==='copy-project');return;}
  if(name==='post-comments'){const postId=Number(W.selected);if(!await guard())return;if(!W.rows[postId])throw Error('请先保存当前动态，再添加评论。');W.commentPost=postId;W.feature='comments';await loadTable('KZoneCommentCfg');W.selected=Object.keys(currentRows())[0]||null;renderTable();status('新增评论保存后会加入所属动态。可以在这里设置作者、正文和回复。');return;}
@@ -375,7 +375,7 @@ window.STUDIO_WORKSHOP_NAV={
  refreshAssets:async()=>{if(host.hidden)return;const selected=W.selected;if(special()&&social){const nav=social.navigation?.capture();await social.load();if(nav)social.navigation?.restore(nav);}else if(W.mode==='table'){await loadTable(W.table.name);W.selected=W.rows[selected]?selected:Object.keys(W.rows)[0];renderTable();}else{W.info=await api('/api/workshop'+query());if(W.mode==='home')renderHome();}},
  discard,isOpen:()=>!host.hidden,busy:()=>W.busy||W.opening||special()&&socialState.busy,dirty,flush,
  capture:()=>({mode:W.mode,table:W.table?.name,feature:W.feature,source:W.source,selected:W.selected,search:W.search,filter:W.filter,page:W.page,personId:W.personId,homeSearch:$('#wk-home-search')?.value||'',special:special()?social?.navigation?.capture():null}),
- hide:()=>{social?.pause?.();host.hidden=true;},
+ hide:()=>{if(W.mode==='external-dialogues'){social?.destroy();social=null;W.mode=null;}else social?.pause?.();host.hidden=true;},
  invalidateIds:async()=>{social?.destroy?.();social=null;W.mode=null;W.refs={};W.refLocalIds={};if(W.project)W.info=await api('/api/workshop'+query());},
  action,open,togglePlugins,pluginEditing:()=>!!W.info?.pluginEditing&&W.project?.id===window.STUDIO_CURRENT_PROJECT?.(),
  features:()=>{if(!W.info)return [];const rows=features().filter(f=>f.native!==false&&!['books','interactions','action-events','BookCfg','InteractCfg','ActionEvtCfg','ai'].includes(f.id)&&f.entry?.kind!=='ai');return [...W.favorites.map(id=>rows.find(f=>f.id===id&&!f.resourceOnly)).filter(Boolean).map(f=>({id:f.id,label:f.label,favorite:true})),...rows.filter(f=>!W.favorites.includes(f.id)||f.resourceOnly).map(f=>({id:f.id,label:f.label,favorite:false}))];},

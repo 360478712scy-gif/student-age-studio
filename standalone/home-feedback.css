@@ -1,0 +1,18 @@
+/* Home actions keep visible feedback above either glass material. */
+html[data-theme] body #workshop.wk-home{--home-accent:#3569ab;--home-wash:rgba(53,105,171,.10);--home-shadow:rgba(30,49,77,.22)}
+html[data-theme="glass-dusk"] body #workshop.wk-home{--home-accent:#d5a5de;--home-wash:rgba(213,165,222,.13);--home-shadow:rgba(9,5,16,.48)}
+html[data-theme="glass-moon"] body #workshop.wk-home{--home-accent:#a2caff;--home-wash:rgba(162,202,255,.13);--home-shadow:rgba(3,8,18,.48)}
+html[data-theme="classic"] body #workshop.wk-home{--home-accent:#94dfba;--home-wash:rgba(148,223,186,.12);--home-shadow:rgba(0,0,0,.35)}
+html[data-theme] body #workshop.wk-home .wk-feature-card{transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}
+html[data-theme] body #workshop.wk-home .wk-feature-card::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:var(--home-wash);opacity:0;transition:opacity .16s ease}
+html[data-theme] body #workshop.wk-home .wk-feature-card:is(:hover,:focus-within){border-color:var(--home-accent)!important;box-shadow:inset 0 0 0 1px var(--home-accent),0 10px 24px -6px var(--home-shadow)!important;transform:translateY(-3px)}
+html[data-theme] body #workshop.wk-home .wk-feature-card:is(:hover,:focus-within)::after{opacity:1}
+html[data-theme] body #workshop.wk-home .wk-feature-main{cursor:pointer}
+html[data-theme] body #workshop.wk-home .wk-feature-open>span:first-child{transition:transform .16s ease,color .16s ease}
+html[data-theme] body #workshop.wk-home .wk-feature-card:is(:hover,:focus-within) .wk-feature-open>span:first-child{color:var(--home-accent)!important;transform:translateX(4px)}
+html[data-theme] body #workshop.wk-home .wk-feature-card:active{transform:translateY(0)}
+@media(prefers-reduced-motion:reduce){
+ html[data-theme] body #workshop.wk-home .wk-feature-card,
+ html[data-theme] body #workshop.wk-home .wk-feature-open>span:first-child{transition:none!important;transform:none!important}
+ html[data-theme] body #workshop.wk-home .wk-feature-card::after{transition:none!important}
+}

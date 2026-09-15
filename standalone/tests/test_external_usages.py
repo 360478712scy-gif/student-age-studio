@@ -31,6 +31,43 @@ class ExternalUsesTests(unittest.TestCase):
         d=ext.load(self.store,self.ident,b)
         return dict(projectId=self.ident,revision=d['revision'],talks=d['talks'],folders={'one':{'name':'夹子','talkIds':[9001,9002],'uses':uses}})
     def save(self,uses):return ext.save(self.store,self.request(uses),b)
+    def test_idle_authored_background_survives_save_and_default_reset(self):
+        import idle_chats
+        self.write('BgCfg',{'100':{'id':100,'name':'教室'},'101':{'id':101,'name':'花园'}})
+        self.write('InteractCfg',{'900':{'id':900,'npc':3,'talkId':9001,'map':[]}})
+        for background in [101,-1,-2,0]:
+            with self.subTest(background=background):
+                doc=self.store.load(self.ident);line=copy.deepcopy(doc['talks']['9001']);line['bg']=background
+                untouched=copy.deepcopy(doc['talks']['9002'])
+                idle_chats.save(self.store,dict(projectId=self.ident,revision=doc['revision'],rows={},talks={'9001':line}),b)
+                actual=self.read('TalkCfg')
+                self.assertEqual(actual['9001']['bg'],background)
+                self.assertEqual(actual['9001']['future'],{'keep':9})
+                self.assertEqual(actual['9002'],untouched)
+
+    def test_shared_editor_patch_preserves_old_graph_and_usage(self):
+        self.save([self.use('mini-start',npc=3,level=1)])
+        rows=self.read('TalkCfg');rows['9001'].update(bg=101,audio=8123,screenEffect=[4001,7],future={'nested':[1,{'keep':True}]})
+        self.write('TalkCfg',rows)
+        before=copy.deepcopy(rows);binding=copy.deepcopy(self.read('MinigameActionCfg'))
+        metadata=ext.load(self.store,self.ident,b,metadata=True)
+        self.assertNotIn('talks',metadata)
+        groups=metadata['folders'];groups['one']['sequence']=False;groups['one']['name']='新界面改名'
+        groups['one']['futureFolder']={'keep':9}
+        changed=copy.deepcopy(rows['9002']);changed['content']='仅改台词'
+        self.store.save(dict(projectId=self.ident,revision=metadata['revision'],talkPatch={'version':1,'upsert':{'9002':changed},'deleted':[]},externalDialogueFolders=groups,externalDialogueIds=metadata['talkIds']))
+        expected=copy.deepcopy(before);expected['9002']=changed
+        self.assertEqual(self.read('TalkCfg'),expected)
+        self.assertEqual(self.read('MinigameActionCfg'),binding)
+        saved=ext.load(self.store,self.ident,b,metadata=True)
+        self.assertEqual(saved['folders']['one']['futureFolder'],{'keep':9})
+        # Reuse the in-memory folder after a save, then reopen: no stale binding loss.
+        groups['one']['name']='再次改名'
+        self.store.save(dict(projectId=self.ident,revision=saved['revision'],externalDialogueFolders=groups))
+        self.assertEqual(self.read('TalkCfg'),expected)
+        self.assertEqual(self.read('MinigameActionCfg'),binding)
+        self.assertEqual(ext.load(self.store,self.ident,b)['folders']['one']['uses'][0]['entryId'],9001)
+
     def test_parameter_contract_uses_current_schema_even_with_old_catalog(self):
         with patch.object(self.store, 'catalog', return_value={'schemas':{}}):
             schema=self.store.table_schema('MinigameActionCfg')

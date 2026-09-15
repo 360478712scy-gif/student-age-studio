@@ -12,6 +12,7 @@ const Timeline=window.StudentAgeTimeline;
 const Branches=window.StudentAgeBranches,Conditions=window.StudentAgeConditions,Effects=window.StudentAgeEffects,HistoryExport=window.StudentAgeHistory;
 const previewHistories=new Map(),eventGradeOverrides=new Map();
 let premiseProposalPending=false;
+let externalSession=null;
 const MAPS = ['talks','events','options','persons','faces','backgrounds','cgs','papers','actions','actionEvents','interactions','giftEvents','minigameActions'];
 const FACES = ['默认','高兴','生气','伤心','害羞','喜欢','认真','疑惑','惊讶','得意','微笑','坏笑','担心','害怕','难过','咆哮','窘迫','不满','冷笑','无语','苦笑'];
 const ACTIONS = {
@@ -73,7 +74,7 @@ function faceName(face=S.face) {const cfg=S.doc && S.doc.faces[Number(S.previewR
 window.addEventListener('studio-premise-created',e=>{const v=e.detail;if(S.project?.id!==v.projectId||S.revision!==v.previousRevision)return;S.revision=v.revision;S.premises[v.premise.id]=clone(v.premise);for(const entry of [...S.undo,...S.redo]){entry.premises??={};entry.premises[v.premise.id]=clone(v.premise);}if(S.saved){const saved=IndexedTalks.parse(S.saved);saved[4]??={};saved[4][v.premise.id]=clone(v.premise);S.saved=IndexedTalks.stringify(saved);}updateDirty();});
 function currentSignature() {return IndexedTalks.stringify([S.doc,S.order,S.deleted,S.replacements,S.premises,Object.fromEntries(Object.entries(S.branchFolders).map(([key,{collapsed,...folder}])=>[key,folder])),pinnedSnapshot()]);}
 function pinnedSnapshot(){return {talks:[...S.pinned.talks].sort((a,b)=>a-b),options:[...S.pinned.options].sort((a,b)=>a-b),events:[...S.pinned.events].sort((a,b)=>a-b)};}
-function snapshot(label) {return {label,doc:clone(S.doc),order:S.order.slice(),premises:clone(S.premises),branchFolders:clone(S.branchFolders),activeFolder:S.activeFolder,selected:S.selected,event:S.event,deleted:S.deleted.slice(),replacements:clone(S.replacements),pinnedIds:pinnedSnapshot(),idMappings:clone(S.idMappings||{}),localIds:clone(S.localIds)};}
+function snapshot(label) {return {label,externalFolder:externalSession?.folder,doc:clone(S.doc),order:S.order.slice(),premises:clone(S.premises),branchFolders:clone(S.branchFolders),activeFolder:S.activeFolder,selected:S.selected,event:S.event,deleted:S.deleted.slice(),replacements:clone(S.replacements),pinnedIds:pinnedSnapshot(),idMappings:clone(S.idMappings||{}),localIds:clone(S.localIds)};}
 function history(label, key) {
   invalidateStageMemo();
   stopLinePlayback(false);
@@ -110,7 +111,7 @@ async function deletePremise(rowOrId){
 }
 window.STUDIO_DELETE_PREMISE=deletePremise;
 function eventRoots(e){return [...ids(e.talkId),...ids(e.options).flatMap(id=>[...ids(S.doc.options[id]?.talkId),...ids(S.doc.options[id]?.talkId2)])];}
-function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));fn();StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds);cleanLostPremises(writers);updateDirty();if(redraw)render();scheduleRenumber();return true;}
+function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));fn();StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds);syncExternal(beforeIds);cleanLostPremises(writers);updateDirty();if(redraw)render();scheduleRenumber();return true;}
 let textDirtyTimer=null,textSearchTimer=null;
 function updateTextDirty(){
  // Input changes the live row immediately. Full-document comparison waits for a pause.
@@ -118,7 +119,7 @@ function updateTextDirty(){
  textDirtyTimer=setTimeout(()=>{textDirtyTimer=null;updateDirty();},600);
 }
 function updateDirty() {clearTimeout(textDirtyTimer);textDirtyTimer=null;invalidateStageMemo();S.dirty=S.doc !== null && (currentSignature() !== S.saved||Object.values(S.idMappings||{}).some(m=>Object.keys(m).length));renderChrome();}
-function restore(entry) {S.doc=entry.doc;S.order=entry.order;S.premises=entry.premises||{};S.branchFolders=entry.branchFolders||{};S.activeFolder=entry.activeFolder||null;S.selected=entry.selected;S.event=entry.event;S.deleted=entry.deleted;S.replacements=entry.replacements;S.pinned=Object.fromEntries(['talks','options','events'].map(k=>[k,new Set(entry.pinnedIds?.[k]||[])]));S.idMappings=clone(entry.idMappings||{});if(entry.localIds)S.localIds=clone(entry.localIds);clearTimeout(renumberTimer);S.coalesce=null;updateDirty();render();}
+function restore(entry) {if(externalSession&&entry.externalFolder!==undefined)externalSession.folder=entry.externalFolder;S.doc=entry.doc;S.order=entry.order;S.premises=entry.premises||{};S.branchFolders=entry.branchFolders||{};S.activeFolder=entry.activeFolder||null;S.selected=entry.selected;S.event=entry.event;S.deleted=entry.deleted;S.replacements=entry.replacements;S.pinned=Object.fromEntries(['talks','options','events'].map(k=>[k,new Set(entry.pinnedIds?.[k]||[])]));S.idMappings=clone(entry.idMappings||{});if(entry.localIds)S.localIds=clone(entry.localIds);clearTimeout(renumberTimer);S.coalesce=null;updateDirty();render();}
 function undo() {if(!S.undo.length)return;const e=S.undo.pop();S.redo.push(snapshot(e.label));restore(e);toast('已撤销：'+e.label);}
 function redo() {if(!S.redo.length)return;const e=S.redo.pop();S.undo.push(snapshot(e.label));restore(e);toast('已重做：'+e.label);}
 function links(t) {
@@ -138,6 +139,7 @@ function initialOrder() {
   return ordered;
 }
 function visibleIds() {
+  if(externalSession){const hidden=Timeline.internals(S.branchFolders);return externalScope().filter(id=>!hidden.has(id)&&(!S.search||StudentAgeSearch.matches(S.search,id,speaker(S.doc.talks[id]),talkText(S.doc.talks[id]))));}
   const hidden=Timeline.internals(S.branchFolders);let list=S.order.filter(id=>S.doc && S.doc.talks[id]&&!hidden.has(id));
   if(S.event!=='all'){const event=S.doc.events[S.event];const allowed=new Set(Object.entries(S.doc.talkOwners||{}).filter(([,owners])=>owners.includes(Number(S.event))).map(([id])=>Number(id)));list=list.filter(id=>allowed.has(id));}
   list=list.filter(id=>(S.doc.talkOwners?.[id]||[]).some(e=>S.doc.events[e]));
@@ -162,7 +164,7 @@ function selectTalk(id) {
 function syncFaceFromTalk() {const actor=currentStage().roles[S.previewRole];S.face=actor?.face??0;S.cloth=actor?.cloth??0;S.previewCG=false;}
 
 function nextId(map, base) {const table=map===S.doc.events?'EvtCfg':map===S.doc.options?'OptionCfg':'TalkCfg';return STUDIO_IDS.allocate(table,{...map,...Object.fromEntries(S.deleted.map(id=>[id,true]))},table==='EvtCfg'?undefined:Math.floor(base/(table==='TalkCfg'?1000:100)));}
-function eventForTalk() {if(S.event!=='all')return Number(S.event);const e=values(S.doc.events).find(x=>graphOrder(ids(x.talkId)).includes(S.selected));return e?e.id:900000;}
+function eventForTalk() {if(externalSession)return 900000;if(S.event!=='all')return Number(S.event);const e=values(S.doc.events).find(x=>graphOrder(ids(x.talkId)).includes(S.selected));return e?e.id:900000;}
 function newTalkId() {let base=eventForTalk()*1000+1;if(base>2147483000)base=900000001;return nextId(S.doc.talks,base);}
 function normalizeTalk(t) {for(const k of ['nextTalk','nextTalk2','roleIds','roles','option','check','effect','effect2','highlights','replace','screenEffect'])if(!Array.isArray(t[k]))t[k]=[];return t;}
 function continuationTalk(id,previous,stage,blank=false) {
@@ -194,7 +196,7 @@ function closeCGBeforeFollowing(row,folder=null) {
   if(folder)folder.talkIds.splice(folder.talkIds.indexOf(Number(row.id))+1,0,...transitions);
 }
 function addTalk(duplicate=false,options={}) {
-  if(S.event==='all'||!S.doc?.events[S.event]){createEvent();return;}
+  if(!externalSession&&(S.event==='all'||!S.doc?.events[S.event])){createEvent();return;}
   if(!editable())return;if(S.activeFolder)return addFolderTalk(S.activeFolder,duplicate,S.selected,options);const current=talk();if(!duplicate&&ids(current?.option).length){if(current.miniGame?.length){toast('这句带小游戏，请在对应对话夹里添加后续内容。','note');return;}return addAfterBranches(current,options);}
   const previousStage=current?currentStage():null;
   mutate(options.cgId?'添加 CG':options.blank?'添加空白对话':duplicate?'复制对话':'添加对话',()=>{
@@ -359,6 +361,7 @@ function applyRenumber(result){
   for(const [table,rows]of Object.entries(result.tables||{})){const key=jsonStoryKeys[table];if(!key||!S.doc[key])continue;const map=table==='TalkCfg'?tm:table==='OptionCfg'?om:table==='EvtCfg'?em:null;if(map)for(const old of Object.keys(map))delete S.doc[key][old];Object.assign(S.doc[key],rows);}
   if(Object.keys(tm).length)for(const p of Object.values(S.premises||{}))if(Number.isInteger(p.talkId))p.talkId=mt(p.talkId);
   if(Object.keys(em).length){if(S.event!=='all')S.event=me(S.event);if(S.doc.eventGrades)S.doc.eventGrades=Object.fromEntries(Object.entries(S.doc.eventGrades).map(([k,v])=>[String(me(k)),v]));for(const p of Object.values(S.premises||{})){if(p.eventId!==undefined)p.eventId=me(p.eventId);if(p.event!==undefined)p.event=me(p.event);}renumberWarned.clear();setTimeout(()=>window.STUDIO_EVENTS?.refresh?.(),0);}
+  if(S.doc.externalDialogueIds){S.doc.externalDialogueIds=S.doc.externalDialogueIds.map(mt);for(const f of Object.values(S.doc.externalDialogueFolders||{})){f.talkIds=f.talkIds.map(mt);for(const u of f.uses||[])u.entryId=mt(u.entryId);}}
   S.order=S.order.map(mt);
   const folders={};for(const [key,f]of Object.entries(S.branchFolders)){const g=clone(f);for(const field of ['parentTalkId','routerId','exitId','endId'])if(g[field]!==undefined)g[field]=mt(g[field]);for(const field of ['talkIds','baseNext'])if(Array.isArray(g[field]))g[field]=mtAll(g[field]);if(Array.isArray(g.failureNext))g.failureNext=mtAll(g.failureNext);if(g.optionId!==undefined)g.optionId=mo(g.optionId);if(g.continuation?.kind==='talk')g.continuation.talkId=mt(g.continuation.talkId);if(g.continuation?.kind==='event')g.continuation.eventId=me(g.continuation.eventId);if(g.continuation?.kind==='targets')g.continuation.targets=mtAll(g.continuation.targets);folders[mapKey(key)]=g;}
   S.branchFolders=folders;
@@ -603,7 +606,7 @@ function historyScene(scene){
 }
 function recordPreviewHistory(event){if(!S.project)return;const recorder=previewHistory();if(event.kind==='start')recorder.begin(S.doc,event.talkId,{title:S.doc.events[S.event]?.title||S.project.name,reason:event.reason,scene:historyScene(event.scene)});else if(event.kind==='line')recorder.visit(S.doc,event.talkId,historyScene(event.scene));else if(event.kind==='choice')recorder.choice(event.route);else if(event.kind==='end')recorder.finish();const count=$('#preview-history-count');if(count)count.textContent='已预演 '+recorder.count()+' 句';}
 function exportDialogueRows(){
- const hidden=Timeline.internals(S.branchFolders),document=HistoryExport.fullStory(S.doc,S.event,S.order);
+ const hidden=Timeline.internals(S.branchFolders),doc=externalSession?{...S.doc,events:{},talks:Object.fromEntries(externalScope().map(id=>[id,S.doc.talks[id]]))}:S.doc,document=HistoryExport.fullStory(doc,S.event,externalSession?externalScope():S.order);
  return document.sessions.flatMap(session=>session.entries).filter(row=>row.kind==='dialogue'&&!hidden.has(row.talkId));
 }
 async function showHistoryExport(){
@@ -619,7 +622,7 @@ function importDialogueRows(rows){
  if(!editable()||!rows.length)return [];
  if(rows.length>2000)throw Error('一次最多导入 2000 句对话。');
  if(rows.some(row=>row.roleIds===null))throw Error('请先匹配所有说话人物。');
- if(!S.doc.events[S.event])throw Error('先选择一个剧情事件，再导入对话。');
+ if(!externalSession&&!S.doc.events[S.event])throw Error('先选择一个剧情事件，再导入对话。');
  if(ids(talk()?.option).length&&!S.activeFolder)throw Error('当前句包含选项，请先选择左侧的选项对话夹再导入。');
  const created=[],prior=snapshot('导入前'),undoBefore=S.undo.slice(),redoBefore=S.redo.slice();let state=talk()?currentStage():StudentAgeScene.blank(S.referenceResolution);
  try{mutate('导入对话',()=>{
@@ -632,7 +635,7 @@ function importDialogueRows(rows){
    let occupied=values(state.roles).filter(role=>role.visible);
    for(const roleId of row.roleIds)if(!state.roles[roleId]?.visible){const axis=occupied.length===0?1:!occupied.some(role=>role.axis===2)?2:3;row.roles.push([roleId,1002,1,axis,0]);occupied.push({id:roleId,axis});}
    if(folder)Timeline.insert(S.doc,S.branchFolders,folder,row,insertion);
-   else{row.nextTalk=previous?Timeline.next(S.doc,S.branchFolders,previous.id):[];if(previous)Timeline.setNext(S.doc,S.branchFolders,previous.id,[id]);else S.doc.events[S.event].talkId=[id];S.doc.talks[id]=row;}
+   else{row.nextTalk=previous?Timeline.next(S.doc,S.branchFolders,previous.id):[];if(previous)Timeline.setNext(S.doc,S.branchFolders,previous.id,[id]);else if(!externalSession)S.doc.events[S.event].talkId=[id];S.doc.talks[id]=row;}
    const index=S.order.indexOf(previous?.id);S.order.splice(index<0?S.order.length:index+1,0,id);S.selected=id;created.push(id);state=StudentAgeScene.apply(S.doc,state,row,S.grade);previous=row;insertion=id;
   }
   if(folder){folder.collapsed=false;S.folderOpen[S.activeFolder]=true;}S.search='';$('#talk-search').value='';
@@ -932,10 +935,11 @@ function eventDetails(id=S.event,creation=null) {
   Effects.mount($('#event-effects'),{rows:effects,templates:S.effectTemplates,refs,getPremises:()=>S.premises,readOnly:readOnly||S.conditionsLoading,onError:fail,onChange:rows=>effects=rows});
   }mountCommands();
 }
-function currentEventGrade(){return eventGradeOverrides.get(S.project?.id+':'+S.event)??S.doc?.eventGrades?.[S.event]??0;}
+function currentEventGrade(){if(externalSession)return externalSession.grade??S.doc?.externalDialogueFolders?.[externalSession.folder]?.grade??0;return eventGradeOverrides.get(S.project?.id+':'+S.event)??S.doc?.eventGrades?.[S.event]??0;}
 function setEventGrade(value){
  value=Number(value);if(![0,1].includes(value)||!S.doc)return;
  stopLinePlayback(false);scenePlayer?.pause();
+ if(externalSession){externalSession.grade=value;S.grade=value;invalidateStageMemo();render();return;}
  if(S.project?.readOnly){eventGradeOverrides.set(S.project.id+':'+S.event,value);S.grade=value;invalidateStageMemo();render();}
  else mutate('设置整个事件的学段',()=>{S.doc.eventGrades||={};S.doc.eventGrades[S.event]=value;S.grade=value;});
  scenePlayer?.select(S.selected);prepareSceneExpressions(currentStage());
@@ -994,6 +998,7 @@ function targetSelect(row,field,attributes,exclude=null){
   return `<div class="target-genders">${[0,1].map(index=>`<label><span>${index===0?'男主角去向':'女主角去向'}</span><select ${attributes} data-target-sex="${index}">${options(targets[index]||0)}</select></label>`).join('')}</div>`;
 }
 function renderChrome() {
+  externalSession?.onState?.({busy:!!(S.projectOpening||S.saving),dirty:S.dirty,readOnly:!!S.project?.readOnly,revision:S.revision,canUndo:!!S.undo.length,canRedo:!!S.redo.length});
   const available=!!availableProject(S.project?.id),writable=available&&isLocalProject(S.project);
   $('#undo').disabled=!S.undo.length;$('#redo').disabled=!S.redo.length;$('#copy-project').disabled=!available;
   $('#save').disabled=!writable||!S.dirty||S.saving;$('#save span').textContent=S.saving?'正在保存…':'保存模组';
@@ -1009,9 +1014,10 @@ function render() {
   Remote.ensure(rows,[selected],{pin:true}).then(()=>{if(sequence!==renderSequence||S.doc?.talks!==rows)return;S.segmentLoading=false;$('#large-scene').inert=false;$('#editor-content').inert=false;syncFaceFromTalk();render();}).catch(error=>{if(sequence===renderSequence){S.segmentLoading=false;fail(error);}});renderChrome();renderList();return;
  }
  S.segmentLoading=false;$('#large-scene').inert=false;$('#editor-content').inert=false;Remote.pin(rows,selected);
- S.grade=currentEventGrade();renderChrome();renderEvents();renderList();renderEditor();renderPreview();window.STUDIO_EVENTS?.refresh();
+ S.grade=currentEventGrade();renderChrome();renderEvents();renderList();renderEditor();renderPreview();if(externalSession)externalSession.renderFolders?.();else window.STUDIO_EVENTS?.refresh();
 }
 function renderEvents() {
+  if(externalSession)return;
   $('#event-select').innerHTML='<option value="all" disabled>请从事件列表选择事件</option>'+values(S.doc?.events).map(e=>`<option ${StudentAgeRecordLabels.option(e.id)} value="${e.id}" ${String(e.id)===String(S.event)?'selected':''}>${h(e.title||'未命名事件')}</option>`).join('');
   if(S.event==='all')$('#event-select').value='all';
 }
@@ -1227,6 +1233,7 @@ document.addEventListener('click',event=>{
  if(scenePlayer.ended)closeStoryPreview();else scenePlayer.next();
 });
 function sceneContext() {
+  if(externalSession){const scope=externalScope(),set=new Set(scope),targets=new Set(scope.flatMap(id=>[...ids(S.doc.talks[id]?.nextTalk),...ids(S.doc.talks[id]?.nextTalk2),...ids(S.doc.talks[id]?.option).flatMap(i=>[...ids(S.doc.options[i]?.talkId),...ids(S.doc.options[i]?.talkId2)])]).filter(id=>set.has(id))),roots=scope.filter(id=>!targets.has(id));return {roots:roots.length?roots:scope.slice(0,1),grade:S.grade,reference:S.referenceResolution||[2560,1440]};}
   const entries=e=>{const targets=ids(e?.talkId);return targets.length>1?[targets[protagonistGender()-1]||targets[0]]:targets;};
   const roots=S.event==='all'?values(S.doc?.events).flatMap(entries):entries(S.doc?.events[S.event]);
   return {roots,event:S.doc?.events[S.event],grade:S.grade,reference:S.referenceResolution||[2560,1440]};
@@ -1761,7 +1768,7 @@ window.STUDIO_EDIT_EVENT=eventDetails;
 window.STUDIO_ENTER_EVENT=enterEvent;
 window.STUDIO_DELETE_EVENT=deleteEvent;
 window.STUDIO_SAVE_EVENT_CHANGES=async()=>{const result=await save();window.STUDIO_EVENTS?.refresh();return result;};
-window.STUDIO_REFRESH_CURRENT_PROJECT=async(force=false)=>{if(S.project&&(!S.deferredProject||force))await loadProject(S.project.id,!S.deferredProject);};
+window.STUDIO_REFRESH_CURRENT_PROJECT=async(force=false)=>{if(externalSession)return;if(S.project&&(!S.deferredProject||force))await loadProject(S.project.id,!S.deferredProject);};
 window.STUDIO_REUSE_CONTEXT=()=>({project:S.project,revision:(S.deferredProject?window.STUDIO_WORKSHOP_NAV?.assetContext?.(S.project?.id)?.revision:S.revision)??S.revision,selected:S.selected,previewRole:S.previewRole,grade:S.grade,cloth:S.cloth,face:S.face});
 window.STUDIO_PREPARE_ASSET_REUSE=async()=>{
  if(!editable())return null;
@@ -1812,7 +1819,7 @@ if(window.webkit?.messageHandlers?.studioAssetFolder){
 window.STUDIO_PICKER_CONTEXT=()=>({...window.STUDIO_REUSE_CONTEXT(),doc:S.doc,localIds:S.localIds,event:S.event,folderKey:S.activeFolder});
 function openAssetPicker(kind,options={}) {
   if(!editable())return;
-  if(options.intent==='add-cg'&&!S.doc?.events[S.event]){toast('先选择一个事件，再添加 CG。','note');return;}
+  if(options.intent==='add-cg'&&!externalSession&&!S.doc?.events[S.event]){toast('先选择一个事件，再添加 CG。','note');return;}
   if(options.intent!=='add-cg'&&!talk()){toast('先添加或选择一句对话。','note');return;}
   return window.STUDIO_ASSET_PICKER.open(kind,{...options,selected:S.selected,event:S.event,folderKey:options.folderKey??S.activeFolder});
 }
@@ -1838,7 +1845,8 @@ window.STUDIO_USE_PICKED_ASSET=async(result,options={})=>{
   const kind=result.kind,id=Number(result.personId??result.id);if(!Number.isFinite(id)||id<0)throw Error('素材编号无效。');
   if(kind==='portrait'){
     if(!S.doc.persons[id])throw Error('人物尚未载入，请重新打开素材目录。');
-    if(result.grade!=null){S.doc.eventGrades||={};S.doc.eventGrades[S.event]=Math.max(0,Math.min(1,Number(result.grade)-1));S.grade=S.doc.eventGrades[S.event];}
+    if(result.grade!=null&&externalSession)externalSession.grade=Math.max(0,Math.min(1,Number(result.grade)-1));
+    if(result.grade!=null&&!externalSession){S.doc.eventGrades||={};S.doc.eventGrades[S.event]=Math.max(0,Math.min(1,Number(result.grade)-1));S.grade=S.doc.eventGrades[S.event];}
     S.previewRole=id;enterSceneRole(id,{cloth:result.cloth==null?undefined:Number(result.cloth)});syncFaceFromTalk();
   }else if(kind==='background'){
     if(!S.doc.backgrounds[id])throw Error('场景尚未载入，请重新打开素材目录。');
@@ -1895,7 +1903,7 @@ window.STUDIO_STORY_JSON={
   // imported event together with its lines) keeps just that event.
   if(S.doc.events[S.event])for(const id of Object.keys(S.doc.talks))if(!beforeIds.has(id)&&!(S.doc.talkOwners[id]||[]).length)S.doc.talkOwners[id]=[Number(S.event)];
   if(key==='talks'&&!S.doc.talks[S.selected])S.selected=visibleIds()[0]||S.order[0]||null;
-  updateDirty();render();
+  syncExternal(beforeIds);updateDirty();render();
   if(Object.keys(map).length){const ok=await runRenumber({[name]:map});if(!ok)throw Error('编号同步尚未完成，请再次检查 JSON。');if(key!=='events')for(const id of Object.values(map))S.pinned[key].add(Number(id));updateDirty();render();}
   window.STUDIO_EVENTS?.refresh();return true;},
  saved(name,rows,revision){const key=jsonStoryKeys[name];S.revision=revision;if(!key||!S.doc||!S.saved)return;const saved=IndexedTalks.parse(S.saved);saved[0][key]=clone(S.doc[key]);if(key==='talks')saved[1]=S.order.slice();S.saved=IndexedTalks.stringify(saved);S.localIds[key]=Object.keys(rows).map(Number);updateDirty();renderChrome();
@@ -1903,5 +1911,47 @@ window.STUDIO_STORY_JSON={
 };
 window.STUDIO_CURRENT_REVISION=()=>S.revision;
 window.StudentAgeStudioTest={S,addTalk,deleteTalk,storySelection,undo,redo,renameEvent,addAfterBranches,addSpeaker,removeSpeaker,openJumpPicker,addOptionWithSettings,openScreenEffectMenu,openCGMenu,renumberEvent,renumberPlan,eventTraversal,branchBlock,selectTalk,save,toggleStoryAuto,setEventGrade,currentEventGrade,openStoryHistory,closeStoryHistory,scrollStoryHistory,importDialogueRows,exportDialogueRows,playCurrentLine,openStoryPreview,closeStoryPreview,Timeline,Branches,Conditions,Effects,HistoryExport,previewHistory,showHistoryExport,initialEntry,setInitialPosition,getScenePlayer:()=>scenePlayer,getSceneRenderer:()=>largeScene,reorderTalk,addConditionalBranch,addFolderTalk,setFolderContinuation,setFolderFailure,replaceEdges,graphOrder,moveTalk,normalizeTalk,nextId,currentStage,commitSceneDrag,refreshSceneAssets,enterSceneRole,removeStageRole,flipStageRole,applyBgmDraft,addSfx,audioNeedsPlugin,changedStoryPayload,getAudioPlayer:()=>stageAudio};
+// The event-less workbench mounts this same editor; folders are metadata, never EvtCfg rows.
+function externalScope(){
+ if(!externalSession||!S.doc)return [];
+ const all=new Set((S.doc.externalDialogueIds||[]).filter(id=>S.doc.talks[id]));
+ const groups=S.doc.externalDialogueFolders||{},folder=groups[externalSession.folder];
+ const assigned=new Set(Object.values(groups).flatMap(f=>f.talkIds||[]));
+ const selected=new Set(folder?(folder.talkIds||[]):[...all].filter(id=>!assigned.has(id)));
+ return [...new Set([...S.order.filter(id=>all.has(id)&&selected.has(id)),...[...selected].filter(id=>all.has(id))])];
+}
+function syncExternal(beforeIds){
+ if(!externalSession||!S.doc)return;
+ const groups=S.doc.externalDialogueFolders||{},folder=groups[externalSession.folder],known=new Set(S.doc.externalDialogueIds||[]);
+ for(const id of Object.keys(S.doc.talks).map(Number))if(beforeIds&&!beforeIds.has(String(id))){known.add(id);if(folder&&!folder.talkIds.includes(id))folder.talkIds.push(id);}
+ S.doc.externalDialogueIds=[...known].filter(id=>S.doc.talks[id]);
+ for(const f of Object.values(groups)){f.talkIds=f.talkIds.filter(id=>S.doc.talks[id]);f.sequence=false;for(const u of f.uses||[])if(!f.talkIds.includes(u.entryId)&&f.talkIds.length)u.entryId=f.talkIds[0];if(!f.talkIds.length)f.uses=[];}
+ if(externalSession.folder&&!groups[externalSession.folder])externalSession.folder='';
+}
+const sharedWorkspace=document.querySelector('.workspace'),workspaceAnchor=document.createComment('shared-story-workspace');sharedWorkspace.before(workspaceAnchor);
+window.STUDIO_EXTERNAL_EDITOR={
+ async mount(options){
+  if(externalSession)throw Error('请先关闭当前事件外对话界面。');
+  await loadProject(options.projectId,true);
+  const data=await api('/api/external-dialogues?'+new URLSearchParams({projectId:options.projectId,metadata:'1'}));
+  if(data.revision!==S.revision)throw Error('模组在打开时发生了变化，请重新进入。');
+  S.doc.externalDialogueFolders=clone(data.folders||{});for(const f of Object.values(S.doc.externalDialogueFolders))f.sequence=false;
+  S.doc.externalDialogueIds=(data.talkIds||Object.keys(data.talks||{}).map(Number)).filter(id=>S.doc.talks[id]);
+  externalSession={...options,folder:'',grade:1};S.event='all';S.activeFolder=null;S.folderOpen={};S.search='';S.listAnchor=null;S.listStart=0;S.selected=externalScope()[0]??null;S.undo=[];S.redo=[];S.saved=currentSignature();S.dirty=false;
+  document.body.classList.add('external-shared-editor');options.host.append(sharedWorkspace);sharedWorkspace.hidden=false;sharedWorkspace.querySelector('.event-grade>span').textContent='学段预览';
+  render();return this;
+ },
+ get state(){return {folders:S.doc?.externalDialogueFolders||{},talks:S.doc?.talks||{},folder:externalSession?.folder||'',selected:S.selected,revision:S.revision,readOnly:!!S.project?.readOnly};},
+ scope:externalScope,
+ change(label,fn){return mutate(label,()=>fn(S.doc.externalDialogueFolders,S.doc));},
+ switchFolder(key){if(!externalSession)return;document.activeElement?.blur?.();if(textDirtyTimer!==null)updateDirty();stopLinePlayback(false);scenePlayer?.dispose();scenePlayer=null;externalSession.folder=key;S.selected=null;S.activeFolder=null;S.search='';S.coalesce=null;S.listAnchor=null;S.listStart=0;$('#talk-search').value='';S.selected=externalScope()[0]??null;invalidateStageMemo();render();},
+ selectTalk,save,undo,redo,addTalk,deleteTalk,dirty:()=>S.dirty,
+ async refresh(){if(!externalSession)return;externalSession.renderFolders?.();renderChrome();},
+ discard(){window.STUDIO_DISCARD_STORY();},
+ jsonRead:(...args)=>window.STUDIO_STORY_JSON.read(...args),jsonWrite:(...args)=>window.STUDIO_STORY_JSON.write(...args),jsonSaved:(...args)=>window.STUDIO_STORY_JSON.saved(...args),
+ release(){if(!externalSession)return;externalSession=null;document.body.classList.remove('external-shared-editor');workspaceAnchor.after(sharedWorkspace);sharedWorkspace.querySelector('.event-grade>span').textContent='事件学段';scenePlayer?.dispose();scenePlayer=null;stageAudio?.stop();S.event=values(S.doc?.events)[0]?.id||'all';S.selected=visibleIds()[0]??null;S.activeFolder=null;S.search='';invalidateStageMemo();render();},
+ focusSearch:()=>$('#talk-search').focus()
+};
+
 window.STUDIO_INITIALIZE=async()=>{await refreshProjects(null,true);};
 })();

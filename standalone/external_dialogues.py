@@ -17,7 +17,7 @@ def folders(value,talks,api):
         result[key]={**copy.deepcopy(row),'name':name.strip(),'talkIds':kept}
     return result
 
-def load(store,project_id,api):
+def load(store,project_id,api,metadata=False):
     with store.lock,store.catalog_scope():
         project=store.project(project_id);doc=store.load(project.id);table=store.table(project.id,'TalkCfg')
         state=api.read_json(api.safe_path(project.path,'StudentAgeStudio/editor-state.json'),{})
@@ -29,6 +29,7 @@ def load(store,project_id,api):
             for ident in group.get('talkIds',[]):
                 if str(ident) in talks and ident not in used:keep.append(ident);used.add(ident)
             group['talkIds']=keep
+        if metadata:return {'talkIds':[int(k) for k in talks],'folders':groups,'revision':store.revision(project)}
         refs={n:store.table(project.id,n)['rows'] for n in ('PersonCfg','BgCfg','MapCfg','ModFaceCfg','CGCfg','ItemCfg')}
         return {'talks':talks,'folders':groups,'doc':doc,'refs':refs,'revision':store.revision(project)}
 
