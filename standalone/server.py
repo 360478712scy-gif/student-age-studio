@@ -4030,6 +4030,12 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.store.create(payload.get("name")), 201)
             if route == "/api/copy":
                 return self.send_json(self.server.store.duplicate(payload.get("projectId"), payload.get("name")), 201)
+            if route == "/api/mods/merge-preview":
+                import mod_merge
+                return self.send_json(mod_merge.preview(self.server.store, payload.get("projectIds")))
+            if route == "/api/mods/merge":
+                import mod_merge
+                return self.send_json(mod_merge.merge(self.server.store, payload.get("projectIds"), payload.get("choices"), payload.get("name") or ""), 201)
             if route == "/api/image-import":
                 return self.send_json(self.server.store.import_field_image(payload), 201)
             if route == "/api/import":

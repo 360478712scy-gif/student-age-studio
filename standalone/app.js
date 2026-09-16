@@ -59,7 +59,7 @@ function toast(message, type = '') {
   setTimeout(() => {node.remove();if(!region.childElementCount&&region.matches?.(':popover-open'))try{region.hidePopover();}catch{}}, type === 'error' ? 6500 : 2600);
 }
 function fail(error) {console.error(error); toast(error.message || String(error),'error');}
-window.STUDIO_REPORT_ERROR=fail;
+window.STUDIO_REPORT_ERROR=fail;window.STUDIO_TOAST=(message,type='note')=>toast(message,type);
 window.STUDIO_NOTIFY=(message,error=false)=>toast(message,error?'error':'');
 let projectLoadSequence=0;
 function projectBusy(value){S.projectOpening=value;document.querySelector('.workspace').inert=value;document.querySelector('.header-actions').inert=value;const main=$('#wk-main');if(main)main.inert=value;if(!value)storySelection.render();}
@@ -1805,7 +1805,7 @@ window.STUDIO_SET_ORIGINAL_MODE=async value=>{
  try{await selectProjectHome(id,true);}catch(error){window.STUDIO_ORIGINAL_SOURCE.set(before?id:null);await selectProjectHome(id,true);throw error;}
 };
 window.STUDIO_OPEN_EDITOR=async()=>window.STUDIO_OPEN_EVENTS();
-window.STUDIO_EVENT_CONTEXT=()=>({project:S.project,doc:S.doc,currentEvent:S.event,readOnly:!!S.project?.readOnly,dirty:S.dirty,saving:S.saving,conditionTemplates:allConditionTemplates(),conditionRefs:S.conditionRefs,conditionsReady:!S.conditionsLoading,unassignedTalkIds:unassignedTalkIds()});
+window.STUDIO_EVENT_CONTEXT=()=>({project:S.project,doc:S.doc,currentEvent:S.event,originalIds:S.catalogAll?.events||new Set(),readOnly:!!S.project?.readOnly,dirty:S.dirty,saving:S.saving,conditionTemplates:allConditionTemplates(),conditionRefs:S.conditionRefs,conditionsReady:!S.conditionsLoading,unassignedTalkIds:unassignedTalkIds()});
 window.STUDIO_OPEN_EVENTS=()=>{if(!S.project)return false;window.STUDIO_PAUSE_PREVIEW();closeContextMenu();window.STUDIO_EVENTS.open();return true;};
 window.STUDIO_CREATE_EVENT=createEvent;
 window.STUDIO_OVERRIDE_ORIGINAL_EVENT=async id=>{
