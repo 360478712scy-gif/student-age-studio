@@ -92,10 +92,12 @@ window.STUDIO_MERGE_MODS=async function(){
   if(b.dataset.mergePick){const id=b.dataset.mergePick;picked.has(id)?picked.delete(id):picked.add(id);list();check();}
   if(b.hasAttribute('data-merge-run')&&report&&!checking){
    const issues=[...report.problems,...(report.conflicts.length?[`有 ${report.conflicts.length} 处重复记录/文件，将按右侧选择保留。`]:[])];
-   const text=issues.length?'检查发现以下情况：\n\n'+issues.join('\n')+'\n\n仍要合并吗？':'没有发现问题。确认把所选 '+picked.size+' 个模组合并为一个新模组吗？';
-   if(!confirm(text))return;b.disabled=true;b.textContent='正在合并…';
+   // Native confirm() is not available inside the desktop web views: ask inside the dialog instead.
+   const text=issues.length?'检查发现以下情况：'+issues.map(t=>'\n· '+t).join('')+'\n\n仍要合并吗？':'没有发现问题。确认把所选 '+picked.size+' 个模组合并为一个新模组吗？';
+   const ok=await new Promise(resolve=>{const c=document.createElement('div');c.className='merge-confirm';c.innerHTML=`<p style="white-space:pre-wrap">${esc(text)}</p><div class="original-event-actions"><button data-merge-yes class="primary">确认合并</button><button data-merge-no>取消</button></div>`;c.onclick=ev=>{const t=ev.target.closest('button');if(!t)return;ev.stopPropagation();c.remove();resolve(t.hasAttribute('data-merge-yes'));};b.closest('.original-event-actions').replaceWith(c);});
+   if(!ok){detail();return;}const run=d.querySelector('[data-merge-detail]');run.insertAdjacentHTML('beforeend','<p data-merge-progress>正在合并…</p>');
    try{const result=await api('mods/merge',{projectIds:[...picked],choices});end();await window.STUDIO_REFRESH_PROJECTS?.();window.STUDIO_TOAST?.('已生成合并模组「'+result.name+'」'+(result.problems?.length?'；请留意检查结果里提到的情况。':'。'));if(window.STUDIO_SELECT_PROJECT)await window.STUDIO_SELECT_PROJECT(result.id);}
-   catch(error){b.disabled=false;b.textContent='合并模组';d.querySelector('[data-merge-detail]').insertAdjacentHTML('afterbegin',`<p class="merge-problem">合并失败：${esc(error.message)}</p>`);}
+   catch(error){detail();d.querySelector('[data-merge-detail]').insertAdjacentHTML('afterbegin',`<p class="merge-problem">合并失败：${esc(error.message)}</p>`);}
   }};
  d.onchange=e=>{const r=e.target.closest('[data-merge-choice]');if(r)choices[r.dataset.mergeChoice]=r.value;};
  d.querySelector('[data-merge-search]').oninput=e=>{q=e.target.value;list();};
