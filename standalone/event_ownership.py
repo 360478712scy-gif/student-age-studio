@@ -14,17 +14,23 @@ def ownership(events, talks, options, folders, previous=None):
     retained={}
     for t,v in owners.items():
         for e in v: retained.setdefault(e,[]).append(t)
-    for event,row in events.items():
-        todo=ids(row.get('talkId'))+[dest for oid in ids(row.get('options')) for field in ('talkId','talkId2') for dest in ids(options.get(oid,{}).get(field))]
-        # Retained ownership is also a root, so newly attached descendants of
-        # a disconnected authored segment acquire its event.
-        todo += retained.get(event,[])
+    def walk(todo, assign):
         seen=set()
         while todo:
             t=todo.pop()
             if t in seen or t not in talks:continue
-            seen.add(t);owners.setdefault(t,set()).add(event);todo.extend(edges.get(t,[]))
-    return {t:sorted(map(int,v)) for t,v in owners.items() if v}
+            seen.add(t);assign(t);todo.extend(edges.get(t,[]))
+    # Real connections decide first: a line reachable from an event's entry belongs to that event.
+    reached={}
+    for event,row in events.items():
+        todo=ids(row.get('talkId'))+[dest for oid in ids(row.get('options')) for field in ('talkId','talkId2') for dest in ids(options.get(oid,{}).get(field))]
+        walk(todo, lambda t,event=event: reached.setdefault(t,set()).add(event))
+    # Remembered ownership only keeps disconnected (authored but not yet linked) lines with their event;
+    # it never adds a second event to a line already reached from another event's entry.
+    result={t:set(v) for t,v in reached.items()}
+    for event in events:
+        walk(list(retained.get(event,[])), lambda t,event=event: None if t in reached else result.setdefault(t,set()).add(event))
+    return {t:sorted(map(int,v)) for t,v in result.items() if v}
 
 
 def deletion(events,talks,options,folders,previous,removed,interactions=None,reference_talks=None):

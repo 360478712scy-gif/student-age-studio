@@ -5,8 +5,14 @@ function ownership(doc,folders,previous=doc.talkOwners||{}){
  for(const [t,r]of Object.entries(doc.talks))edges[t]=[...ids(r.nextTalk),...ids(r.nextTalk2),...ids(r.option).flatMap(o=>[...ids(doc.options[o]?.talkId),...ids(doc.options[o]?.talkId2)])];
  for(const f of Object.values(folders||{}))(edges[f.parentTalkId]??=[]).push(...ids(f.talkIds),...[f.routerId,f.exitId,f.endId].filter(v=>v!=null).map(Number));
  const retained={};for(const [t,v]of Object.entries(owners))for(const e of v)(retained[e]??=[]).push(Number(t));
- for(const [key,e]of Object.entries(doc.events)){const id=Number(key),seen=new Set(),todo=[...ids(e.talkId),...ids(e.options).flatMap(o=>[...ids(doc.options[o]?.talkId),...ids(doc.options[o]?.talkId2)]),...(retained[id]||[])];while(todo.length){const t=todo.pop();if(seen.has(t)||!doc.talks[t])continue;seen.add(t);(owners[t]??=new Set()).add(id);todo.push(...(edges[t]||[]));}}
- return Object.fromEntries(Object.entries(owners).filter(([,v])=>v.size).map(([t,v])=>[t,[...v].sort((a,b)=>a-b)]));
+ // Real connections decide first: a line reachable from an event's entry belongs to that event.
+ const reached={};const walk=(id,todo,assign)=>{const seen=new Set();while(todo.length){const t=todo.pop();if(seen.has(t)||!doc.talks[t])continue;seen.add(t);assign(t);todo.push(...(edges[t]||[]));}};
+ for(const [key,e]of Object.entries(doc.events)){const id=Number(key);walk(id,[...ids(e.talkId),...ids(e.options).flatMap(o=>[...ids(doc.options[o]?.talkId),...ids(doc.options[o]?.talkId2)])],t=>(reached[t]??=new Set()).add(id));}
+ // Remembered ownership only keeps disconnected (authored but not yet linked) lines with their event; it never
+ // adds a second event to a line that is already reached from another event's entry.
+ const result={};for(const [t,v]of Object.entries(reached))result[t]=new Set(v);
+ for(const key of Object.keys(doc.events)){const id=Number(key);walk(id,[...(retained[id]||[])],t=>{if(!reached[t])(result[t]??=new Set()).add(id);});}
+ return Object.fromEntries(Object.entries(result).filter(([,v])=>v.size).map(([t,v])=>[t,[...v].sort((a,b)=>a-b)]));
 }
 function sync(doc,folders,currentEvent,beforeIds){
  const previous=doc.talkOwners||{};if(beforeIds&&doc.events[currentEvent])for(const t of Object.keys(doc.talks))if(!beforeIds.has(t))previous[t]=[Number(currentEvent)];
