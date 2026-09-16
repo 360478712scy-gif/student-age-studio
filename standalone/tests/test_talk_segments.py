@@ -175,8 +175,8 @@ class SegmentTests(unittest.TestCase):
 
     def test_build_concurrent_edit_rejected(self):
         original = self.store.load
-        def changed(ident):
-            data = original(ident)
+        def changed(ident, original_events=()):
+            data = original(ident, original_events)
             self.write('EvtCfg', {})
             return data
         with patch.object(self.store, 'load', side_effect=changed), self.assertRaises(b.ApiError):

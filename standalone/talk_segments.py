@@ -269,13 +269,15 @@ class SegmentService:
         self.generations = {}
         self.request_context = threading.local()
 
-    def open(self, project_id):
+    def open(self, project_id, original_events=()):
         b = self.backend
+        original_events = sorted({str(int(i)) for i in original_events if str(i).isdigit()})
         with self.store.lock:
             project = self.store.project(project_id)
             revision = self.store.revision(project)
             identity = {'path': str(project.path.resolve()), 'revision': revision,
-                        'originalMode': project.original_mode, 'language': 'zh-cn', 'version': VERSION}
+                        'originalMode': project.original_mode, 'language': 'zh-cn', 'version': VERSION,
+                        'originalEvents': original_events if project.original_mode else []}
             for token, generation in list(self.generations.items()):
                 if generation.identity == identity:
                     try:
@@ -291,7 +293,7 @@ class SegmentService:
             raw = source.read_bytes() if source.exists() else b'{}'
             # Cold only: the existing loader resolves catalog overrides, retained
             # ownership and audio. No shortened table is ever passed to it.
-            loaded = self.store.load(project_id)
+            loaded = self.store.load(project_id, original_events)
             if loaded.get('unreadableTables', {}).get('talks'):
                 raise SegmentError(loaded['unreadableTables']['talks'])
 

@@ -11,7 +11,7 @@ from extract_game_assets import UnityPy
 def extract(game):
     game = Path(game)
     schema = json.loads((Path(__file__).parent / 'catalog-schema.json').read_text(encoding='utf-8'))
-    tables = {}; talks = set(); sources = []
+    tables = {}; talks = {}; options = {}; sources = []
     bundles = sorted([p for root in (game / 'StudentAge_Data/StreamingAssets', game / 'DLC') for p in root.rglob('*cfgs*.bundle')], key=lambda p: ('dlc' in str(p).lower(), str(p)))
     for bundle in bundles:
         environment = UnityPy.load(str(bundle))
@@ -26,7 +26,8 @@ def extract(game):
             if isinstance(rows,list): rows = {str(row['id']): row for row in rows if isinstance(row,dict) and 'id' in row}
             if not isinstance(rows,dict): continue
             if table == 'TalkCfg': talks.update(rows)
-            elif table != 'OptionCfg': tables.setdefault(table,{}).update(rows)
+            elif table == 'OptionCfg': options.update(rows)
+            else: tables.setdefault(table,{}).update(rows)
             count += 1
         if count: sources.append(bundle.name)
     if not tables.get('PersonCfg'): raise RuntimeError('未能读取游戏人物配置，请检查游戏文件完整性。')
@@ -34,7 +35,10 @@ def extract(game):
     root = game_cache(game); root.mkdir(parents=True,exist_ok=True)
     target = root / 'game-catalog.json'; temp = root / '.catalog-reading.tmp'
     temp.write_text(json.dumps(schema,ensure_ascii=False),encoding='utf-8'); replace_file(temp,target)
-    return {'tables':len(tables),'characters':len(tables['PersonCfg']),'talks':len(talks)}
+    # Dialogue bodies stay out of the catalog; events pull the lines they reach from this store.
+    from original_dialogue import write as write_dialogue
+    write_dialogue(game, talks, options)
+    return {'tables':len(tables),'characters':len(tables['PersonCfg']),'talks':len(talks),'options':len(options)}
 
 if __name__ == '__main__':
     p=argparse.ArgumentParser(); p.add_argument('--game',required=True)

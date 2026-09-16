@@ -485,6 +485,8 @@ class StudioStore:
         self.record_ids = RecordIds(self, sys.modules[__name__])
         from talk_segments import SegmentService
         self.talk_segments = SegmentService(self, sys.modules[__name__])
+        from original_dialogue import OriginalDialogue
+        self.original_dialogue = OriginalDialogue(lambda: self.game)
 
     def _project_root(self, path, readonly):
         if readonly:
@@ -654,10 +656,13 @@ class StudioStore:
         so the file's presence answers the same question as catalog()['schemas'].
         """
         if self._catalog_stamp is not None and self.catalog_stamp() == self._catalog_stamp:
-            return bool(self._catalog_cache.get('schemas'))
+            from original_dialogue import path as dialogue_path
+            return bool(self._catalog_cache.get('schemas')) and dialogue_path(self.game).is_file()
         root, paths = self.catalog_paths()
         try:
-            return paths[0].is_file() and inside(paths[0], root) and paths[0].stat().st_size > 0
+            from original_dialogue import path as dialogue_path
+            return (paths[0].is_file() and inside(paths[0], root) and paths[0].stat().st_size > 0
+                    and dialogue_path(self.game).is_file())
         except OSError:
             return False
 
@@ -781,7 +786,7 @@ class StudioStore:
                 self._revision_cache[key] = (fingerprints, revision)
             return revision
 
-    def load(self, project_id):
+    def load(self, project_id, original_events=()):
         with self.lock:
             project = self.project(project_id)
             revision = self.revision(project)
@@ -817,7 +822,17 @@ class StudioStore:
                 if project.original_mode: merged = original_mode.visible_rows(self, project, filename[:-5], local)
                 result[name] = merged
                 result["localIds"][name] = list(merged) if project.original_mode else list(local)
-                result.setdefault("catalogIds", {})[name] = list(inherited)
+                catalog_ids = list(inherited)
+                if not project.original_mode and isinstance(local, dict) and local:
+                    # Local rows that replace an original record are reported so the editor can label the override.
+                    if name == "events":
+                        native = self.catalog_rows("EvtCfg", catalog)
+                        catalog_ids += [key for key in local if key in native and key not in inherited]
+                    elif name == "talks" and isinstance(catalog.get("baseTalkIds"), list):
+                        base = {str(ident) for ident in catalog["baseTalkIds"]}
+                        catalog_ids += [key for key in local if key in base and key not in inherited]
+                result.setdefault("catalogIds", {})[name] = catalog_ids
+            self.attach_original_dialogue(project, result, original_events)
             deleted = flat_deletions(read_json(safe_path(project.path, "StudentAgeStudio/deleted-talks.json"), {}))
             result["deletedIds"] = [int(key) for key in deleted]
             result["replacements"] = deleted
@@ -848,6 +863,57 @@ class StudioStore:
             if revision != self.revision(project):
                 raise ApiError("读取时模组发生了变化，请重新打开。", 409, "conflict")
             return result
+
+    def attach_original_dialogue(self, project, result, original_events=()):
+        """Pull the original dialogue lines that this document's events reach.
+
+        Normal mode: every event in the mod (a mod row overriding an original event keeps
+        the original entry, so its lines come from the game). Original-resource mode: only
+        events the user has edited or explicitly opened, so the whole game is never loaded.
+        The rows are reported in catalogIds, never in localIds: unchanged, they are not saved.
+        """
+        store = self.original_dialogue
+        if not store.available():
+            return
+        from original_dialogue import story_seeds
+        events = result.get('events', {})
+        if project.original_mode:
+            try:
+                owned = set(original_mode.owned(self, project).get('EvtCfg', []))
+            except ApiError:
+                owned = set()
+            wanted = owned | {str(int(i)) for i in original_events if valid_id(i)}
+            events = {key: row for key, row in events.items() if key in wanted}
+            local_talks = set(original_mode.owned(self, project).get('TalkCfg', [])) if owned else set()
+            local_options = set(original_mode.owned(self, project).get('OptionCfg', [])) if owned else set()
+        else:
+            local_talks, local_options = set(result['localIds'].get('talks', [])), set(result['localIds'].get('options', []))
+        talk_seeds, option_seeds = story_seeds(events, result.get('talks', {}), result.get('options', {}), local_talks, local_options)
+        if project.original_mode:
+            # Rows already present (owned overrides) keep their content; everything else comes from the store.
+            local_talks |= set(result.get('talks', {})); local_options |= set(result.get('options', {}))
+        talks, options = store.reachable(talk_seeds, option_seeds, local_talks, local_options)
+        if project.original_mode:
+            # A mod row that overrides one of these original ids is the edit being shown, even if it
+            # was written outside original-resource mode.
+            for name, rows in (('TalkCfg', talks), ('OptionCfg', options)):
+                try:
+                    local = read_json(safe_path(project.path, 'Cfgs/zh-cn/' + name + '.json'), {})
+                except ApiError:
+                    continue
+                if isinstance(local, dict):
+                    for key in rows:
+                        if isinstance(local.get(key), dict):
+                            rows[key] = {**local[key], 'id': int(key)}
+        for name, rows in (('talks', talks), ('options', options)):
+            table = result.setdefault(name, {})
+            added = [key for key in rows if key not in table]
+            for key in added:
+                table[key] = rows[key]
+            ids = result.setdefault('catalogIds', {}).setdefault(name, [])
+            ids.extend(key for key in added if key not in ids)
+            if project.original_mode:
+                result['localIds'][name] = [key for key in result['localIds'].get(name, []) if key not in set(added)] + added
 
     def other_premise_pairs(self, project):
         pairs = set()
@@ -1427,6 +1493,9 @@ class StudioStore:
                 old = all_maps.get(filename, {})
                 inherited = self.catalog_rows(filename[:-5], catalog)
                 incoming = repair_map(payload[name], filename, allow_zero="0" in old or "0" in inherited, warnings=save_warnings)
+                if filename in ("TalkCfg.json", "OptionCfg.json"):
+                    # Original lines shown for an event are not mod content until edited.
+                    inherited = {**inherited, **self.original_dialogue.rows(filename[:-5], [key for key in incoming if key not in old])}
                 revised = {}
                 for key, row in incoming.items():
                     if key not in old and inherited.get(key) == row:
@@ -3613,15 +3682,16 @@ class StudioHandler(BaseHTTPRequestHandler):
                     diagnostic=self.error_response(error,'自动播放修复未完成，仍可继续编辑。','playback_repair_failed',method)
                     repair_warning='自动播放修复未完成，已跳过；仍可继续编辑。'+(' 错误日志：'+diagnostic['errorLog'] if diagnostic.get('errorLog') else '')
                 self.server.store.clean_orphan_dialogues(query.get("id", [""])[0])
+                expanded=[v for v in query.get('originalEvents', [''])[0].split(',') if v.strip().isdigit()]
                 if query.get('talkStorage', [''])[0] == 'segmented':
                     from talk_segments import SegmentError
                     try:
-                        data=self.server.store.talk_segments.open(query.get('id', [''])[0])
+                        data=self.server.store.talk_segments.open(query.get('id', [''])[0], expanded)
                     except (SegmentError, OSError, UnicodeError, json.JSONDecodeError) as error:
-                        data=self.server.store.load(query.get('id', [''])[0])
+                        data=self.server.store.load(query.get('id', [''])[0], expanded)
                         data.setdefault('warnings', []).append('分段缓存暂不可用，已使用完整读取：' + str(error))
                 else:
-                    data=self.server.store.load(query.get("id", [""])[0])
+                    data=self.server.store.load(query.get("id", [""])[0], expanded)
                 if query.get('talkStorage', [''])[0] in ('indexed', 'segmented') and 'segmentedTalks' not in data and not data.get('unreadableTables', {}).get('talks'):
                     # Keep a read-only JSON base in the browser. Rows are decoded on access,
                     # and history stores only changed rows instead of cloning the full table.
@@ -3631,7 +3701,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             if route == "/api/talk-segments/project":
                 from talk_segments import SegmentError
                 try:
-                    return self.send_json(self.server.store.talk_segments.open(query.get('projectId', [''])[0]))
+                    expanded=[v for v in query.get('originalEvents', [''])[0].split(',') if v.strip().isdigit()]
+                    return self.send_json(self.server.store.talk_segments.open(query.get('projectId', [''])[0], expanded))
                 except SegmentError as error:
                     raise ApiError(str(error), 422, 'segment_unavailable') from error
             if route == "/api/commands":

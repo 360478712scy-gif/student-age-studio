@@ -285,7 +285,7 @@ function renumberPlan(eventId){
   // Hand-set IDs are never touched; sequential numbers skip anything a pinned row or another local row holds.
   // An original (catalogue) row with the same number is allowed: the mod row overrides it and the card says so.
   const missingEntries=values(S.doc.events).flatMap(e=>ids(e.talkId)).filter(id=>id>0&&!S.doc.talks[id]);
-  const talkMap={},domain=new Set(talksInOrder),takenTalks=new Set([...S.pinned.talks,...missingEntries,...Object.keys(S.doc.talks).map(Number).filter(id=>localTalks.has(id)&&!domain.has(id))]);
+  const talkMap={},domain=new Set(talksInOrder),takenTalks=new Set([...S.pinned.talks,...missingEntries,...Object.keys(S.doc.talks).map(Number).filter(id=>!domain.has(id))]);
   // A pinned line still occupies its position in the sequence, so the lines around it keep their numbers.
   let n=0;for(const id of talksInOrder){if(S.pinned.talks.has(id)){n++;continue;}let fresh;do{n++;fresh=eventId*1000+n;}while(takenTalks.has(fresh)&&fresh!==id);
     if(n>999||fresh>2147483647){if(!renumberWarned.has(eventId)){renumberWarned.add(eventId);toast('本事件对话超过 999 句，无法继续自动编号。','note');}return null;}
@@ -293,7 +293,7 @@ function renumberPlan(eventId){
   const optionMap={},optionOrder=[];const seenOptions=new Set();
   for(const id of talksInOrder)for(const oid of ids(S.doc.talks[id]?.option)){if(seenOptions.has(oid))continue;seenOptions.add(oid);const row=S.doc.options[oid];if(!row||!localOptions.has(oid)||S.pinned.options.has(oid))continue;
     const parents=values(S.doc.talks).filter(t=>ids(t.option).includes(oid)).map(t=>Number(t.id));if(parents.some(pid=>!domain.has(pid)))continue;optionOrder.push(oid);}
-  const optionDomain=new Set(optionOrder),takenOptions=new Set([...S.pinned.options,...Object.keys(S.doc.options).map(Number).filter(id=>localOptions.has(id)&&!optionDomain.has(id))]);
+  const optionDomain=new Set(optionOrder),takenOptions=new Set([...S.pinned.options,...Object.keys(S.doc.options).map(Number).filter(id=>!optionDomain.has(id))]);
   let j=0;for(const oid of optionOrder){let fresh;do{j++;fresh=eventId*100+j;}while(takenOptions.has(fresh)&&fresh!==oid);if(j>99)break;if(fresh!==oid)optionMap[oid]=fresh;}
   if(!Object.keys(talkMap).length&&!Object.keys(optionMap).length)return null;
   return {TalkCfg:talkMap,OptionCfg:optionMap};
@@ -404,7 +404,7 @@ async function setOptionId(parent,oid,raw){
 }
 // Conflict/pin notes shown under a record: an ID shared with an original row (the mod overrides it in
 // the game) and a hand-set ID that automatic numbering leaves alone.
-function idConflict(kind,id){const table={talks:'TalkCfg',options:'OptionCfg',events:'EvtCfg'}[kind];if(!S.catalogAll?.[kind]?.has(String(id))||!(S.localIds?.[kind]||[]).map(String).includes(String(id)))return '';const label={talks:'对话',options:'选项',events:'事件'}[kind];const row=S.conditionRefs?.[table]?.[id];const name=row?String(row.title||row.content||row.name||'').slice(0,20):'';return `<span class="id-conflict" title="游戏中本模组的这条会覆盖原版的同编号内容">⚠ 与原版${label} [${id}]${name?' '+h(name):''} 冲突</span>`;}
+function idConflict(kind,id){if(S.project?.originalMode)return '';const table={talks:'TalkCfg',options:'OptionCfg',events:'EvtCfg'}[kind];if(!S.catalogAll?.[kind]?.has(String(id))||!(S.localIds?.[kind]||[]).map(String).includes(String(id)))return '';const label={talks:'对话',options:'选项',events:'事件'}[kind];const row=S.conditionRefs?.[table]?.[id];const name=row?String(row.title||row.content||row.name||'').slice(0,20):'';return `<span class="id-conflict" title="同编号的原版内容在游戏中会被本模组的这条覆盖">覆盖原版${label} [${id}]${name?' '+h(name):''}</span>`;}
 function idPinNote(kind,id){return kind!=='events'&&S.pinned?.[kind]?.has(Number(id))?'<span class="id-pinned" title="手动指定的编号，不会自动整理；右键可恢复自动编号">固定编号</span>':'';}
 window.STUDIO_ID_NOTES=(kind,id)=>idConflict(kind,id)+idPinNote(kind,id);
 function unpinId(kind,id){if(S.pinned[kind].has(Number(id)))history('恢复自动编号');if(S.pinned[kind].delete(Number(id))){updateDirty();renderList();scheduleRenumber();toast('已恢复自动编号。','note');}}
@@ -815,12 +815,24 @@ function availableProject(id){return S.projects.find(project=>String(project.id)
 function projectLabel(p,list){const dup=list.filter(o=>String(o.name||'')===String(p.name||'')).length>1,folder=String(p.path||'').replace(/[\\/]+$/,'').split(/[\\/]/).pop();return String(p.name||'')+(dup&&folder?'（'+folder+'）':'');}
 window.STUDIO_PROJECT_LABEL=projectLabel;
 function renderProjects() {document.body.classList.toggle('original-edit-mode',!!window.STUDIO_ORIGINAL_MODE?.());$('#project-select').innerHTML=S.projects.map(p=>`<option value="${h(p.id)}" data-hover-tip="${h(p.path||'')}" ${S.project&&String(p.id)===String(S.project.id)?'selected':''}>${h(projectLabel(p,S.projects))}${p.readOnly?'（订阅）':''}</option>`).join('');}
+// Original-resource mode loads an original event's dialogue the first time it is opened (per session),
+// so the whole game's dialogue is never loaded at once.
+function originalEvents(projectId){const key='studentAgeStudio.originalEvents:'+projectId;let ids=[];try{ids=JSON.parse(sessionStorage.getItem(key)||'[]');}catch(error){ids=[];}return new Set(ids.map(Number).filter(Number.isInteger));}
+function rememberOriginalEvent(projectId,eventId){const set=originalEvents(projectId);set.add(Number(eventId));try{sessionStorage.setItem('studentAgeStudio.originalEvents:'+projectId,JSON.stringify([...set]));}catch(error){}}
+async function ensureOriginalDialogue(eventId){
+  const e=S.doc?.events?.[eventId];if(!e||!window.STUDIO_ORIGINAL_MODE()||!S.project)return;
+  const projectId=S.project.id;if(originalEvents(projectId).has(Number(eventId)))return;
+  const entries=ids(e.talkId).filter(id=>id>0);if(!entries.length)return;
+  rememberOriginalEvent(projectId,eventId);
+  if(S.dirty){if(!await save())throw Error('请先保存当前修改，再打开这个原版事件。');}
+  await loadProject(projectId,true);
+}
 async function loadProject(id,preserve=false) {
   if(!id)return false;if(S.project?.id!==id)window.STUDIO_ORIGINAL_SOURCE.set(null);if(!availableProject(id))throw Error('这个模组已不在列表中，请刷新模组列表。');const request=++projectLoadSequence,oldSelection=S.selected,oldEvent=S.event;let previous=null;
   projectBusy(true);projectFeedback('正在打开模组：'+availableProject(id).name+'…');
   try{
   if(!preserve&&(S.deferredProject||String(S.project?.id)!==String(id))&&isLocalProject(availableProject(id))&&!availableProject(id).originalMode){projectFeedback('正在备份模组：'+availableProject(id).name+'…');let backup;try{backup=await api('/api/backup',{projectId:id,kind:'automatic',requestId:crypto.randomUUID()});}catch(error){error.message='自动备份未完成：'+error.message;throw error;}if(backup.warning)toast(backup.warning,'note');if(request!==projectLoadSequence)return false;}
-  const data=await api('/api/project?id='+encodeURIComponent(id)+'&talkStorage='+(new URLSearchParams(location.search).get('talkStorage')==='indexed'?'indexed':'segmented'));await STUDIO_IDS.refresh(id);if(request!==projectLoadSequence)return false;previous={...S};
+  const data=await api('/api/project?id='+encodeURIComponent(id)+'&talkStorage='+(new URLSearchParams(location.search).get('talkStorage')==='indexed'?'indexed':'segmented')+(window.STUDIO_ORIGINAL_MODE()&&originalEvents(id).size?'&originalEvents='+[...originalEvents(id)].join(','):''));await STUDIO_IDS.refresh(id);if(request!==projectLoadSequence)return false;previous={...S};
   if(!isReadableProject(data.project)||String(data.project.id)!==String(id))throw Error('读取的项目与当前选择不符，请重新打开。');
   if(S.project&&String(S.project.id)!==String(data.project.id)){scenePlayer?.dispose();scenePlayer=null;StudentAgeScene.portraitSizes.clear();portraitSizeRequests.clear();}S.project=data.project;S.deferredProject=false;S.referenceResolution=data.referenceResolution||[2560,1440];S.revision=data.revision;S.localIds=data.localIds||{};S.catalogAvailable=!!data.catalogAvailable;
   S.goalImageIds=data.goalImageIds||[];S.doc={protagonistGender:data.protagonistGender===2?2:1,eventGrades:data.eventGrades||{}};for(const k of MAPS)S.doc[k]=data[k]||{};if(data.indexedTalks)S.doc.talks=IndexedTalks.create(data.indexedTalks.rows);if(data.segmentedTalks){const projectId=id;S.doc.talks=Remote.create(data.segmentedTalks,(path,body)=>api(path,{...body,projectId}),data.revision);}
@@ -1801,7 +1813,11 @@ window.STUDIO_OVERRIDE_ORIGINAL_EVENT=async id=>{
  const data=await api('/api/table?'+new URLSearchParams({projectId,name:'EvtCfg'}));
  if(S.project?.id!==projectId)throw Error('模组已切换，请重新选择。');
  const original=data.referenceRows?.[id];if(!original)throw Error('原版事件未找到。');
- if(!S.doc.events[id])mutate('覆盖原版事件',()=>{S.doc.events[id]=clone(original);});
+ // The copy is marked so it is kept even before the user changes anything (an identical row would otherwise be dropped as "no change").
+ if(!S.doc.events[id])mutate('覆盖原版事件',()=>{S.doc.events[id]={...clone(original),studioOverride:true};});
+ // The override keeps the original dialogue entry; saving and reopening pulls those lines in so the event is editable at once.
+ if(!await save())throw Error('覆盖已加入，但保存未完成；保存后重新打开即可看到原版对话。');
+ await loadProject(projectId,true);
  window.STUDIO_EVENTS?.refresh();return true;
 };
 window.STUDIO_RESTORE_ORIGINAL_EVENT=async id=>{
@@ -1812,7 +1828,7 @@ window.STUDIO_RESTORE_ORIGINAL_EVENT=async id=>{
  window.STUDIO_EVENTS?.refresh();return true;
 };
 window.STUDIO_EDIT_EVENT=eventDetails;
-window.STUDIO_ENTER_EVENT=enterEvent;
+window.STUDIO_ENTER_EVENT=async id=>{await ensureOriginalDialogue(id);return enterEvent(id);};
 window.STUDIO_DELETE_EVENT=deleteEvent;
 window.STUDIO_SAVE_EVENT_CHANGES=async()=>{const result=await save();window.STUDIO_EVENTS?.refresh();return result;};
 window.STUDIO_REFRESH_CURRENT_PROJECT=async(force=false)=>{if(externalSession)return;if(S.project&&(!S.deferredProject||force))await loadProject(S.project.id,!S.deferredProject);};

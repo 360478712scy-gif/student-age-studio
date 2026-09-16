@@ -65,6 +65,8 @@ def compact_changes(store, project, changes, api):
         table = match[1]
         rows = api.validate_map(json.loads(data), table, allow_zero=True)
         native = store.catalog_rows(table)
+        if table in ('TalkCfg', 'OptionCfg') and hasattr(store, 'original_dialogue'):
+            native = {**native, **store.original_dialogue.rows(table, list(rows))}
         local = api.read_json(api.safe_path(project.path, relative), {})
         api.validate_map(local, table, allow_zero=True)
         additions = set(rows) - set(native) - set(local)
