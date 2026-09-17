@@ -1330,15 +1330,7 @@ function selectStageRole(id) {
   $$('#scene-cast [data-id]').forEach(b=>b.classList.toggle('active',Number(b.dataset.id)===S.previewRole));
 }
 function initialEntry(roleId,state=currentStage()){
- roleId=Number(roleId);if(!state.roles[roleId]?.visible)return null;
- const trace=state.trace||[];
- for(let i=trace.length-1;i>=0;i--){const row=S.doc.talks[trace[i]];if(!row)continue;
-  for(let j=(row.roles||[]).length-1;j>=0;j--){const command=row.roles[j];if(Number(command[0])===roleId&&[1001,1002,1003].includes(Number(command[1])))return {talkId:row.id,index:j,axis:Number(command[3])||state.roles[roleId].axis};}
- }
- // Native dialogue may bring in its speaker without an explicit entry command.
- let scene=StudentAgeScene.blank(S.referenceResolution);
- for(const id of trace){const row=S.doc.talks[id];if(!row)continue;scene=StudentAgeScene.apply(S.doc,scene,row,S.grade,false);if(scene.roles[roleId]?.visible)return {talkId:row.id,index:-1,axis:scene.roles[roleId].axis,layer:scene.roles[roleId].layer,implicit:!(row.roles||[]).length?scene.motions.filter(m=>[1001,1002,1003].includes(m.code)).map(m=>[m.id,m.code,scene.roles[m.id].layer,scene.roles[m.id].axis,0]):null};}
- return null;
+ return StudentAgeScene.roleEntry(S.doc,state,Number(roleId));
 }
 function renderInitialPosition(state=currentStage()){
  const node=$('#scene-initial-position');if(!node)return;const entry=initialEntry(S.previewRole,state),disabled=!entry||!isLocalProject(S.project)||sceneMode!=='edit';
@@ -1347,12 +1339,8 @@ function renderInitialPosition(state=currentStage()){
 function setInitialPosition(roleId,axis){
  roleId=Number(roleId);axis=Number(axis);if(![1,2,3].includes(axis)||!isLocalProject(S.project)||storyPreview)return;
  stopLinePlayback();const entry=initialEntry(roleId);if(!entry||entry.axis===axis)return;
- const row=S.doc.talks[entry.talkId];
- mutate('调整'+personName(roleId)+'的初始站位',()=>{
-  if(entry.index>=0){const command=row.roles[entry.index];while(command.length<4)command.push(0);command[3]=axis;}
-  else if(entry.implicit?.length){row.roles=entry.implicit.map(command=>{const copy=command.slice();if(Number(copy[0])===roleId)copy[3]=axis;return copy;});}
-  else{row.roles||=[];row.roles.unshift([roleId,1001,entry.layer||1,axis,0]);}
- });
+ const row=S.doc.talks[entry.talkId];if(!row)return;
+ mutate('调整'+personName(roleId)+'的初始站位',()=>StudentAgeScene.setRoleEntry(row,entry,axis));
 }
 function commitSceneDrag(roleId,dx,dy,context=null) {
   if(context&&(Number(context.talkId)!==Number(S.selected)||context.doc!==S.doc))return;

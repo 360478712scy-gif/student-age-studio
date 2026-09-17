@@ -87,11 +87,11 @@ function create(o){
  function actors(){const current=state(),previous=state(true),ids=new Set([...Object.values(current.roles).filter(r=>r.visible).map(r=>r.id),...Object.values(previous.roles).filter(r=>r.visible).map(r=>r.id),...(doc().talks[o.talk()?.id]?.roles||[]).map(r=>Number(r[0]))]);return [...ids].map(id=>current.roles[id]||previous.roles[id]||{id,visible:false});}
  function choose(id){selected=Number(id);o.select?.(selected);render();}
  function entry(role){
-  const d=doc(),s=state();
-  for(const id of [...s.trace].reverse()){const rows=d.talks[id]?.roles||[];for(let i=rows.length-1;i>=0;i--)if(Number(rows[i][0])===role&&[1001,1002,1003].includes(Number(rows[i][1])))return {id,index:i,axis:Number(rows[i][3]),rows};}
-  let before=StudentAgeScene.blank(s.reference);
-  for(const id of s.trace){const t=d.talks[id];before=StudentAgeScene.apply(d,before,t,o.context().grade,false);if(before.roles[role]?.visible){const rows=clone(t.roles||[]);for(const a of Object.values(before.roles).filter(r=>r.visible))if(!rows.some(r=>Number(r[0])===a.id&&[1001,1002,1003].includes(Number(r[1]))))rows.unshift([a.id,1001,a.layer||1,a.axis,0]);return {id,index:rows.findIndex(r=>Number(r[0])===role&&[1001,1002,1003].includes(Number(r[1]))),axis:before.roles[role].axis,rows};}}
-  return null;
+  const e=StudentAgeScene.roleEntry(doc(),state(),role);if(!e)return null;
+  const rows=e.implicit?.length?clone(e.implicit):clone(doc().talks[e.talkId]?.roles||[]);
+  if(e.index<0&&!e.implicit?.length)rows.unshift([Number(role),1001,e.layer||1,e.axis,0]);
+  const index=rows.findIndex(r=>Number(r[0])===Number(role)&&[1001,1002,1003].includes(Number(r[1])));if(index<0)return null;
+  return {id:e.talkId,index,axis:Number(rows[index][3])||e.axis,rows};
  }
  function position(axis){if(!valid()||![1,2,3].includes(axis))return;const e=entry(selected);if(!e||e.axis===axis)return;const roles=clone(e.rows);roles[e.index][3]=axis;o.edit(e.id,t=>t.roles=roles);render();}
  function drag(role,dx,dy,c){if(!valid()||Number(c?.talkId)!==Number(o.talk().id))return;try{const d=doc(),id=o.talk().id,s=state(false,d),actor=s.roles[role];if(!actor?.visible)return;const target={x:Math.round((c?.x??actor.x)+dx),y:Math.round((c?.y??actor.y)+dy)};const roles=StudentAgeScene.planSceneDrag(d.talks[id],s,role,target,roles=>state(false,{...d,talks:{...d.talks,[id]:{...d.talks[id],roles}}}));o.edit(id,t=>t.roles=roles);choose(role);}catch(e){o.status(e.message,true);}}
