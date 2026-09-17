@@ -155,8 +155,12 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
   if(screen.length){const code=Number(screen[0]);if(code===4015)state.cg=Number(screen[1]);else if(code===4017){state.cg=0;state.nativeComic=false;}else if(code===4016){state.nativeComic=true;state.warnings.push('漫画画面需在游戏中预演。');}else if(code===4007&&!(talk.roleIds||[]).length){state.warnings.push('本句没有说话人，原版不会启动电话。');}else if(code===4007){state.phone={left:Number(screen[1])||100,right:state.background||201011,caller:Number(screen[2])||0,remote:screen.slice(2).map(Number),local:[...new Set([...(talk.highlights||[]),...(talk.roleIds||[])].map(Number))]};}else if(code===4008){for(const id of state.phone?.remote||[state.phone?.caller])if(state.roles[id])state.roles[id].visible=false;state.phone=null;}else if(!window.StudentAgeScreenEffects?.entries.some(e=>e.id===code))state.warnings.push('这段包含额外屏幕效果，最终效果请在游戏中确认。');}
   if(talk.effect?.length||talk.effect2?.length||talk.miniGame?.length)state.warnings.push('此段的数值变化、奖励或小游戏交由游戏执行。');
   // Native NewTalkView implicitly brings in a new speaker when there are no explicit actions.
+  // Implicit rows are remembered together with the record they create: a scene change, an
+  // exit or a branch reset deletes that record, so the editor must edit the entry that
+  // still governs the staging on screen, never a superseded one from an earlier scene.
   let actions=nativeRoleOrder((talk.roles||[]).filter(Array.isArray));
-  if(!actions.length)actions=state.speakerIds.filter(id=>!state.roles[id]).map(id=>[id,1001,1,defaultAxis,0]);
+  const implicitRows=new Set();let implicitBlock=null;
+  if(!actions.length){actions=state.speakerIds.filter(id=>!state.roles[id]).map(id=>[id,1001,1,defaultAxis,0]);implicitBlock=actions.map(row=>row.slice());for(const row of actions)implicitRows.add(row);}
   if(Number(screen[0])===4007&&(talk.roleIds||[]).length&&state.phone){
     const anchor=Number(talk.highlights?.[0]??0),entry=actions.find(r=>Number(r[0])===anchor&&[1001,1002,1003].includes(Number(r[1])));
     const axis=Number(entry?.[3])||state.roles[anchor]?.axis||2;
@@ -177,7 +181,7 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
     if(code>=1001&&code<=1003)entered.add(id);
     if(!state.roles[id]?.visible&&[3006,3007,3012,3013,3014].includes(code)){
       const data=initial.get(id)||{};if(code===3006)data.cloth=Number(row[2])||0;if(code===3007)data.flip=true;if(code===3012||code===3013)data.shadow=code===3012;if(code===3014)data.hair=Number(row[2])||0;initial.set(id,data);
-      if(!entered.has(id)){entered.add(id);prepared.push([id,1001,1,declaredAxes.get(id)||defaultAxis]);}continue;
+      if(!entered.has(id)){entered.add(id);const implicit=[id,1001,1,declaredAxes.get(id)||defaultAxis];implicitRows.add(implicit);prepared.push(implicit);}continue;
     }prepared.push(row);
   }
   actions=prepared;for(const role of Object.values(state.roles))if(role.visible&&!actions.some(r=>Number(r[0])===role.id))actions.push([role.id]);const originalActions=actions;
@@ -197,6 +201,8 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
     if(!role){
       if(code===2001||code===2002)continue;
       role={id,visible:false,x:0,y:0,axis:defaultAxis,layer:1,face:0,cloth:defaultCloth(id),hair:0,scale:1,flip:false,shadow:false,grade};role.depth=-10*(Object.keys(prior.roles||{}).length+Math.max(0,creationOrder.indexOf(id)));Object.assign(role,initial.get(id)||{});state.roles[id]=role;
+      // 这条记录由哪一句、哪一种登场建立；同句的显式登场指令会覆盖它。
+      role.entryTalkId=talk.id;role.entryImplicit=implicitRows.has(row);role.entryBlock=role.entryImplicit?implicitBlock:null;
       state.roleCloths[id]=role.cloth;
       if(code>=3000){place(role,declaredAxes.get(id)||defaultAxis,1);state.motionStarts[id]=copy(role);role.visible=true;state.motions.push({id,code:1001,delay:0,fromAxis:defaultAxis});}
     }
@@ -205,6 +211,7 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
     if(!track){const physical=state.motionStarts[id]||role;track=state.positionTracks[id]={start:{x:physical.x,y:physical.y},steps:[],fresh:!physical.visible};}
     if(code>=1001&&code<=1003){
       const axis=Number(row[3])||role.axis||3,layer=Number(row[2])||role.layer||1;
+      if(!implicitRows.has(row)){role.entryTalkId=talk.id;role.entryImplicit=false;role.entryBlock=null;}
       if(!role.visible||role.axis!==axis||role.layer!==layer)place(role,axis,layer);
       if(!role.visible)state.motionStarts[id]=copy(role);
       role.axis=axis;role.layer=layer;role.visible=true;state.motions.push({id,code,delay:Number(row[4])||0,fromAxis:Number(row[5])||axis,shake:Number(row[6])||0});
@@ -256,6 +263,31 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
   if(state.speakerIds.length&&state.roles[state.speakerIds[0]])state.talkingAxis=state.roles[state.speakerIds[0]].axis;
   if(state.motions.some(m=>(m.code===2001||m.code===2002)&&state.speakerIds.includes(m.id)))state.talkingAxis=2;
   state.routeChoices=routes(doc,talk);state.warnings=unique(state.warnings);return state;
+}
+// “初始站位”只改决定当前画面站位的那一条登场：人物记录会因换场景、退场或分支复位而重建，
+// 重建之前的登场指令对当前画面已经无效，改它只会让预览不动并连带改动上一幕。
+function roleEntry(doc,state,roleId){
+ roleId=Number(roleId);const role=state?.roles?.[roleId];if(!role?.visible)return null;
+ const talk=doc.talks?.[role.entryTalkId];
+ if(talk){
+  const rows=talk.roles||[];
+  if(!role.entryImplicit)for(let j=rows.length-1;j>=0;j--){const command=rows[j];if(Number(command[0])===roleId&&[1001,1002,1003].includes(Number(command[1])))return {roleId,talkId:talk.id,index:j,axis:Number(command[3])||role.axis};}
+  return {roleId,talkId:talk.id,index:-1,axis:role.axis,layer:role.layer,implicit:role.entryBlock||null};
+ }
+ // Retained for callers without entry provenance (states not produced by apply).
+ const trace=state.trace||[];
+ for(let i=trace.length-1;i>=0;i--){const row=doc.talks?.[trace[i]];if(!row)continue;
+  for(let j=(row.roles||[]).length-1;j>=0;j--){const command=row.roles[j];if(Number(command[0])===roleId&&[1001,1002,1003].includes(Number(command[1])))return {roleId,talkId:row.id,index:j,axis:Number(command[3])||role.axis};}}
+ let scene=blank(state.reference);
+ for(const id of trace){const row=doc.talks?.[id];if(!row)continue;scene=apply(doc,scene,row,role.grade,false);
+  if(scene.roles[roleId]?.visible)return {roleId,talkId:row.id,index:-1,axis:scene.roles[roleId].axis,layer:scene.roles[roleId].layer,implicit:!(row.roles||[]).length?scene.motions.filter(m=>[1001,1002,1003].includes(m.code)).map(m=>[m.id,m.code,scene.roles[m.id].layer,scene.roles[m.id].axis,0]):null};}
+ return null;
+}
+function setRoleEntry(talk,entry,axis){
+ axis=Number(axis);if(!talk||!entry||![1,2,3].includes(axis))return false;
+ if(entry.index>=0){const command=(talk.roles||[])[entry.index];if(!command)return false;while(command.length<4)command.push(0);command[3]=axis;return true;}
+ if(entry.implicit?.length){talk.roles=entry.implicit.map(command=>{const copy=command.slice();if(Number(copy[0])===Number(entry.roleId))copy[3]=axis;return copy;});return true;}
+ if(!Array.isArray(talk.roles))talk.roles=[];talk.roles.unshift([Number(entry.roleId),1001,entry.layer||1,axis,0]);return true;
 }
 // Plan against the FINAL native action order: adding even one command can
 // redistribute slots. Keep all existing actions/timing and compensate positions
@@ -803,5 +835,5 @@ class AudioPlayer {
   resume(){if(this.bgm&&!this.bgm.ended)this.bgm.play()?.catch?.(()=>{});for(const audio of this.sfx)if(!audio.ended)audio.play()?.catch?.(()=>{});if(this.desiredMusic){const {key,track}=this.desiredMusic;this.switchMusic(key,track);}}
   stop(){this.pause();this.bgm=null;this.sfx=[];this.group=null;this.nativeBgm=null;this.activeGroup=null;this.lastTalk=null;this.desiredMusic=null;this.failedMusic=null;}
 }
-window.StudentAgeScene={planSceneDrag,nativePositionPlayer,nativePositionFrames,nativeRoleOrder,normalizeNativeMoves,staticPortraitSize,bubbleAssets,releaseBubbleAssets,bubbleY,bubbleGlyph,portraitBox,portraitCacheKey,portraitFrames,portraitSizes,protagonistGender,portraitIdentity,routes,pathTo,blank,apply,reconstruct,portraitSource,portraitCandidates,backgroundPath,Renderer,Player,AudioPlayer};
+window.StudentAgeScene={planSceneDrag,nativePositionPlayer,nativePositionFrames,nativeRoleOrder,normalizeNativeMoves,staticPortraitSize,bubbleAssets,releaseBubbleAssets,bubbleY,bubbleGlyph,portraitBox,portraitCacheKey,portraitFrames,portraitSizes,protagonistGender,portraitIdentity,routes,pathTo,blank,apply,reconstruct,roleEntry,setRoleEntry,portraitSource,portraitCandidates,backgroundPath,Renderer,Player,AudioPlayer};
 })();
