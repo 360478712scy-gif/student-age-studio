@@ -40,6 +40,9 @@ AUDIO = {'.wav', '.mp3', '.ogg', '.flac', '.m4a', '.aac'}
 # the next listing when capacity is available; repeated refreshes cannot evict
 # and starve the oldest unfinished image.
 _HASH_PENDING_CAP = 2000
+# NTFS may defer directory timestamps across rapid creates. File fingerprints
+# remain authoritative for content, but cannot replace enumerating Windows names.
+_DIRECTORY_NAMES_REUSABLE = os.name != 'nt'
 
 
 def strings(value):
@@ -555,7 +558,7 @@ class AssetCatalog:
                 result.append((str(base), None)); continue
             result.append((str(base), stamp))
             saved = cache.get(str(base))
-            if saved and saved[0] == stamp:
+            if _DIRECTORY_NAMES_REUSABLE and saved and saved[0] == stamp:
                 dirs, files = saved[1:]
                 cache.move_to_end(str(base))
             else:
@@ -581,6 +584,24 @@ class AssetCatalog:
                 except OSError: result.append((str(path), None))
         return sorted(result)
 
+    def _preview_inputs(self, project, kind):
+        # Read-only previews depend on media definitions, not every dialogue,
+        # event and unrelated table. Saves/imports still use live full revisions.
+        names = [KINDS[kind]]
+        if kind in {'portrait', 'social', 'cg'}: names += ['PersonCfg', 'ModFaceCfg']
+        if kind == 'item': names += ['BookCfg']
+        paths = [project.path/'Cfgs/zh-cn'/(name+'.json') for name in dict.fromkeys(names)]
+        paths += [project.path/'manifest.json', project.path/'StudentAgeStudio/original-edits.json',
+                  game_cache(self.store.game)/'game-catalog.json', self.settings_path]
+        if kind in {'portrait', 'social', 'cg'}: paths.append(project.path/'StudentAgeStudio/goal-images.json')
+        if kind == 'cg': paths.append(project.path/'StudentAgeStudio/editor-state.json')
+        result = []
+        for path in paths:
+            try: value = file_fingerprint(path)
+            except FileNotFoundError: value = None
+            result.append((path, value))
+        return tuple(result)
+
     def _entries(self, query, refresh_media=True):
         project, revision, source, source_project, source_revision, kind, grade, cloth = self._context(query)
         all_mods = source == 'mod' and query.get('sourceProjectId') in (None, '', 'all')
@@ -593,6 +614,11 @@ class AssetCatalog:
         if query.get('variantMode') in ('portrait','expression'):
             key_data.append([(p.parent.name,file_fingerprint(p)) for p in sorted((game_cache(self.store.game) / 'native-models-v1').glob('*/model.json'))])
         cache_key = hashlib.sha256(json.dumps(key_data, sort_keys=True).encode()).hexdigest()[:32]
+        # Obsolete revisions can no longer be selected/imported; retaining up
+        # to 96 full catalogues after text saves multiplies session memory.
+        for key, old in list(self.cache.items()):
+            if old['projectId'] == project.id and old['revision'] != revision:
+                self.cache.pop(key, None)
         folder_watch = self._folder_watch(folders['folders'][kind]) if folders else []
         if cache_key in self.cache:
             cached = self.cache[cache_key]
@@ -603,6 +629,7 @@ class AssetCatalog:
                     generation = self._hash_generation
                     cached['items'] = self._deduplicate_backgrounds(cached['_rawItems'])
                     cached['_hashGeneration'] = generation
+                    cached['_itemById'] = {item['assetId']: item for item in cached['items']}
                 self.cache.move_to_end(cache_key)
                 return cached
             if not refresh_media:
@@ -637,6 +664,9 @@ class AssetCatalog:
                   'items': items, 'warnings': list(dict.fromkeys(warnings_list)), '_project': project, '_files': file_versions, '_folderWatch':folder_watch}
         if kind == 'background' and query.get('library') != '1': result.update(_rawItems=raw_items, _hashGeneration=hash_generation)
         if folders: result['folder'] = {**folders['folders'][kind], 'settingsRevision': folders['revision']}
+        result['_itemById'] = {item['assetId']: item for item in items}
+        result['_mediaStamps'] = versions
+        result['_previewInputs'] = {p.id: self._preview_inputs(p, kind) for p in [project, source_project, *sources]}
         self.cache[cache_key] = result
         while len(self.cache) > 96: self.cache.popitem(last=False)
         if any(self.store.revision(p) != version for p, (_, version) in zip(sources, source_stamps)):
@@ -703,19 +733,21 @@ class AssetCatalog:
             return {key: value for key, value in result.items() if not key.startswith('_') and key != 'items'} | {'items': public, 'total': total, 'page': page, 'pageSize': size, 'personFilters': filters, 'locationFilters': locations, 'backgroundCache': self.hash_progress()}
 
     def preview(self, query):
-        with self.store.lock, self.store.catalog_scope():
+        with self.store.lock:
             project = self.store.project(query.get('projectId'))
-            if query.get('revision') != self.store.revision(project): self.error('模组已变化，请刷新素材目录。', 409, 'conflict')
             catalog = self.cache.get(query.get('catalogKey'))
             if not catalog or catalog['projectId'] != project.id or catalog['revision'] != query.get('revision'):
                 self.error('素材预览已过期，请重新打开素材目录。', 404)
-            item = next((item for item in catalog['items'] if item['assetId'] == query.get('assetId')), None)
+            item = catalog['_itemById'].get(query.get('assetId'))
             if not item: self.error('找不到此素材。', 404)
             if query.get('mediaRevision') and query['mediaRevision'] != item['mediaRevision']:
                 self.error('素材预览已更新，请刷新目录。', 409, 'conflict')
             source = item.get('_sourceProject')
-            if source and self.store.revision(self.store.project(source.id)) != item.get('_sourceRevision', catalog['sourceRevision']):
-                self.error('来源模组已变化，请刷新目录。', 409, 'conflict')
+            for selected in {p.id: p for p in [project, source] if p}.values():
+                if self._preview_inputs(selected, catalog['kind']) != catalog['_previewInputs'].get(selected.id):
+                    self.error('素材配置已变化，请刷新目录。', 409, 'conflict')
+            if item.get('_path') in catalog['_mediaStamps'] and file_fingerprint(item['_path']) != catalog['_mediaStamps'][item['_path']]:
+                self.error('素材文件已经变化，请刷新目录。', 409, 'conflict')
             if catalog['kind'] == 'portrait' and query.get('headshot') == '1':
                 for resource in head_paths(item.get('_row', {}), item.get('previewGrade', 1)):
                     try: return self._resource(source or project, resource, 'portrait')['_path']

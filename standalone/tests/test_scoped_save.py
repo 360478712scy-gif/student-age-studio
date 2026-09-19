@@ -1,5 +1,5 @@
 """Selective saves agree with the full path and do not read unrelated JSON."""
-import copy,json,os,sys,tempfile,unittest
+import copy,json,os,sys,tempfile,time,unittest
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -9,6 +9,14 @@ class ScopedSaveTests(unittest.TestCase):
   self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
   env=patch.dict(os.environ,{'STUDIO_CACHE_ROOT':str(self.root/'Cache'),'STUDIO_USER_DATA_ROOT':str(self.root/'User'),'STUDIO_BACKUP_ROOT':str(self.root/'Backups')});env.start();self.addCleanup(env.stop)
   self.store=b.StudioStore(self.root/'Mods',self.root/'Workshop',self.root/'Game',asset_settings_path=self.root/'assets.json')
+  def finish_background_index():
+   # The real hash worker writes its index asynchronously; finish before the
+   # environment and temporary directory are removed by later cleanups.
+   deadline=time.monotonic()+5
+   while self.store.asset_catalog.hash_progress()['running'] and time.monotonic()<deadline:time.sleep(.01)
+   self.assertFalse(self.store.asset_catalog.hash_progress()['running'])
+   self.store.close()
+  self.addCleanup(finish_background_index)
   self.project=self.store.project(self.store.create('Scoped save')['id']);self.cfg=self.project.path/'Cfgs/zh-cn'
   self.write('TalkCfg',{'1':{'id':1,'content':'原文','nextTalk':[2],'future':{'keep':[1,2]}},'2':{'id':2,'content':'第二句'}})
   self.write('EvtCfg',{'1':{'id':1,'talkId':[1]}});self.write('OptionCfg',{})

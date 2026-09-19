@@ -2,6 +2,7 @@ import copy,json,unittest
 from unittest.mock import patch
 from pathlib import Path
 from test_scoped_save import ScopedSaveTests
+import asset_catalog
 import server as b
 import external_dialogues as ext
 import text_record_save as text_save
@@ -65,6 +66,7 @@ class EventUpdateTests(unittest.TestCase):
   rows=[dict(assetId=str(i),name='场景'+str(i),kind='background',_path=path,sourceId=i) for i,path in enumerate(paths,1)]
   query=dict(projectId=self.project.id,revision=self.store.revision(self.project),source='mod',sourceProjectId=self.project.id,kind='background')
   catalog._hash_running=True
+  self.addCleanup(setattr,catalog,"_hash_running",False)
   with patch.object(catalog,'_configured',return_value=rows) as scan:
    first=catalog._entries(query);self.assertEqual(len(first['items']),2)
    for path in paths:catalog.image_hashes[(str(path),b.file_fingerprint(path))]='identical-pixels'
@@ -92,8 +94,10 @@ class EventUpdateTests(unittest.TestCase):
   directory=self.root/'Images';directory.mkdir();(directory/'one.png').write_bytes(b'one')
   catalog=self.store.asset_catalog;folder={'path':str(directory)}
   first=catalog._folder_watch(folder)
-  with patch('asset_catalog.os.scandir',side_effect=AssertionError('unchanged directory should reuse names')):
-   self.assertEqual(catalog._folder_watch(folder),first)
+  if asset_catalog._DIRECTORY_NAMES_REUSABLE:
+   with patch('asset_catalog.os.scandir',side_effect=AssertionError('unchanged directory should reuse names')):
+    self.assertEqual(catalog._folder_watch(folder),first)
+  else:self.assertEqual(catalog._folder_watch(folder),first)
   (directory/'one.png').write_bytes(b'different size');self.assertNotEqual(catalog._folder_watch(folder),first)
   (directory/'two.png').write_bytes(b'two');after=catalog._folder_watch(folder)
   self.assertTrue(any(p.endswith('two.png') for p,_ in after))

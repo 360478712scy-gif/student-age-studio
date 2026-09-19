@@ -29,6 +29,8 @@ class MediaWarmup:
         self.process = None
         self.state = {'status': 'idle', 'percent': 0, 'done': 0, 'total': 0, 'warnings': [], 'abandoned': []}
         self.attempts = None
+        self._scan_active = False
+        self._scan_not_before = 0.0
 
     def get(self):
         with self.lock: return copy.deepcopy(self.state)
@@ -107,7 +109,9 @@ class MediaWarmup:
 
     def request_scan(self):
         # A picker asks for change detection, never invalidates existing media.
-        if self.thread and self.thread.is_alive(): self.wake.set()
+        with self.lock:
+            if self.thread and self.thread.is_alive() and not self._scan_active and time.monotonic() >= self._scan_not_before:
+                self.wake.set()
 
     def close(self):
         self.stop.set(); self.wake.set();self.update(status="cancelled")
@@ -117,9 +121,13 @@ class MediaWarmup:
     def loop(self):
         while not self.stop.is_set():
             self.wake.clear()
+            self._scan_active = True
             try: self.scan()
             except Exception as error:
                 self.update(status='error', phase='部分素材缓存未完成', warnings=[str(error)])
+            finally:
+                self._scan_not_before = time.monotonic() + 30
+                self._scan_active = False
             self.wake.wait(30)
 
     def files(self, roots, excluded):
