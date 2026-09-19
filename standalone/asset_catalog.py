@@ -36,9 +36,9 @@ KINDS = {'portrait': 'PersonCfg', 'background': 'BgCfg', 'cg': 'CGCfg', 'audio':
 # and the importer agree on the same set; game-facing bytes stay PNG/JPEG/WebP.
 IMAGES = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tga'}
 AUDIO = {'.wav', '.mp3', '.ogg', '.flac', '.m4a', '.aac'}
-# Background pixel-hash queue: evicted entries are re-enqueued on the next
-# directory listing (their hash is still unknown), so a cap only delays
-# de-duplication instead of changing it.
+# Background pixel-hash queue: keep pending work and defer new entries until
+# the next listing when capacity is available; repeated refreshes cannot evict
+# and starve the oldest unfinished image.
 _HASH_PENDING_CAP = 2000
 
 
