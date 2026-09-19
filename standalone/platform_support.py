@@ -1,6 +1,7 @@
 """Small OS boundary for local locking, workers, and revealing exported files."""
 import os
 import errno
+import stat as stat_mode
 import subprocess
 import sys
 import time
@@ -36,7 +37,9 @@ def file_fingerprint(path):
             library.CloseHandle.argtypes = [wintypes.HANDLE]
             _metadata_api = library, BasicInfo
         library, BasicInfo = _metadata_api
-        handle = library.CreateFileW(str(path), 0x80, 7, None, 3, 0, None)
+        # Directory handles require FILE_FLAG_BACKUP_SEMANTICS too.
+        flags = 0x02000000 if stat_mode.S_ISDIR(stat.st_mode) else 0
+        handle = library.CreateFileW(str(path), 0x80, 7, None, 3, flags, None)
         # Unusual file systems can decline basic metadata: safely bypass caching.
         changed = time.monotonic_ns()
         if handle not in (None, ctypes.c_void_p(-1).value):

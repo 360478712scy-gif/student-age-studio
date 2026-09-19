@@ -13,7 +13,7 @@ class EventUpdateTests(unittest.TestCase):
  # Keep this suite focused; inherited cases run in their own existing suite.
  def test_record_save_warm_reads_only_changed_record(self):
   source='{"1": {"id":1,"content":"旧的文字","nextTalk":[2],"future":1.23000},\n"2":{"id":2,"content":"保留 2","unknown":{"x":true}}}\n'
-  (self.cfg/'TalkCfg.json').write_text(source)
+  (self.cfg/'TalkCfg.json').write_bytes(source.encode('utf-8'))
   first=json.loads(source)['1'];first['content']='首次';self.save({'talkPatch':{'version':1,'upsert':{'1':first},'deleted':[]}})
   original=(self.cfg/'TalkCfg.json').read_bytes();first['content']='第二次修改更长的中文'
   old_index=text_save._CACHE[str((self.cfg/'TalkCfg.json').resolve())][1]

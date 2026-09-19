@@ -561,6 +561,8 @@ class AssetCatalog:
             for path in files:
                 if link(path): continue
                 try: result.append((str(path), file_fingerprint(path)))
+                except FileNotFoundError:
+                    cache.pop(str(base), None)
                 except OSError: result.append((str(path), None))
         return sorted(result)
 

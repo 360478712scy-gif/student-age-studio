@@ -275,7 +275,7 @@ class SegmentService:
         from storage_paths import game_cache
         tables = {*self.backend.TABLES.values(), 'AudioCfg.json'}
         paths = [path for path in self.store.revision_paths(project)
-                 if not str(path.relative_to(project.path)).startswith('Cfgs/') or path.name in tables]
+                 if not path.relative_to(project.path).as_posix().startswith('Cfgs/') or path.name in tables]
         paths.append(game_cache(self.store.game) / 'game-catalog.json')
         return tuple((str(path), file_fingerprint(path) if path.exists() else None) for path in paths)
 
