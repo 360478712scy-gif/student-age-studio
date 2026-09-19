@@ -58,6 +58,8 @@ class UpdatesTest(unittest.TestCase):
         self.assertEqual(display_version('v1.3.12-beta.1'), '1.3.11.1')
         self.assertGreater(version_key('v1.3.12-beta.2'), version_key('v1.3.12-beta.1'))
         self.assertEqual(display_version('v1.3.12-beta.2'), '1.3.11.2')
+        self.assertGreater(version_key('v1.3.12-beta.3'), version_key('v1.3.12-beta.2'))
+        self.assertEqual(display_version('v1.3.12-beta.3'), '1.3.11.3')
 
     def test_beta135_hotfix_sorts_after_installed_beta135(self):
         self.assertGreater(version_key('v1.3.5-beta.2'), version_key('v1.3.5-beta.1'))
