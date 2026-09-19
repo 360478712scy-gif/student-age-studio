@@ -142,7 +142,7 @@ def portrait_dimensions(game, catalog, paths):
     if not wanted:
         return {}
     home = game_cache(game)
-    manifest = home / 'portrait-dimensions-v3.json'
+    manifest = home / 'portrait-dimensions-v4.json'
     try:
         cache = json.loads(manifest.read_text(encoding='utf-8'))
     except (OSError, ValueError):
@@ -151,7 +151,7 @@ def portrait_dimensions(game, catalog, paths):
     for alias, exported in mapping.items():
         if exported in wanted.values():
             resource = resource_name('/' + alias.lstrip('/'), 'textures')
-            if resource and resource.startswith(('role_full/', 'role_comic/')):
+            if resource and resource.startswith(('role_full/', 'role_half/', 'role_head/', 'role_comic/', 'role_comic_head/', 'role_photo/')):
                 resources[resource] = exported
     if not resources:
         return {}
@@ -171,10 +171,17 @@ def portrait_dimensions(game, catalog, paths):
             dimensions = {}
             for name, pointer in env.container.items():
                 resource = resource_name(name, 'textures')
-                if not resource or not resource.startswith(('role_full/', 'role_comic/')):
+                if not resource or not resource.startswith(('role_full/', 'role_half/', 'role_head/', 'role_comic/', 'role_comic_head/', 'role_photo/')):
                     continue
                 obj = pointer.deref()
-                if obj.type.name == 'Texture2D':
+                if obj.type.name == 'Sprite':
+                    data = obj.parse_as_object()
+                    # Unity Image.SetNativeSize uses sprite pixels / pixelsPerUnit
+                    # relative to the canvas's default 100 reference pixels.
+                    ppu = float(data.m_PixelsToUnits)
+                    if ppu > 0:
+                        dimensions[resource] = [data.m_Rect.width * 100 / ppu, data.m_Rect.height * 100 / ppu]
+                elif obj.type.name == 'Texture2D':
                     data = obj.parse_as_object()
                     dimensions.setdefault(resource, [data.m_Width, data.m_Height])
             entry = {'stamp': stamp, 'sizes': dimensions}
