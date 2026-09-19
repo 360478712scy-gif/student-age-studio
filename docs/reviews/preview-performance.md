@@ -1,6 +1,8 @@
 # 大模组预览、退出对话与条件目录性能复核
 
-2026-09-20，Codex。本批修复纳入 1.3.11.4（协议 1.3.12-beta.4），用户已授权发布；基线为 1.3.11.3 / 3b6d1c6。
+2026-09-20，Codex。本批修复纳入 1.3.11.4（协议 1.3.12-beta.4），已正式发布；基线为 1.3.11.3 / 3b6d1c6。
+
+本批真实人物验收不足，后续已复现全屏预览错位与按钮样式回归；本地修复及真实素材证据见 [预览回归报告](preview-layout-regression.md)。此前合成数据性能结果不能代替人物画面验收。
 
 ## 需求与已修复开销
 
@@ -26,4 +28,4 @@
 
 Windows 上数分钟阻塞未在本机复现，不能声称反馈全部解决。本轮没有原生 Windows/真实素材长期验收。合成 Game 目录无原版 UI 素材，/api/preview-ui 返回 500 并保留备用界面；这些请求约数毫秒，不作慢请求归因，浏览器无未捕获错误。未改保存原子备份与完整文件字节替换边界；首次索引仍有成本。
 
-产品已备份同步私有源码；发布与旧版本升级验收证据另存 output/release-13114。证据 output/preview-perf-20260920/{before,after-batch,acceptance}.json；旧源码备份同目录 private-before。
+产品已备份同步私有源码；三平台发布与旧版本联网升级/回退验收通过，证据 output/release-13114/publication.json。证据 output/preview-perf-20260920/{before,after-batch,acceptance}.json；旧源码备份同目录 private-before。

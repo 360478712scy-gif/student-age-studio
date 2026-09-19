@@ -677,7 +677,9 @@ class Renderer {
       const timeline=nativePositionFrames(track),frames=timeline.frames.map(p=>{const box=this.layout(node,{...role,x:p.x,y:p.y},state.reference);return {left:box.left,bottom:box.bottom,offset:timeline.duration?p.time/timeline.duration:0};});
       if(frames.length===1)frames.push({...frames[0],offset:1});
       if(retarget){const animation=node.scenePositionAnimations?.get('position');if(animation&&(animation.playState==='running'||animation.playState==='paused'))animation.effect.setKeyframes(frames);}
-      else node.scenePositionAnimations.set('position',node.animate(frames,{duration:Math.max(.001,timeline.duration)*1000,fill:'both',easing:'linear'}));
+      // layout() already stores the final pose. A forwards fill would keep an
+      // obsolete endpoint above it after late portrait metadata or a resize.
+      else node.scenePositionAnimations.set('position',node.animate(frames,{duration:Math.max(.001,timeline.duration)*1000,fill:'backwards',easing:'linear'}));
     }else{
       tween('left',left,node.style.left,motions.find(m=>m.code===3004)||entry||changeScale||flip,flip?.code===3007?.001:flip?.code===3005?.05:.4);
       tween('bottom',bottom,node.style.bottom,motions.find(m=>m.code===3008)||entry||changeScale);
