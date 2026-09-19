@@ -40,6 +40,8 @@ AUDIO = {'.wav', '.mp3', '.ogg', '.flac', '.m4a', '.aac'}
 # the next listing when capacity is available; repeated refreshes cannot evict
 # and starve the oldest unfinished image.
 _HASH_PENDING_CAP = 2000
+# Dead-file sweep of the pixel-hash index runs on worker drain past this size.
+_HASH_INDEX_PRUNE_AT = 5000
 
 
 def strings(value):
@@ -463,11 +465,7 @@ class AssetCatalog:
                 if not self._hash_pending:
                     self._hash_running = False
                     self._hash_generation += 1
-                    if len(self.image_hashes) > 20000:
-                        # Insertion-order trim: drop oldest quarter
-                        # to avoid recompute stampedes; values recompute identically.
-                        for old in list(self.image_hashes)[:5000]:
-                            self.image_hashes.pop(old, None)
+                    self._prune_hash_memory()
                     try: self.api.atomic_write(self.hash_index_path, self.api.json_bytes(self.hash_index), fsync=False)
                     except TypeError:
                         try: self.api.atomic_write(self.hash_index_path, self.api.json_bytes(self.hash_index))
@@ -497,7 +495,23 @@ class AssetCatalog:
             # to every image before foreground responsiveness is measured.
             time.sleep(.01)
 
-    def _deduplicate_backgrounds(self, items):
+    def _prune_hash_memory(self):
+        # Drop index rows for deleted files so the JSON stops growing over
+        # long sessions; survivors are re-added by the next directory listing
+        # if they reappear. Then keep only memory entries coherent with the
+        # live index; evicted values recompute identically on demand.
+        if len(self.hash_index) > _HASH_INDEX_PRUNE_AT:
+            self.hash_index = {path: row for path, row in self.hash_index.items()
+                               if Path(path).is_file()}
+        live = {(path, tuple(row['stamp'])): row['hash'] for path, row in self.hash_index.items()
+                if isinstance(row, dict) and isinstance(row.get('hash'), str) and isinstance(row.get('stamp'), list)}
+        if len(self.image_hashes) > len(live):
+            self.image_hashes = {key: value for key, value in self.image_hashes.items()
+                                 if live.get((key[0], tuple(key[1]))) == value}
+
+    def _deduplicate_backgrounds(self, items, versions=None):
+        # versions maps known _path -> fingerprint so repeated passes over the
+        # same files (entries + list filtering) fingerprint each file once.
         hashes = {}
         with self._hash_guard:
             if self.hash_index is None:
@@ -505,7 +519,10 @@ class AssetCatalog:
                 except self.api.ApiError: self.hash_index = {}
                 if not isinstance(self.hash_index, dict): self.hash_index = {}
             for path in dict.fromkeys(item['_path'] for item in items if item.get('_path')):
-                version = file_fingerprint(path)
+                if versions is not None and path in versions:
+                    version = versions[path]
+                else:
+                    version = file_fingerprint(path)
                 key = self.image_hashes.get((str(path), version))
                 saved = self.hash_index.get(str(path), {})
                 if key is None and isinstance(saved, dict) and saved.get('stamp') == list(version) and isinstance(saved.get('hash'), str): key = saved['hash']
@@ -544,7 +561,9 @@ class AssetCatalog:
         root=Path(folder['path'])
         if not root.is_dir() or link(root): return [(str(root), None)]
         # Directory identities reveal additions/removals. Reuse their names
-        # while still checking every media file's real change fingerprint.
+        # while still checking every media file's real change fingerprint:
+        # rewriting a file's contents does not bump its directory stamp, so
+        # file versions are never trusted from the directory entry alone.
         cache = getattr(self, '_directory_watch_cache', None)
         if cache is None: self._directory_watch_cache = cache = OrderedDict()
         pending = [root]
@@ -596,7 +615,14 @@ class AssetCatalog:
         folder_watch = self._folder_watch(folders['folders'][kind]) if folders else []
         if cache_key in self.cache:
             cached = self.cache[cache_key]
-            try: unchanged = cached.get('_folderWatch', []) == folder_watch and all(file_fingerprint(path) == version for path, version in cached.get('_files', []))
+            # Files already proven unchanged by the fresh folder watch above
+            # are not fingerprinted again; only mod-side files outside any
+            # watched folder still get their per-open check.
+            try:
+                watched = {row[0] for row in folder_watch} if cached.get('_folderWatch', []) == folder_watch else None
+                unchanged = watched is not None and all(
+                    str(path) in watched or file_fingerprint(path) == version
+                    for path, version in cached.get('_files', []))
             except OSError: unchanged = False
             if unchanged:
                 if '_rawItems' in cached and cached.get('_hashGeneration') != self._hash_generation:
@@ -624,14 +650,23 @@ class AssetCatalog:
             from character_media import expand
             items = expand(self, items, query['variantMode'], query.get('variantPerson', ''))
         files = {entry['_path'] for item in items for entry in [item, *item.get('_variants', [])] if entry.get('_path')}
-        file_versions = [(path, file_fingerprint(path)) for path in files]
+        # The fresh folder watch above already fingerprinted these files; reuse
+        # its versions instead of a second syscall pass over the library.
+        folder_versions = dict(folder_watch)
+        file_versions = []
+        for path in files:
+            key = str(path)
+            if key in folder_versions and folder_versions[key] is not None:
+                file_versions.append((path, folder_versions[key]))
+            else:
+                file_versions.append((path, file_fingerprint(path)))
         versions = dict(file_versions)
         for item in items:
             paths = sorted({entry['_path'] for entry in [item, *item.get('_variants', [])] if entry.get('_path')})
             item['mediaRevision'] = hashlib.sha256(json.dumps([(str(path),versions[path]) for path in paths]).encode()).hexdigest()[:24]
         if source == 'custom' and query.get('library') == '1': items = [item for item in items if item['origin'] == 'folder']
         raw_items = items; hash_generation = self._hash_generation
-        if kind == 'background' and query.get('library') != '1': items = self._deduplicate_backgrounds(items)
+        if kind == 'background' and query.get('library') != '1': items = self._deduplicate_backgrounds(items, versions)
         result = {'allMods': all_mods, 'catalogKey': cache_key, 'source': source, 'kind': kind, 'projectId': project.id, 'revision': revision,
                   'sourceProject': source_project.public() if source == 'mod' and not all_mods else None, 'sourceRevision': source_revision,
                   'items': items, 'warnings': list(dict.fromkeys(warnings_list)), '_project': project, '_files': file_versions, '_folderWatch':folder_watch}
@@ -687,8 +722,18 @@ class AssetCatalog:
             if query.get('type') and result['kind'] in {'audio','item'}:
                 items = [item for item in items if str(item.get('type')) == str(query['type']) or item.get('origin') == 'folder' and not item.get('audioTypeInferred')]
             # Filter first, then hide visually identical images without deleting files
-            # or losing a duplicate's membership in a different category.
-            if result['kind'] not in {'audio','portrait'} or query.get('variantMode') in {'portrait','expression'}: items = self._deduplicate_backgrounds(items)
+            # or losing a duplicate's membership in a different category. An
+            # unfiltered background set already deduplicated for the current
+            # hash generation stays unique, so the second pass is skipped; any
+            # filtered view or other kind keeps its exact old pass.
+            unfiltered = result['kind'] == 'background' and not str(query.get('q', '')).strip() and all(
+                query.get(key) in (None, '') for key in ('location', 'personId', 'personName', 'clothingCategory', 'audioGroup', 'type', 'socialOnly', 'affection'))
+            if result['kind'] not in {'audio','portrait'} or query.get('variantMode') in {'portrait','expression'}:
+                if unfiltered and result.get('_hashGeneration') == self._hash_generation:
+                    pass
+                else:
+                    versions = {path: version for path, version in result.get('_files', [])} or None
+                    items = self._deduplicate_backgrounds(items, versions)
             try: page, size = max(0, int(query.get('page', 0))), min(100, max(1, int(query.get('pageSize', 60))))
             except (TypeError, ValueError): self.error('素材页码无效。')
             total = len(items)

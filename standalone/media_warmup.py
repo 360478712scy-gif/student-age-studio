@@ -73,7 +73,15 @@ class MediaWarmup:
         except TypeError: api.atomic_write(path, data)
 
     def save_attempts(self, store):
-        try: self._index_write(store.asset_catalog.api, self.attempts_path(), store.asset_catalog.api.json_bytes(self.load_attempts()))
+        # Attempts are keyed per file; cap the ledger so years of renamed
+        # files cannot grow it without bound. Give-ups are kept first (they
+        # prevent retry storms); anything evicted is simply retried one day.
+        attempts = self.load_attempts()
+        while len(attempts) > 10000:
+            victim = next((key for key, record in attempts.items()
+                           if not (isinstance(record, dict) and record.get('gaveUp'))), None)
+            attempts.pop(victim if victim is not None else next(iter(attempts)))
+        try: self._index_write(store.asset_catalog.api, self.attempts_path(), store.asset_catalog.api.json_bytes(attempts))
         except OSError: pass
 
     def abandoned(self, key, signature):
@@ -104,6 +112,19 @@ class MediaWarmup:
         attempts=self.load_attempts()
         attempts[key]={'signature': signature, 'count': attempts.get(key, {}).get('count', 0) if isinstance(attempts.get(key), dict) else 0, 'message': message, 'gaveUp': True, 'at': time.time()}
         self.save_attempts(store)
+
+    @staticmethod
+    def _prune_preview_cache(root, keep=6000):
+        # Generated thumbnails regenerate on demand (the manifest treats a
+        # missing output as simply uncached), so capping the directory only
+        # costs an occasional re-encode, never user data.
+        try: scored = [(p.stat().st_mtime_ns, p) for p in root.iterdir() if p.is_file()]
+        except OSError: return
+        if len(scored) <= keep: return
+        scored.sort()
+        for _, path in scored[:len(scored) - keep]:
+            try: path.unlink()
+            except OSError: pass
 
     def request_scan(self):
         # A picker asks for change detection, never invalidates existing media.
@@ -452,6 +473,7 @@ class MediaWarmup:
             for output in row.get('outputs',[]):
                 p=Path(output)
                 if output not in live_outputs and p.resolve().parent==preview_root: p.unlink(missing_ok=True)
+        self._prune_preview_cache(preview_root)
         if entries!=previous:
             manifest.parent.mkdir(parents=True,exist_ok=True)
             self._index_write(store.asset_catalog.api,manifest,store.asset_catalog.api.json_bytes(entries))
