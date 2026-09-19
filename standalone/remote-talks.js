@@ -89,11 +89,19 @@ function hasText(row){const n=nodes.get(row);if(!n)return !!String(row?.content|
 const labelObservers=new WeakMap();
 function observeLabels(container,value,selector,identify){
  labelObservers.get(container)?.disconnect();const t=tables.get(value);if(!t||typeof IntersectionObserver==='undefined')return;
- const visible=new WeakSet();const observer=new IntersectionObserver(entries=>{for(const item of entries){const node=item.target,id=identify(node);if(!id||!value[id])continue;
-  if(!item.isIntersecting){visible.delete(node);if(node.dataset.segmentFallback!==undefined)node.textContent=node.dataset.segmentFallback;continue;}
-  visible.add(node);node.dataset.segmentFallback??=node.textContent;
-  ensure(value,[id]).then(()=>{setTimeout(()=>prune(t.base),0);if(labelObservers.get(container)!==observer||!node.isConnected||!visible.has(node))return;const content=value[id]?.content;if(content)node.textContent=content;}).catch(()=>{});
- }},{root:null,rootMargin:'0px'});
+ const visible=new WeakSet();const observer=new IntersectionObserver(entries=>{
+  const pending=[];
+  for(const item of entries){const node=item.target,id=identify(node);if(!id||!value[id])continue;
+   if(!item.isIntersecting){visible.delete(node);if(node.dataset.segmentFallback!==undefined)node.textContent=node.dataset.segmentFallback;continue;}
+   visible.add(node);node.dataset.segmentFallback??=node.textContent;pending.push({node,id});
+  }
+  if(!pending.length)return;
+  // One visible page is one page read, rather than one request per event card.
+  ensure(value,pending.map(item=>item.id)).then(()=>{
+   setTimeout(()=>prune(t.base),0);if(labelObservers.get(container)!==observer)return;
+   for(const {node,id}of pending){if(!node.isConnected||!visible.has(node)||!value[id])continue;const content=value[id]?.content;if(content)node.textContent=content;}
+  }).catch(()=>{});
+ },{root:null,rootMargin:'0px'});
  labelObservers.set(container,observer);container.querySelectorAll(selector).forEach(node=>observer.observe(node));
 }
 function projection(row){const n=nodes.get(row);if(!n)return row;return Object.fromEntries(n.fields(n.id).filter(k=>k!=='content').map(k=>[k,row[k]]));}

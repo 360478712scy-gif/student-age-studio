@@ -730,8 +730,11 @@ async function loadConditionCatalog(){
   const data=await get('/api/commands?projectId='+encodeURIComponent(projectId)),templates=data.commands?.condition||[],effects=data.commands?.effect||[],refs={},localIds={};
   if(!templates.some(t=>Number(t.template?.[0])===7&&Number(t.template?.[1])===0))templates.unshift({label:'人物关系',template:[7,0,0,1],match:{0:7,1:0},parameters:[{index:2,label:'与谁',type:'int',range:{table:'PersonCfg'}},{index:3,label:'关系是',type:'int',range:{table:'OtherRelationCfg'}}]});
   const tables=[...new Set(['ConditionTypeCfg','EffectTypeCfg','EvtTypeCfg','MapCfg','ActionCfg','ActionEvtCfg','InteractCfg',...[...templates,...effects].flatMap(t=>(t.parameters||[]).map(p=>p.range?.table).filter(Boolean))])];
-  let cursor=0;const failures=[];
-  await Promise.all(Array.from({length:4},async()=>{while(cursor<tables.length&&current()){const name=tables[cursor++];try{const d=await get('/api/table?'+new URLSearchParams({projectId,name}));refs[name]=d.rows;localIds[name]=d.localIds||[];}catch(e){failures.push(name+'：'+e.message);}}}));
+  const loaded={PersonCfg:'persons',EvtCfg:'events',OptionCfg:'options',TalkCfg:'talks'},failures=[];
+  const dataRefs=await get('/api/command-references?'+new URLSearchParams({projectId,names:tables.join(','),loaded:Object.keys(loaded).join(',')}));
+  for(const [name,d]of Object.entries(dataRefs.tables||{})){refs[name]=d.rows;localIds[name]=d.localIds||[];}
+  for(const [name,error]of Object.entries(dataRefs.errors||{}))failures.push(name+'：'+error);
+  for(const [name,key]of Object.entries(loaded))localIds[name]=S.localIds[key]||[];
   if(!current())return false;
   const doc=S.doc;
   if(!Object.keys(refs.OtherRelationCfg||{}).length)refs.OtherRelationCfg=window.StudentAgeCommandTypes.otherRelations();
@@ -739,7 +742,7 @@ async function loadConditionCatalog(){
   S.conditionTemplates=templates;S.effectTemplates=effects;S.conditionRefs=refs;S.conditionLocalIds=localIds;
   S.conditionsError=failures.length?'部分目录未读取成功：'+failures.join('；'):'';return true;
  }catch(error){if(current())S.conditionsError='条件和效果目录读取失败：'+error.message;return false;}
- finally{clearTimeout(timeout);if(current()){conditionLoadAbort=null;S.conditionsLoading=false;window.STUDIO_EVENTS?.refresh();refreshConditionNotice();const root=$('#editor-content');mountConditionEditors(root);mountEffectEditors(root);}}
+ finally{clearTimeout(timeout);if(current()){conditionLoadAbort=null;S.conditionsLoading=false;if(!storyPreview){window.STUDIO_EVENTS?.refresh();refreshConditionNotice();const root=$('#editor-content');mountConditionEditors(root);mountEffectEditors(root);}}}
 }
 window.STUDIO_RETRY_CONDITIONS=()=>loadConditionCatalog();
 function conditionMarkup(scope,id,field,title,description,forceOpen=false){return `<details class="condition-section" ${forceOpen||(S.doc?.[scope]?.[id]?.[field]||[]).length?'open':''}><summary>${h(title)} <span>${S.doc?.[scope]?.[id]?.[field]?.length||0} 项</span></summary><div data-condition-scope="${scope}" data-condition-id="${id}" data-condition-field="${field}" data-condition-description="${h(description)}"></div></details>`;}
@@ -1410,6 +1413,8 @@ function scenePlayerRender(state,flags) {
   if(!state.roles[S.previewRole]?.visible)S.previewRole=visible[0]?.id??null;
   if(S.previewRole!==null){S.face=state.roles[S.previewRole].face;S.cloth=state.roles[S.previewRole].cloth;}
   largeScene.setSelected(S.previewRole);
+  // Fullscreen playback keeps the authoring panels hidden until exit.
+  if(storyPreview){prepareSceneExpressions(state);updateStoryPreviewControls();if(flags.animate)stageAudio?.enter(state.talkId,state.trace);return;}
   $('#scene-enter-button small').textContent=visible.length+' 位人物在场';
   $('#scene-person-select').innerHTML=personOptions(S.previewRole);renderInitialPosition(state);
   const shownBackground=state.phone?.left||state.background,inheritedBackground=!state.phone&&!Number(talk()?.bg),backgroundName=S.doc.backgrounds[shownBackground]?assetName(S.doc.backgrounds[shownBackground],'background'):'';
@@ -1428,14 +1433,14 @@ function scenePlayerRender(state,flags) {
 function ensureScene() {
   if(!stageAudio)stageAudio=new StudentAgeScene.AudioPlayer({getCues:()=>S.doc?.audioCues,getUrl:audioUrl,getDefaultBgm:()=>S.defaultBgm?{...S.defaultBgm,url:assetUrl(S.defaultBgm.url)}:null,getLegacy:id=>S.audios.find(a=>Number(a.id)===Number(S.doc?.talks[id]?.audio)),onWarning:m=>toast(m,'note')});
   if(!largeScene)largeScene=new StudentAgeScene.Renderer($('#large-scene'),{screenRefs:()=>S.conditionRefs,onPaperClose:()=>scenePlayer?.schedule(),assetUrl,emojiAtlas:'/api/social-emojis?token='+encodeURIComponent(token),talkUi:{manifest:'/api/talk-ui?token='+encodeURIComponent(token),resource:name=>'/api/talk-ui?resource='+encodeURIComponent(name)+'&token='+encodeURIComponent(token)},onBeforeInteract:()=>{if(storyPreview||!isLocalProject(S.project))return false;if(linePlayback)stopLinePlayback();return sceneMode==='edit';},onDrag:commitSceneDrag,onSelectRole:selectStageRole,onContextMenu:openActorMenu,onCGContextMenu:openCGMenu,onAssetStatus:renderSceneWarnings,canEditDialogue:()=>sceneMode==='edit'&&isLocalProject(S.project)&&!!talk(),onChooseSpeaker:cycleSpeaker});
-  if(!scenePlayer)scenePlayer=new StudentAgeScene.Player({loadTalk:id=>Remote.ensure(S.doc.talks,[id],{pin:true}),getDoc:()=>({...S.doc,branchFolders:S.branchFolders}),onHistory:recordPreviewHistory,getContext:sceneContext,manual:()=>!!largeScene?.paperVisible||!!storyPreview&&(!storyPreview.auto||storyPreview.exiting||$('#story-history').open),getChoices:previewRoutes,onRender:scenePlayerRender,onChoices:choices=>{largeScene.showChoices(choices,route=>scenePlayer.choose(route));$('#scene-status').textContent='请选择要预览的路线。';},onSelect:id=>{S.selected=id;S.activeFolder=Branches.ownedBy(S.branchFolders,id);if(S.activeFolder)S.folderOpen[S.activeFolder]=true;S.coalesce=null;renderChrome();renderList();renderEditor();},onWarning:m=>toast(m,'note'),onPlaying:()=>updateStoryPreviewControls()});
+  if(!scenePlayer)scenePlayer=new StudentAgeScene.Player({loadTalk:id=>Remote.ensure(S.doc.talks,[id],{pin:true}),getDoc:()=>({...S.doc,branchFolders:S.branchFolders}),onHistory:recordPreviewHistory,getContext:sceneContext,manual:()=>!!largeScene?.paperVisible||!!storyPreview&&(!storyPreview.auto||storyPreview.exiting||$('#story-history').open),getChoices:previewRoutes,onRender:scenePlayerRender,onChoices:choices=>{largeScene.showChoices(choices,route=>scenePlayer.choose(route));$('#scene-status').textContent='请选择要预览的路线。';},onSelect:id=>{S.selected=id;S.activeFolder=Branches.ownedBy(S.branchFolders,id);if(S.activeFolder)S.folderOpen[S.activeFolder]=true;S.coalesce=null;if(!storyPreview){renderChrome();renderList();renderEditor();}},onWarning:m=>toast(m,'note'),onPlaying:()=>updateStoryPreviewControls()});
 }
 function renderPreview() {
   if(S.doc)window.StudentAgePreviewUI?.load();
   if(S.doc&&talk())prepareSceneExpressions(currentStage());
   $('#scene-panel').hidden=!talk();
   if(!S.doc||!talk()){renderInspector();return;}
-  if(sceneMode!=='edit'){largeScene?.refreshPortraits();renderInspector();return;}
+  if(sceneMode!=='edit'){largeScene?.refreshPortraits();if(!storyPreview)renderInspector();return;}
   if(!sceneSyncing){ensureScene();sceneSyncing=true;try{if(scenePlayer.scene?.talkId===S.selected)scenePlayer.refresh();else scenePlayer.select(S.selected);}finally{sceneSyncing=false;}}
 }
 function renderMiniScene(){renderPreview();}
@@ -1569,7 +1574,7 @@ function refreshSceneAssets(){
   StudentAgeActionEditor.refresh?.();
   largeScene?.invalidateAssets();
   // A background cache response must not replace an in-progress movement with its final pose.
-  if(sceneMode!=='edit'){largeScene?.refreshPortraits();renderInspector();return;}
+  if(sceneMode!=='edit'){largeScene?.refreshPortraits();if(!storyPreview)renderInspector();return;}
   const animations=largeScene?.container.getAnimations?.({subtree:true}).filter(a=>a.playState==='running')||[];
   if(animations.length){
     const scene=scenePlayer?.scene;
@@ -1811,7 +1816,7 @@ window.STUDIO_SET_ORIGINAL_MODE=async value=>{
  try{await selectProjectHome(id,true);}catch(error){window.STUDIO_ORIGINAL_SOURCE.set(before?id:null);await selectProjectHome(id,true);throw error;}
 };
 window.STUDIO_OPEN_EDITOR=async()=>window.STUDIO_OPEN_EVENTS();
-window.STUDIO_EVENT_CONTEXT=()=>({project:S.project,doc:S.doc,currentEvent:S.event,originalIds:S.catalogAll?.events||new Set(),readOnly:!!S.project?.readOnly,dirty:S.dirty,saving:S.saving,conditionTemplates:allConditionTemplates(),conditionRefs:S.conditionRefs,conditionsReady:!S.conditionsLoading,unassignedTalkIds:unassignedTalkIds()});
+window.STUDIO_EVENT_CONTEXT=()=>({project:S.project,doc:S.doc,currentEvent:S.event,originalIds:S.catalogAll?.events||new Set(),readOnly:!!S.project?.readOnly,dirty:S.dirty,saving:S.saving,conditionTemplates:allConditionTemplates(),conditionRefs:S.conditionRefs,conditionsReady:!S.conditionsLoading,get unassignedTalkIds(){return unassignedTalkIds();}});
 window.STUDIO_OPEN_EVENTS=()=>{if(!S.project)return false;window.STUDIO_PAUSE_PREVIEW();closeContextMenu();window.STUDIO_EVENTS.open();return true;};
 window.STUDIO_CREATE_EVENT=createEvent;
 window.STUDIO_OVERRIDE_ORIGINAL_EVENT=async id=>{

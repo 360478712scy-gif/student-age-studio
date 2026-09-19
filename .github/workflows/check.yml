@@ -20,6 +20,7 @@ jobs:
       - run: node standalone/tests/indexed-talks.cjs
       - run: node standalone/tests/remote-talks.cjs
       - run: node standalone/tests/remote-scene.cjs
+      - run: node standalone/tests/event-list-cache.cjs
       - run: node standalone/tests/bulk-references.cjs
       - run: node qa/tests/dialogue-text.cjs
       - run: node qa/tests/scene-engine.cjs

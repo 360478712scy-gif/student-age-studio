@@ -2244,11 +2244,45 @@ class StudioStore:
                                                'match': dict(enumerate(row)), 'parameters': []})
             return {"commands": commands}
 
-    def table(self, project_id, requested):
+    def command_references(self, project_id, requested, loaded=()):
+        """One consistent read for picker references, without editable-table copies."""
+        if len(requested)>128:raise ApiError("引用表过多。")
+        names=tuple(sorted({self.table_name(name) for name in requested}))
+        with self.lock, self.catalog_scope():
+            project=self.project(project_id)
+            revision=self.revision(project)
+            cache=getattr(self, '_command_reference_cache', None)
+            if cache is None:cache=self._command_reference_cache={}
+            loaded=frozenset(loaded)&{'PersonCfg','EvtCfg','OptionCfg','TalkCfg'}
+            if project.original_mode:loaded=frozenset()
+            key=(str(project.path),project.original_mode,names,tuple(sorted(loaded)))
+            cached=cache.get(key)
+            if cached and cached['revision']==revision:return cached
+            result={'revision':revision,'tables':{},'errors':{}}
+            for name in names:
+                try:
+                    if name in loaded:
+                        # The browser overlays its current draft. Still retain all original references.
+                        rows=copy.deepcopy(self.catalog_rows(name))
+                        if name=='TalkCfg':
+                            for ident in flat_deletions(read_json(project.path/'StudentAgeStudio/deleted-talks.json',{})):rows.pop(ident,None)
+                        result['tables'][name]={'rows':rows,'localIds':[]}
+                    else:result['tables'][name]=self.table(project_id,name,_reference_revision=revision)
+                except ApiError as error:result['errors'][name]=str(error)
+            if self.revision(project)!=revision:
+                raise ApiError("读取时模组发生变化，请重试。",409,"conflict")
+            # Failed reads can recover on retry; never retain them. Bound retained data.
+            cache.pop(key,None)
+            if not result['errors'] and len(json.dumps(result,ensure_ascii=False))<=4*1024*1024:
+                cache[key]=result
+                while len(cache)>4:cache.pop(next(iter(cache)))
+            return result
+
+    def table(self, project_id, requested, *, _reference_revision=None):
         with self.lock:
             project = self.project(project_id)
             name = self.table_name(requested)
-            revision = self.revision(project)
+            revision = _reference_revision if _reference_revision is not None else self.revision(project)
             local = read_json(safe_path(project.path, "Cfgs/zh-cn/" + name + ".json"), {})
             inherited = self.catalog_rows(name)
             import plugin_mode
@@ -2272,8 +2306,13 @@ class StudioStore:
                 markers = flat_deletions(read_json(safe_path(project.path, "StudentAgeStudio/deleted-talks.json"), {}))
                 for key in markers:
                     rows.pop(key, None)
-            if revision != self.revision(project):
+            if _reference_revision is None and revision != self.revision(project):
                 raise ApiError("读取时配置发生变化，请重新载入。", 409, "conflict")
+            if _reference_revision is not None:
+                local_ids=list(rows) if project.original_mode else [key for key in local if key in rows]
+                if name == "PersonCfg":
+                    for ident in read_json(project.path/"StudentAgeStudio/goal-images.json", {}):rows.pop(ident,None)
+                return {"rows":plugin_mode.visible(project,sys.modules[__name__],name,rows),"localIds":local_ids}
             local_rows = copy.deepcopy(rows) if project.original_mode else {key: copy.deepcopy(rows[key]) for key in local if key in rows}
             if name == "PersonCfg":
                 for ident in read_json(project.path/"StudentAgeStudio/goal-images.json", {}): rows.pop(ident, None)
@@ -3906,6 +3945,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                     return self.send_json(self.server.store.talk_segments.open(query.get('projectId', [''])[0], expanded))
                 except SegmentError as error:
                     raise ApiError(str(error), 422, 'segment_unavailable') from error
+            if route == "/api/command-references":
+                return self.send_json(self.server.store.command_references(query.get("projectId", [""])[0],query.get("names", [""])[0].split(','),query.get("loaded", [""])[0].split(',')))
             if route == "/api/commands":
                 return self.send_json(self.server.store.command_catalog(query.get("projectId", [""])[0]))
             if route == "/api/workshop":

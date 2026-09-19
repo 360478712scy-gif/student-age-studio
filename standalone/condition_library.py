@@ -115,6 +115,31 @@ class ConditionLibrary:
         self.cache_key = None
         self.cache = []
         self.mod_cache = {}
+        self.table_cache = {}
+        self.table_lock = threading.RLock()
+
+    def local_entries(self, project):
+        # A title/text edit must not invalidate conditions in every other JSON file.
+        entries, failures = [], {}
+        with self.table_lock, self.store.catalog_scope():
+            schema_stamp=self.store.catalog_stamp()
+            for filename,path in self.store.cfg_table_files(project).items():
+                key=(str(project.path),filename)
+                stamp=(self.api.file_fingerprint(path),schema_stamp)
+                cached=self.table_cache.get(key)
+                if cached and cached[0]==stamp:
+                    entries.extend(copy.deepcopy(cached[1]));continue
+                maps, errors=self.store.readable_maps(project,{filename})
+                failures.update(errors)
+                if errors:
+                    self.table_cache.pop(key,None);continue
+                rows=maps.get(filename,{})
+                found=collect(filename[:-5],rows,self.store.table_schema(filename[:-5],rows))
+                if self.api.file_fingerprint(path)==stamp[0]:
+                    self.table_cache[key]=(stamp,found)
+                    while len(self.table_cache)>256:self.table_cache.pop(next(iter(self.table_cache)))
+                entries.extend(copy.deepcopy(found))
+        return entries,failures
 
     def start(self):
         with self.lock:
@@ -140,10 +165,7 @@ class ConditionLibrary:
                     revision = self.store.revision(project)
                     cached = self.mod_cache.get(project.id)
                     if not cached or cached[0] != revision:
-                        maps, failures = self.store.readable_maps(project)
-                        rows = []
-                        for table, values in maps.items():
-                            if isinstance(values, dict): rows.extend(collect(table[:-5], values, self.store.table_schema(table[:-5], values)))
+                        rows, failures = self.local_entries(project)
                         rows = compact(rows)
                         state = self.api.read_json(self.api.safe_path(project.path, 'StudentAgeStudio/editor-state.json'), {})
                         premises = state.get('premises', {}) if isinstance(state, dict) else {}
@@ -174,10 +196,7 @@ class ConditionLibrary:
         if key != self.cache_key:
             catalog = self.store.catalog()
             original = cached.get('entries', []) if complete else compact([e for table, rows in catalog.get('tables', {}).items() if isinstance(rows, dict) for e in collect(table, rows, catalog.get('schemas', {}).get(table))])
-            local = []
-            maps, _ = self.store.readable_maps(project)
-            for table, rows in maps.items():
-                if isinstance(rows, dict): local.extend(collect(table[:-5], rows, self.store.table_schema(table[:-5], rows)))
+            local, _ = self.local_entries(project)
             state = self.api.read_json(self.api.safe_path(project.path, 'StudentAgeStudio/editor-state.json'), {})
             premises = state.get('premises', {}) if isinstance(state, dict) else {}
             self.cache = [dict(e, origin=origin) for origin, rows in [('original', original), ('local', compact(local)), ('named', named_entries(premises))] for e in rows]
