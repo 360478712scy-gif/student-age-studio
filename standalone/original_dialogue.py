@@ -10,13 +10,18 @@ import json
 import os
 import sqlite3
 import tempfile
+import time
 from pathlib import Path
 
+from platform_support import replace_file
 from storage_paths import game_cache
 
 FILENAME = 'original-dialogue-v1.sqlite'
 TABLES = {'TalkCfg': 'talks', 'OptionCfg': 'options'}
 MAX_ROWS = 20000  # one load never pulls more original rows than this
+# A read-only handle still locks the file on Windows. Reopen after this long
+# without use so catalog refreshes can replace it; reopening is transparent.
+IDLE_CLOSE_SECONDS = 120
 
 
 def path(game):
@@ -42,7 +47,9 @@ def write(game, talks, options):
             connection.commit()
         finally:
             connection.close()
-        os.replace(temporary, target)
+        # Tolerate a reader holding the file on Windows; replace_file retries
+        # sharing violations before giving up.
+        replace_file(temporary, target)
     except BaseException:
         try: os.unlink(temporary)
         except OSError: pass
@@ -75,6 +82,7 @@ class OriginalDialogue:
         self._game = game_getter
         self._connection = None
         self._stamp = None
+        self._last_use = 0.0
 
     def _open(self):
         try:
@@ -84,7 +92,12 @@ class OriginalDialogue:
             self.close()
             return None
         if self._connection is not None and stamp == self._stamp:
-            return self._connection
+            if time.monotonic() - self._last_use < IDLE_CLOSE_SECONDS:
+                self._last_use = time.monotonic()
+                return self._connection
+            # Idle too long: drop the handle so a pending catalog refresh can
+            # replace the file on Windows, then reopen transparently below.
+            self.close()
         self.close()
         uri = 'file:' + str(target).replace('?', '%3F').replace('#', '%23') + '?mode=ro'
         try:
@@ -95,6 +108,7 @@ class OriginalDialogue:
             self.close()
             return None
         self._stamp = stamp
+        self._last_use = time.monotonic()
         return self._connection
 
     def close(self):

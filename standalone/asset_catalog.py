@@ -32,8 +32,14 @@ IMPORT_SLICE = 192 * 1024 * 1024
 from headshots import head_paths, crop_head, preview_image, has_affection, scene_location
 
 KINDS = {'portrait': 'PersonCfg', 'background': 'BgCfg', 'cg': 'CGCfg', 'audio': 'AudioCfg', 'social': 'KZoneContentCfg', 'avatar':'KZoneAvatarCfg', 'item':'ItemCfg'}
-IMAGES = {'.png', '.jpg', '.jpeg', '.webp'}
+# BMP/TGA are accepted and converted to PNG on import so the warmup previews
+# and the importer agree on the same set; game-facing bytes stay PNG/JPEG/WebP.
+IMAGES = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tga'}
 AUDIO = {'.wav', '.mp3', '.ogg', '.flac', '.m4a', '.aac'}
+# Background pixel-hash queue: evicted entries are re-enqueued on the next
+# directory listing (their hash is still unknown), so a cap only delays
+# de-duplication instead of changing it.
+_HASH_PENDING_CAP = 2000
 
 
 def strings(value):
@@ -199,7 +205,7 @@ class AssetCatalog:
                         info['duration'] = frames / rate
                 except (wave.Error, EOFError, ValueError): self.error('WAV 音频不完整或无法解码。', 422)
         else:
-            if path.suffix.lower() not in IMAGES: self.error('请选择 PNG、JPEG 或 WebP 图片。')
+            if path.suffix.lower() not in IMAGES: self.error('请选择 PNG、JPEG、WebP、BMP 或 TGA 图片。')
             if self.api.Image is None: self.error('缺少图片解码组件。', 503)
             try:
                 with warnings.catch_warnings():
@@ -209,8 +215,8 @@ class AssetCatalog:
                     # while halving Defender-scanned reads on Windows.
                     data = path.read_bytes()
                     with self.api.Image.open(io.BytesIO(data)) as image:
-                        if image.format not in {'PNG', 'JPEG', 'WEBP'}:
-                            self.error('图片实际格式必须为 PNG、JPEG 或 WebP。', 422)
+                        if image.format not in {'PNG', 'JPEG', 'WEBP', 'BMP', 'TGA'}:
+                            self.error('图片实际格式必须为 PNG、JPEG、WebP、BMP 或 TGA。', 422)
                         info = {'width': image.width, 'height': image.height, 'size': fingerprint[1]}
                         image.verify()
                     with self.api.Image.open(io.BytesIO(data)) as image: image.load()
@@ -218,11 +224,16 @@ class AssetCatalog:
             except Exception: self.error('图片损坏或无法解码。', 422)
         if stamp(path) != fingerprint: self.error('读取时素材发生变化，请刷新列表。', 409, 'conflict')
         info['_fingerprint'] = fingerprint
+        self._remember_validation(key, info)
+        return info
+
+    def _remember_validation(self, key, info):
+        # Single choke point for the validation cache so background warmup and
+        # foreground checks share the same LRU bound.
         self.validation[key] = info
         self.validation.move_to_end(key)
         while len(self.validation) > self._validation_cap:
             self.validation.popitem(last=False)
-        return info
 
     def _resource(self, project, resource, kind, validate=False):
         path = self.store.project_asset(project, resource)
@@ -497,6 +508,8 @@ class AssetCatalog:
                 if key is None and isinstance(saved, dict) and saved.get('stamp') == list(version) and isinstance(saved.get('hash'), str): key = saved['hash']
                 if key is not None: hashes[path] = key
                 elif (path,version) not in self._hash_pending and (path,version) != self._hash_active:
+                    while len(self._hash_pending) >= _HASH_PENDING_CAP:
+                        self._hash_pending.popitem(last=False)
                     self._hash_pending[(path,version)] = None
                     self._hash_total += 1
             if self._hash_pending and not self._hash_running:

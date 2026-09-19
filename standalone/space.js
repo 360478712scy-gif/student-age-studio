@@ -4,7 +4,7 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 function create(host,options){
  const S={data:null,profiles:{},messages:{},avatars:{},layouts:{},selected:null,saved:'',revision:null,busy:false,undo:[],redo:[],last:null,search:''};
  const dialog=document.createElement('dialog');dialog.className='social-dialog space-picker';document.body.append(dialog);
- const imageInput=document.createElement('input');imageInput.type='file';imageInput.id='space-avatar-file';imageInput.accept='image/png,image/jpeg,image/webp';imageInput.hidden=true;document.body.append(imageInput);
+ const imageInput=document.createElement('input');imageInput.type='file';imageInput.id='space-avatar-file';imageInput.accept='image/png,image/jpeg,image/webp,image/bmp,image/x-tga';imageInput.hidden=true;document.body.append(imageInput);
  const player=document.createElement('audio');player.loop=true;player.preload='none';player.hidden=true;player.dataset.spaceAudio='';let audioKey='';
  const $=q=>host.querySelector(q),api=options.api,status=options.status,readonly=()=>!!(options.project.readOnly||options.project.readonly||String(options.project.id).startsWith('workshop:'));
  const profiles=()=>({...S.data.referenceProfiles,...S.profiles}),messages=()=>({...S.data.referenceMessages,...S.messages}),avatars=()=>({...S.data.referenceAvatars,...S.avatars});

@@ -42,6 +42,9 @@ class OriginalDialogueTests(unittest.TestCase):
                                                              'baseTalkIds': sorted(int(k) for k in ORIGINAL_TALKS)}, ensure_ascii=False), encoding='utf-8')
         original_dialogue.write(self.root / 'Game', ORIGINAL_TALKS, ORIGINAL_OPTIONS)
         self.store = b.StudioStore(self.root / 'Mods', self.root / 'Workshop', self.root / 'Game', asset_settings_path=self.root / 'assets.json')
+        # Close the read-only SQLite handle before TemporaryDirectory cleanup:
+        # Windows cannot unlink an open database file.
+        self.addCleanup(self.store.close)
         self.ident = self.store.create('原版覆盖')['id']
         self.project = self.store.project(self.ident)
         self.cfg = self.project.path / 'Cfgs/zh-cn'
@@ -93,6 +96,26 @@ class OriginalDialogueTests(unittest.TestCase):
         self.store.save({'projectId': self.ident, 'revision': data['revision'], 'talks': talks})
         after = json.loads((self.cfg / 'TalkCfg.json').read_text(encoding='utf-8'))
         self.assertEqual(after['1001002']['content'], '改过的二'); self.assertNotIn('1001001', after)
+
+    def test_corrupt_edits_open_as_empty_with_warning(self):
+        with original_mode.scope(self.ident):
+            target = self.project.path / 'StudentAgeStudio/original-edits.json'
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b'{"TalkCfg": "broken"}')
+            data = self.store.load(self.ident)
+            self.assertTrue(any('原版资源编辑记录损坏' in warning for warning in data['warnings']))
+            # Writes stay fail-closed: the strict reader still refuses.
+            with self.assertRaises(b.ApiError):
+                original_mode.owned(self.store, self.project)
+
+    def test_idle_connection_reopens_transparently(self):
+        holder = self.store.original_dialogue
+        self.assertTrue(holder.available())
+        first = holder._connection
+        with patch.object(original_dialogue.time, 'monotonic', return_value=holder._last_use + 1000):
+            self.assertTrue(holder.available())
+        self.assertIsNot(holder._connection, first)
+        self.assertEqual(set(holder.rows('TalkCfg', [1001001])), {'1001001'})
 
     def test_original_mode_loads_only_opened_events_and_prefers_mod_overrides(self):
         with original_mode.scope(self.ident):

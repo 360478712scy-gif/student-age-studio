@@ -36,12 +36,37 @@ def saved_cache_path(settings):
     return str(Path(value).expanduser().resolve()) if isinstance(value, str) and value.strip() else ''
 
 
+_default_cache_usable = None
+
+
+def _install_cache_dir():
+    """Windows default cache with a one-time writability probe.
+
+    Program Files installs are not writable without elevation; falling back to
+    the user profile only when the probe fails keeps every working setup on
+    exactly the same path as before.
+    """
+    global _default_cache_usable
+    default = installation_root()/'Cache'
+    if _default_cache_usable is None:
+        try:
+            default.mkdir(parents=True, exist_ok=True)
+            probe = default/'.write-test'
+            with probe.open('wb') as stream:
+                stream.write(b'ok')
+            probe.unlink(missing_ok=True)
+            _default_cache_usable = True
+        except OSError:
+            _default_cache_usable = False
+    return default if _default_cache_usable else user_data_root()/'Cache'
+
+
 def cache_root(fallback=None):
     override = os.environ.get('STUDIO_CACHE_ROOT')
     if override: return Path(override).expanduser().resolve()
     configured = saved_cache_path(str(preference_path()))
     if configured: return Path(configured)
-    if os.name == 'nt': return installation_root()/'Cache'
+    if os.name == 'nt': return _install_cache_dir()
     return Path(fallback) if fallback is not None else user_data_root()/'Cache'
 
 

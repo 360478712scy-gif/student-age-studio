@@ -156,7 +156,10 @@ def analyze_json_text(text, repair=False, max_fixes=64):
     work = compatible_json(text)
     field = re.compile(r'"(?:\\.|[^"\\])*"[ \t\r\n]*:')
     errors, fixes, inserts = [], [], []
-    budget = max_fixes if repair else 0
+    # Same shape as load_compatible_json: small documents keep the full repair
+    # budget, while a damaged huge file cannot hold the lock for dozens of
+    # full re-parses.
+    budget = min(max_fixes, 4 * MAX_JSON // max(1, len(text))) if repair else 0
     decoder = lambda value: json.loads(value, strict=False, parse_constant=lambda v: (_ for _ in ()).throw(ValueError(v)))
     for attempt in range(budget + 1):
         try:
@@ -236,9 +239,12 @@ def read_json(path, fallback=None):
         raise ApiError("配置文件不是有效 JSON，请先修复该文件：" + path.name + position, 422)
 
 
-def inside(path, root):
+def inside(path, root, _root_resolved=None):
+    # Hot loops (revision scans) pre-resolve the stable root once; every other
+    # caller keeps the two-argument form with identical semantics.
     try:
-        path.resolve().relative_to(root.resolve())
+        resolved = _root_resolved if _root_resolved is not None else root.resolve()
+        path.resolve().relative_to(resolved)
         return True
     except (ValueError, OSError, RuntimeError):
         return False
@@ -487,6 +493,14 @@ class StudioStore:
         self.talk_segments = SegmentService(self, sys.modules[__name__])
         from original_dialogue import OriginalDialogue
         self.original_dialogue = OriginalDialogue(lambda: self.game)
+
+    def close(self):
+        # Release OS handles (read-only SQLite locks the file on Windows) so
+        # switching games or shutting down never leaves files undeletable.
+        holder = getattr(self, 'original_dialogue', None)
+        if holder is not None:
+            try: holder.close()
+            except Exception: pass
 
     def _project_root(self, path, readonly):
         if readonly:
@@ -764,17 +778,19 @@ class StudioStore:
             if cached and cached[0] == fingerprints:
                 return cached[1]
             digest = hashlib.sha256()
+            project_root = project.path.resolve()
             for path in paths:
                 digest.update(str(path.relative_to(project.path)).encode())
                 if path.exists():
-                    if not inside(path, project.path) or path.stat().st_size > MAX_JSON:
+                    if not inside(path, project.path, project_root) or path.stat().st_size > MAX_JSON:
                         raise ApiError("配置文件过大或路径无效。", 413)
                     with path.open('rb') as stream:
                         for block in iter(lambda: stream.read(1024 * 1024), b''):
                             digest.update(block)
                 else:
                     digest.update(b"<missing>")
-            if catalog_path.is_file() and inside(catalog_path, game_cache(self.game)) and catalog_path.stat().st_size <= MAX_JSON:
+            game_root = game_cache(self.game)
+            if catalog_path.is_file() and inside(catalog_path, game_root, game_root.resolve()) and catalog_path.stat().st_size <= MAX_JSON:
                 digest.update(b"game-catalog.json")
                 with catalog_path.open('rb') as stream:
                     for block in iter(lambda: stream.read(1024 * 1024), b''):
@@ -819,7 +835,7 @@ class StudioStore:
                     inherited = {}
                 merged = copy.deepcopy(inherited)
                 merged.update(local)
-                if project.original_mode: merged = original_mode.visible_rows(self, project, filename[:-5], local)
+                if project.original_mode: merged = original_mode.visible_rows(self, project, filename[:-5], local, result["warnings"])
                 result[name] = merged
                 result["localIds"][name] = list(merged) if project.original_mode else list(local)
                 catalog_ids = list(inherited)
@@ -1125,6 +1141,27 @@ class StudioStore:
         reveal_file(path)
         return {"ok": True, "path": str(path)}
 
+    def _prune_commit_backups(self, project, keep=20):
+        # Per-save snapshots under StudentAgeStudio/Backups/ would otherwise
+        # grow without bound on autosave. Never fail the save for pruning.
+        try:
+            root = project.path / 'StudentAgeStudio/Backups'
+            if not root.is_dir():
+                return 0
+            stamps = sorted(p for p in root.iterdir()
+                            if p.is_dir() and not p.is_symlink()
+                            and re.fullmatch(r'\d{8}-\d{6}-[0-9a-f]{10}', p.name))
+            removed = 0
+            for stale in stamps[:max(0, len(stamps) - keep)]:
+                try:
+                    shutil.rmtree(stale)
+                    removed += 1
+                except OSError:
+                    continue
+            return removed
+        except OSError:
+            return 0
+
     def commit(self, project, changes, expected_revision=None, *, allowed_record_ids=None, raw=False):
         """Serialize writers across independent desktop application instances."""
         save_review.checkpoint()
@@ -1221,6 +1258,7 @@ class StudioStore:
                 replaced.append(relative)
             journal["state"] = "committed"
             atomic_write(backup / "transaction.json", json_bytes(journal))
+            self._prune_commit_backups(project)
             return str(backup)
         except Exception:
             for relative in reversed(replaced):
@@ -1228,7 +1266,21 @@ class StudioStore:
                 if originals[relative] is None:
                     path.unlink(missing_ok=True)
                 else:
-                    atomic_write(path, originals[relative])
+                    # Restore from the snapshot copy already on disk: a rename
+                    # needs no free space, so a full disk cannot break rollback
+                    # the way it broke the commit.
+                    try:
+                        replace_file(safe_path(backup, relative), path)
+                    except OSError:
+                        # Snapshot copy itself is missing; fall back to the
+                        # in-memory bytes without an fsync.
+                        fallback = path.with_name("." + path.name + ".rollback-" + secrets.token_hex(6) + ".tmp")
+                        try:
+                            with fallback.open("xb") as stream:
+                                stream.write(originals[relative])
+                            replace_file(fallback, path)
+                        finally:
+                            fallback.unlink(missing_ok=True)
             try:
                 atomic_write(backup / "transaction.json", json_bytes({"state": "rolled_back", "files": list(originals)}))
             except OSError:
@@ -1595,8 +1647,15 @@ class StudioStore:
             if any(not valid_id(ident) for ident in deleted):
                 save_warnings.append("待删除对话编号中有无效项，已忽略。"); deleted = [ident for ident in deleted if valid_id(ident)]
             # The full talks map authorizes deletion of rows omitted from it as well.
+            # ...but only for explicitly declared deletions: silently dropping rows
+            # the editor never sent (truncated payload, partial page) must abort.
             removed = set(str(ident) for ident in deleted) | cascade_deleted
             if "talks" in payload:
+                undeclared = set(original_talks) - set(payload["talks"]) - removed
+                if undeclared:
+                    sample = ", ".join(sorted(undeclared)[:5])
+                    raise ApiError("对话表缺失 " + str(len(undeclared)) + " 行（例如 " + sample +
+                                   "），既不在删除列表也不在本次提交中；为避免误删已中止保存，请重新载入后重试。", 409, "conflict")
                 removed.update(set(original_talks) - set(payload["talks"]))
                 if payload.get("_fullCatalogTable") == "TalkCfg" or isinstance(catalog.get("talks"), dict):
                     removed.update(set(catalog_talks) - set(payload["talks"]))
@@ -2083,7 +2142,7 @@ class StudioStore:
             validate_map(local, name, allow_zero=True)
             rows = copy.deepcopy(inherited)
             rows.update(local)
-            if project.original_mode: rows = original_mode.visible_rows(self, project, name, local)
+            if project.original_mode: rows = original_mode.visible_rows(self, project, name, local, warnings_list)
             if name == "TalkCfg":
                 markers = flat_deletions(read_json(safe_path(project.path, "StudentAgeStudio/deleted-talks.json"), {}))
                 for key in markers:
@@ -2603,8 +2662,9 @@ class StudioStore:
                 base = Path(base)
                 directories[:] = [name for name in directories if not (base/name).is_symlink()]
                 candidates.extend(base/name for name in names if name.lower().endswith('.json'))
+        root_resolved = project.path.resolve()
         for path in sorted(candidates):
-            if path.is_symlink() or not path.is_file() or not inside(path, project.path): continue
+            if path.is_symlink() or not path.is_file() or not inside(path, project.path, root_resolved): continue
             files[path.relative_to(project.path).as_posix()] = path
         return files
 
@@ -3142,8 +3202,8 @@ def normalize_image(raw, maximum=MAX_IMAGE):
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
             with Image.open(io.BytesIO(raw)) as source:
-                if source.format not in ("PNG", "JPEG", "WEBP") or source.width > MAX_DIMENSION or source.height > MAX_DIMENSION or source.width * source.height > MAX_PIXELS:
-                    raise ApiError("请使用不超过 4096 边长的 PNG、JPEG 或 WebP 图片。")
+                if source.format not in ("PNG", "JPEG", "WEBP", "BMP", "TGA") or source.width > MAX_DIMENSION or source.height > MAX_DIMENSION or source.width * source.height > MAX_PIXELS:
+                    raise ApiError("请使用不超过 4096 边长的 PNG、JPEG、WebP、BMP 或 TGA 图片。")
                 source.verify()
             with Image.open(io.BytesIO(raw)) as source:
                 source.load()
@@ -3164,7 +3224,7 @@ def normalize_image(raw, maximum=MAX_IMAGE):
     except ApiError:
         raise
     except Exception:
-        raise ApiError("图片无法解码，请选择完整的 PNG、JPEG 或 WebP 文件。", 422)
+        raise ApiError("图片无法解码，请选择完整的 PNG、JPEG、WebP、BMP 或 TGA 文件。", 422)
 
 
 
@@ -3349,6 +3409,8 @@ class StudioServer(ThreadingHTTPServer):
 
     def server_close(self):
         if hasattr(self, 'media_warmup'): self.media_warmup.close()
+        try: self.store.close()
+        except Exception: pass
         super().server_close()
 
     def cache_settings(self, payload=None):
@@ -3454,6 +3516,8 @@ class StudioServer(ThreadingHTTPServer):
 
     def use_location(self, row, migrate_cache=True):
         if hasattr(self, "media_warmup"): self.media_warmup.close()
+        try: self.store.close()
+        except Exception: pass
         backup_override = self.store.backups.fixed_root
         self.store = StudioStore(row['mods'],row['workshop'],row['game'],row.get('extraMods', []), self.store.asset_catalog.settings_path, self.store.backups.root, migrate_cache=migrate_cache)
         self.store.backups.fixed_root = backup_override

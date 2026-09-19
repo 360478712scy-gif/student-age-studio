@@ -102,6 +102,15 @@ test('人物记录携带登场来源，还原过程不改写对话数据',()=>{
   assert.deepEqual(clone(role.entryBlock),[[3,1001,1,1,0]]);
   assert.equal(JSON.stringify(doc),before);
 });
+test('没有来源记录又换了场景：不回头改上一幕，只认当前场景',()=>{
+  const doc=make();
+  doc.talks[1]={id:1,bg:1,roleIds:[],roles:[[3,1002,1,1,0]],nextTalk:[2]};
+  doc.talks[2]={id:2,bg:2,roleIds:[3],roles:[],nextTalk:[]};
+  const state=stage(doc,[1,2]);assert.equal(state.roles[3].entryTalkId,2);
+  delete state.roles[3].entryTalkId;
+  const entry=Scene.roleEntry(doc,state,3);
+  assert(entry&&entry.talkId===2,'必须落在当前场景第 2 句，而不是上一幕第 1 句');
+});
 test('没有来源记录的状态仍沿用按路径查找（兼容旧调用）',()=>{
   const doc=make();
   doc.talks[1]={id:1,bg:1,roleIds:[],roles:[[3,1002,1,2,0]],nextTalk:[]};

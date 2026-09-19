@@ -20,6 +20,11 @@ def own_children():
     if not handle or not k.SetInformationJobObject(handle,9,ctypes.byref(limits),ctypes.sizeof(limits)) or not k.AssignProcessToJobObject(handle,k.GetCurrentProcess()):
         error=ctypes.get_last_error()
         if handle:k.CloseHandle(handle)
+        # Launched from a terminal/IDE/scheduler that already placed us in a
+        # job: keep running under the existing supervision instead of refusing
+        # to start. Only our own kill-on-close guarantee is lost.
+        if error == 5:  # ERROR_ACCESS_DENIED
+            return None
         raise ctypes.WinError(error)
     # No HANDLE_FLAG_INHERIT: the OS closes our only handle when the app exits.
     return handle
