@@ -52,6 +52,7 @@ from space import SpaceEditor
 from backups import ModBackups
 from mod_copy import excluded_entry, stable_copy
 from condition_library import ConditionLibrary, UserConditionPresets, named_entries
+import workshop_publish
 
 try:
     from PIL import Image, UnidentifiedImageError
@@ -3485,6 +3486,7 @@ class StudioServer(ThreadingHTTPServer):
         self.origin = "http://127.0.0.1:" + str(self.server_port)
         self.startup = StartupPreparation(self)
         self.media_warmup = MediaWarmup(self)
+        self.publisher = workshop_publish.Publisher()
         from app_updates import AppUpdates
         from error_logs import APP_VERSION
         self.updates = AppUpdates(self.web_root, APP_VERSION)
@@ -3542,6 +3544,9 @@ class StudioServer(ThreadingHTTPServer):
 
     def server_close(self):
         if hasattr(self, 'media_warmup'): self.media_warmup.close()
+        if hasattr(self, 'publisher'):
+            try: self.publisher.close()
+            except Exception: pass
         try: self.store.close()
         except Exception: pass
         super().server_close()
@@ -3862,6 +3867,14 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.location_state())
             if route == "/api/backups":
                 return self.send_json(self.server.store.backups.status(query.get('projectId', [None])[0]))
+            if route == "/api/publish-status":
+                result = self.server.publisher.status(query.get('jobId', [''])[0])
+                if result is None:
+                    raise ApiError('找不到该发布任务。', 404, 'not_found')
+                return self.send_json(result)
+            if route == "/api/publish-prereq":
+                return self.send_json(self.server.publisher.prereq(
+                    self.server.store, sys.modules[__name__], query.get('projectId', [''])[0]))
             if route == "/api/projects":
                 return self.send_json([project.public() for project in self.server.store.project_list()])
             if route == "/api/condition-presets":
@@ -4148,6 +4161,20 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.store.renumber_rows(payload))
             if route == "/api/backup":
                 return self.send_json(self.server.store.backups.create(payload), 201)
+            if route == "/api/publish":
+                try:
+                    return self.send_json(self.server.publisher.start(
+                        self.server.store, sys.modules[__name__], payload), 202)
+                except workshop_publish.PublishError as error:
+                    raise ApiError(error.message, error.status, error.code)
+            if route == "/api/publish-cancel":
+                try:
+                    result = self.server.publisher.cancel((payload or {}).get('jobId'))
+                except workshop_publish.PublishError as error:
+                    raise ApiError(error.message, error.status, error.code)
+                if result is None:
+                    raise ApiError('找不到该发布任务。', 404, 'not_found')
+                return self.send_json(result)
             if route == '/api/premises/references':
                 return self.send_json(self.server.store.premise_references(payload))
             if route == "/api/premises/create":
