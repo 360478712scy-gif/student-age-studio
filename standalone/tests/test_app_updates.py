@@ -51,6 +51,12 @@ class UpdatesTest(unittest.TestCase):
             time.sleep(.01)
         self.assertEqual(status['status'],'ready',status)
 
+    def test_13111_uses_legacy_compatible_version_order_and_display(self):
+        from error_logs import display_version
+        self.assertGreater(version_key('v1.3.12-beta.1'), version_key('1.3.11'))
+        self.assertLess(version_key('v1.3.12-beta.1'), version_key('1.3.12'))
+        self.assertEqual(display_version('v1.3.12-beta.1'), '1.3.11.1')
+
     def test_beta135_hotfix_sorts_after_installed_beta135(self):
         self.assertGreater(version_key('v1.3.5-beta.2'), version_key('v1.3.5-beta.1'))
         self.assertGreater(version_key('v1.3.5-beta.1'), version_key('beta-1.3.5'))

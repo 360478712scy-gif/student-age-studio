@@ -69,3 +69,23 @@ class OriginalSafetyTests(unittest.TestCase):
   h=self.store.original_dialogue;self.assertTrue(h.available());old=h._connection
   original_dialogue.write(self.store.game,{'123':{'id':123,'content':'new'}},{})
   self.assertIsNone(h._connection);self.assertEqual(h.rows('TalkCfg',[123])['123']['content'],'new');self.assertIsNot(h._connection,old)
+
+ def test_read_write_and_idle_expiry_are_serialized(self):
+  from concurrent.futures import ThreadPoolExecutor
+  h=self.store.original_dialogue;h.close()
+  def write_generation(generation):
+   original_dialogue.write(self.store.game,{str(i):{'id':i,'generation':generation} for i in range(1,31)},{})
+  write_generation(0)
+  def read_many():
+   for _ in range(80):
+    rows=h.rows('TalkCfg',range(1,31))
+    self.assertEqual(len(rows),30)
+    self.assertEqual(len({r['generation'] for r in rows.values()}),1)
+    time.sleep(.002)
+  def rewrite_many():
+   for generation in range(1,16):write_generation(generation);time.sleep(.003)
+  with patch.object(original_dialogue,'IDLE_CLOSE_SECONDS',.015):
+   with ThreadPoolExecutor(max_workers=3) as pool:
+    tasks=[pool.submit(read_many),pool.submit(read_many),pool.submit(rewrite_many)]
+    for task in tasks:task.result(timeout=10)
+  self.assertEqual(h.rows('TalkCfg',[1])['1']['generation'],15)
