@@ -1026,7 +1026,7 @@ function deleteEvents(eventIds) {
  for(const f of values(S.branchFolders))if(!owned.has(Number(f.parentTalkId))&&f.continuation?.kind==='event'&&selected.includes(Number(f.continuation.eventId)))references.push('对话夹');
  // Deleting is never refused: dangling jumps are reported so they can be adjusted afterwards.
  if(references.length)toast('已删除的事件仍被引用：'+[...new Set(references)].join('、')+'。这些跳转现在指向不存在的事件，请自行调整。','note');
- mutate('删除事件与全部所属对话',()=>{
+ mutate('删除事件及专属对话',()=>{
   removePremises(Object.keys(S.premises).filter(k=>selected.includes(Number(S.premises[k].eventId))));for(const id of selected){StudentAgeEventBindings.clearSocialBindings(S.doc,S.doc.events[id]);delete S.doc.events[id];delete S.doc.eventGrades?.[id];}
   for(const row of values(S.doc.actionEvents))row.evts=ids(row.evts).filter(value=>!selected.includes(value));for(const row of values(S.doc.actions))if(selected.includes(Number(row.evtId)))row.evtId=0;for(const row of values(S.doc.interactions))if(owned.has(Number(row.talkId)))delete S.doc.interactions[row.id];
   for(const tid of owned){delete S.doc.talks[tid];delete S.doc.talkOwners[tid];S.deleted.push(tid);S.replacements[tid]=[];replaceEdges(tid,[]);delete S.doc.audioCues.sfx[tid];if(S.doc.audioCues.nativeAudio)delete S.doc.audioCues.nativeAudio[tid];}

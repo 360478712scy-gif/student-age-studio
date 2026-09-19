@@ -20,7 +20,7 @@ function sync(doc,folders,currentEvent,beforeIds){
 }
 function interactionTalks(doc){const found=new Set(),todo=Object.values(doc.interactions||{}).map(r=>Number(r.talkId)).filter(Boolean);while(todo.length){const id=todo.pop(),r=doc.talks[id];if(!r||found.has(id))continue;found.add(id);todo.push(...ids(r.nextTalk),...ids(r.nextTalk2),...ids(r.option).flatMap(o=>[...ids(doc.options?.[o]?.talkId),...ids(doc.options?.[o]?.talkId2)]));}return found;}
 function plan(doc,folders,eventIds,localIds){const owners=ownership(doc,folders),removed=new Set(eventIds.map(Number)),local=new Set(localIds.map(Number)),idle=interactionTalks(doc);
- const talks=new Set(Object.keys(doc.talks).map(Number).filter(t=>(owners[t]||[]).some(e=>removed.has(e))));
- const options=new Set([...eventIds.flatMap(e=>ids(doc.events[e]?.options)),...[...talks].flatMap(t=>ids(doc.talks[t]?.option))]);return {talks,options};
+ const talks=new Set(Object.keys(doc.talks).map(Number).filter(t=>(owners[t]||[]).length&&(owners[t]||[]).every(e=>removed.has(e))));
+ const options=new Set([...eventIds.flatMap(e=>ids(doc.events[e]?.options)),...[...talks].flatMap(t=>ids(doc.talks[t]?.option))]);for(const [id,row]of Object.entries(doc.talks))if(!talks.has(Number(id)))for(const o of ids(row.option))options.delete(o);for(const [id,row]of Object.entries(doc.events))if(!removed.has(Number(id)))for(const o of ids(row.options))options.delete(o);return {talks,options};
 }
 return {ownership,sync,plan,interactionTalks};});

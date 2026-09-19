@@ -16,6 +16,9 @@ jobs:
       - run: python -m pip install 'certifi>=2026.2.25' 'Pillow==12.3.0' 'numpy>=2,<3'
       - run: python -B -m unittest discover -s standalone/tests -p test_save_large.py
       - run: python -B -m unittest discover -s standalone/tests -p test_event_custom_update.py
+      - run: python -B -m unittest discover -s standalone/tests -p test_pr3_integration.py
+      - run: python -B -m unittest discover -s standalone/tests -p test_original_dialogue.py
+      - run: node standalone/tests/scene-entry.cjs
       - run: python -B -m unittest discover -s standalone/tests -p test_talk_patch.py
       - run: node standalone/tests/indexed-talks.cjs
       - run: node standalone/tests/remote-talks.cjs

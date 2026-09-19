@@ -10,13 +10,29 @@ import json
 import os
 import sqlite3
 import tempfile
+import time
+import threading
+import weakref
+from functools import wraps
 from pathlib import Path
 
+from platform_support import replace_file, file_fingerprint
 from storage_paths import game_cache
 
 FILENAME = 'original-dialogue-v1.sqlite'
 TABLES = {'TalkCfg': 'talks', 'OptionCfg': 'options'}
 MAX_ROWS = 20000  # one load never pulls more original rows than this
+# A read-only handle still locks the file on Windows. Reopen after this long
+# without use so catalog refreshes can replace it; reopening is transparent.
+IDLE_CLOSE_SECONDS = 2
+_GUARD = threading.RLock()
+_READERS = weakref.WeakSet()
+
+def serialized(fn):
+    @wraps(fn)
+    def call(*args, **kwargs):
+        with _GUARD: return fn(*args, **kwargs)
+    return call
 
 
 def path(game):
@@ -42,7 +58,12 @@ def write(game, talks, options):
             connection.commit()
         finally:
             connection.close()
-        os.replace(temporary, target)
+        # Tolerate a reader holding the file on Windows; replace_file retries
+        # sharing violations before giving up.
+        with _GUARD:
+            for reader in list(_READERS):
+                if reader._stamp and reader._stamp[0] == str(target): reader.close()
+            replace_file(temporary, target)
     except BaseException:
         try: os.unlink(temporary)
         except OSError: pass
@@ -75,18 +96,23 @@ class OriginalDialogue:
         self._game = game_getter
         self._connection = None
         self._stamp = None
+        self._last_use = 0.0
+        self._idle_timer = None
+        with _GUARD: _READERS.add(self)
 
+    @serialized
     def _open(self):
         try:
             target = path(self._game())
-            stamp = (str(target), target.stat().st_mtime_ns, target.stat().st_size)
+            stamp = (str(target), file_fingerprint(target))
         except (OSError, TypeError, ValueError):
             self.close()
             return None
-        if self._connection is not None and stamp == self._stamp:
+        if self._connection is not None and stamp == self._stamp and time.monotonic() - self._last_use < IDLE_CLOSE_SECONDS:
+            self._last_use = time.monotonic()
             return self._connection
         self.close()
-        uri = 'file:' + str(target).replace('?', '%3F').replace('#', '%23') + '?mode=ro'
+        uri = target.resolve().as_uri() + '?mode=ro'
         try:
             self._connection = sqlite3.connect(uri, uri=True, check_same_thread=False)
             self._connection.execute('SELECT 1 FROM talks LIMIT 1')
@@ -95,9 +121,29 @@ class OriginalDialogue:
             self.close()
             return None
         self._stamp = stamp
+        self._last_use = time.monotonic()
+        self._schedule_idle(IDLE_CLOSE_SECONDS)
         return self._connection
 
+    def _schedule_idle(self, delay):
+        timer = threading.Timer(max(.01, delay), lambda: self._expire_idle(timer))
+        timer.daemon = True
+        self._idle_timer = timer
+        timer.start()
+
+    @serialized
+    def _expire_idle(self, timer):
+        if self._idle_timer is not timer: return
+        self._idle_timer = None
+        if self._connection is None: return
+        remaining = IDLE_CLOSE_SECONDS - (time.monotonic() - self._last_use)
+        if remaining > 0: self._schedule_idle(remaining)
+        else: self.close()
+
+    @serialized
     def close(self):
+        if self._idle_timer is not None:
+            self._idle_timer.cancel(); self._idle_timer = None
         if self._connection is not None:
             try: self._connection.close()
             except sqlite3.Error: pass
@@ -106,6 +152,7 @@ class OriginalDialogue:
     def available(self):
         return self._open() is not None
 
+    @serialized
     def rows(self, table, ids):
         """Rows for the given ids (missing ids are simply absent)."""
         connection = self._open()

@@ -12,10 +12,14 @@ window.StudentAgePreviewUI=(()=>{
    const url=name=>'/api/preview-ui?resource='+encodeURIComponent(name)+'&token='+encodeURIComponent(window.STUDIO_TOKEN);
    for(const name of data.files.filter(n=>n.endsWith('.png')))document.documentElement.style.setProperty('--game-'+name.slice(0,-4),`url("${url(name)}")`);
    for(const [gender,colors] of Object.entries(data.colors))for(const [i,part] of ['paper','text','name','name-text'].entries())document.documentElement.style.setProperty(`--game-${gender}-${part}`,colors[i]);
-   // Keep the rounded fallback until the actual frame and control images decode.
-   await Promise.all(data.files.filter(n=>n.endsWith('.png')&&!n.startsWith('paper')).map(name=>new Promise((resolve,reject)=>{const img=new Image();img.onload=resolve;img.onerror=()=>reject(Error('原版预览贴图读取失败：'+name));img.src=url(name); })));
+    // Keep the rounded fallback until the actual frame and control images decode.
+    // One missing picture must not block the rest: failures keep their
+    // fallback styling and are only reported in the console.
+    const decoded=await Promise.allSettled(data.files.filter(n=>n.endsWith('.png')&&!n.startsWith('paper')).map(name=>new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(name);img.onerror=()=>reject(Error('原版预览贴图读取失败：'+name));img.src=url(name); })));
+    const missing=decoded.filter(r=>r.status==='rejected').map(r=>String(r.reason?.message||r.reason));
+    if(missing.length)console.warn(missing.join('；')+'。缺失项保留占位样式，不影响保存。');
    await Promise.allSettled(['sans','serif'].map(async key=>{const font=new FontFace('StudentAge '+key,`url("${url(key+'.otf')}")`,{weight:key==='sans'?'500':'900'});await font.load();document.fonts.add(font);}));
-   document.documentElement.classList.add('game-ui-ready');return data;
+   document.documentElement.classList.toggle('game-ui-ready',missing.length===0);if(missing.length)pending=null;return data;
   })().catch(error=>{pending=null;console.warn(error.message);return null;}).finally(()=>window.STUDIO_CACHE_TASKS?.finish('preview-ui'));return pending;
  }
 

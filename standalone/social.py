@@ -34,7 +34,7 @@ class SocialEditor:
                     warnings.append(table + ' 已在编辑副本中修复行编号，保存时备份原文件。')
         self.b.validate_map(rows, table, allow_zero=True)
         import original_mode
-        return original_mode.visible_rows(self.store, project, table, rows)
+        return original_mode.visible_rows(self.store, project, table, rows, warnings)
 
     def merged(self, project, table):
         return {**self.store.catalog_rows(table), **self.local(project, table)}

@@ -17,9 +17,17 @@ def own_children():
     k.GetCurrentProcess.restype=wintypes.HANDLE
     k.CloseHandle.argtypes=[wintypes.HANDLE]
     handle=k.CreateJobObjectW(None,None);limits=Limits();limits.basic.flags=0x2000
-    if not handle or not k.SetInformationJobObject(handle,9,ctypes.byref(limits),ctypes.sizeof(limits)) or not k.AssignProcessToJobObject(handle,k.GetCurrentProcess()):
+    if not handle or not k.SetInformationJobObject(handle,9,ctypes.byref(limits),ctypes.sizeof(limits)):
         error=ctypes.get_last_error()
         if handle:k.CloseHandle(handle)
+        raise ctypes.WinError(error)
+    if not k.AssignProcessToJobObject(handle,k.GetCurrentProcess()):
+        error=ctypes.get_last_error();k.CloseHandle(handle)
+        k.IsProcessInJob.argtypes=[wintypes.HANDLE,wintypes.HANDLE,ctypes.POINTER(wintypes.BOOL)]
+        k.IsProcessInJob.restype=wintypes.BOOL
+        in_job=wintypes.BOOL()
+        if error==5 and k.IsProcessInJob(k.GetCurrentProcess(),None,ctypes.byref(in_job)) and in_job.value:
+            return None
         raise ctypes.WinError(error)
     # No HANDLE_FLAG_INHERIT: the OS closes our only handle when the app exits.
     return handle

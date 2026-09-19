@@ -404,7 +404,7 @@ class MediaWarmup:
                 if old.get('validation'):
                     from asset_catalog import stamp as validation_stamp
                     info=dict(old['validation']);info['_fingerprint']=validation_stamp(Path(path))
-                    store.asset_catalog.validation[(path,info['_fingerprint'],'audio' if Path(path).suffix.lower() not in IMAGES else 'image')]=info
+                    store.asset_catalog._remember_validation((path,info['_fingerprint'],'audio' if Path(path).suffix.lower() not in IMAGES else 'image'),info)
             else: pending.append((path,stamp))
         if pending: self.update(status='running',phase='缓存全部图片与模组素材',percent=start,done=0,total=len(pending))
         def cache_file(path,stamp):

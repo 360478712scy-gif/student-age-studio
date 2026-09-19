@@ -36,11 +36,14 @@ def ownership(events, talks, options, folders, previous=None):
 def deletion(events,talks,options,folders,previous,removed,interactions=None,reference_talks=None):
     owners=ownership(events,talks,options,folders,previous)
     removed=set(map(str,removed))
-    # Remove only dialogues owned by the explicitly removed events.
-    doomed={t for t in talks if set(map(str,owners.get(t,[]))) & removed}
+    # Remove only dialogues owned by the explicitly removed events. A line still
+    # owned by a surviving event (shared continuations, merged branches) stays.
+    doomed={t for t in talks if (owned := set(map(str,owners.get(t,[])))) and owned <= removed}
     option_ids={o for e in removed for o in ids(events.get(e,{}).get('options'))}
     option_ids.update(o for t in doomed for o in ids(talks[t].get('option')))
-    return doomed,option_ids
+    kept_options={o for e,row in events.items() if e not in removed for o in ids(row.get('options'))}
+    kept_options.update(o for t,row in talks.items() if t not in doomed for o in ids(row.get('option')))
+    return doomed,option_ids-kept_options
 
 
 def interaction_talks(interactions,talks,options=None):

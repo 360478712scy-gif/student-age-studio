@@ -8,7 +8,7 @@ const token=window.STUDIO_TOKEN&&window.STUDIO_TOKEN!=='__STUDIO_TOKEN__'?window
 let registry=null,used=new Set(),blocks={},reserved=new Set(),working=false,draft=null,applying=null,undoEntry=null,redoEntry=null,checkTimer=null,checkSequence=0;
 const dialog=document.createElement('dialog');dialog.id='record-id-dialog';dialog.setAttribute('aria-label','修改编号');document.body.append(dialog);
 async function api(url,data){const response=await fetch(url,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-Studio-Token':token},body:data?JSON.stringify(data):undefined});const value=await response.json();if(!response.ok)throw Error(value.error||'编号操作失败');return value;}
-function configure(data){registry=data;used=new Set(Object.values(data.tables||{}).flat().map(Number));blocks={};for(const [child,[parent,factor]]of Object.entries(derived)){blocks[parent]||=new Set();for(const id of data.tables?.[child]||[])blocks[parent].add(Math.floor(Number(id)/factor));}blocks.PhoneMsgCfg=new Set((data.tables?.PhoneMsgCfg||[]).map(id=>Math.floor(Number(id)/1000)*1000+1));}
+function configure(data){registry=data;used=new Set([...Object.values(data.tables||{}).flat(),...(data.reservedIds||[])].map(Number));blocks={};for(const [child,[parent,factor]]of Object.entries(derived)){blocks[parent]||=new Set();for(const id of data.tables?.[child]||[])blocks[parent].add(Math.floor(Number(id)/factor));}blocks.PhoneMsgCfg=new Set((data.tables?.PhoneMsgCfg||[]).map(id=>Math.floor(Number(id)/1000)*1000+1));}
 let registryProject=null,registryPromise=null;
 async function ensure(projectId){if(registry&&registryProject===projectId)return registry;if(registryPromise?.projectId===projectId)return registryPromise.promise;const promise=refresh(projectId).finally(()=>{if(registryPromise?.promise===promise)registryPromise=null;});registryPromise={projectId,promise};return promise;}
 async function refresh(projectId=window.STUDIO_CURRENT_PROJECT?.()){if(!projectId)return;const data=await api('/api/ids?projectId='+encodeURIComponent(projectId));configure(data);registryProject=projectId;return data;}
@@ -16,7 +16,7 @@ function rule(table,id,owner){if(derived[table]){const [parent,factor]=derived[t
 function allocate(table,rows={},owner){if(!registry)throw Error('编号目录尚未读取完成，请稍后再试。');const r=rule(table,0,owner),low=r.start+(r.step===1000?1:0),count=Math.floor((r.end-low)/r.step)+1;if(!Number.isSafeInteger(count)||count<=0)throw Error('所属内容的编号超出可用范围。');const rand=new Uint32Array(1);crypto.getRandomValues(rand);const start=table==='TalkCfg'?0:rand[0]%count;
  const free=id=>!used.has(id)&&!reserved.has(id)&&!rows[id]&&!blocks[table]?.has(id);
  for(let n=0;n<count;n++){const id=low+(start+n)%count*r.step;if(free(id)){reserved.add(id);return id;}}
- for(let id=r.end+r.step;id<2147483647;id+=r.step)if(free(id)){reserved.add(id);return id;}
+ for(let id=r.end+r.step;id<Math.min(2147483647,r.end+r.step+100000*r.step);id+=r.step)if(free(id)){reserved.add(id);return id;}
  throw Error('这类内容的可用编号已用尽。');}
 const project=()=>window.STUDIO_CURRENT_PROJECT?.(),revision=()=>window.STUDIO_CURRENT_REVISION?.();
 // Adopt a scaffold's existing entry only when the shared registry knows it is free.

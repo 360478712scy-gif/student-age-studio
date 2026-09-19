@@ -164,6 +164,16 @@ class ModBackups:
                     return dict(data, path=str(path), modPath=str(path / 'mod'))
             config = self.settings()
             folder.mkdir(parents=True, exist_ok=True)
+            # A hard kill (power loss, kill -9) skips the except-cleanup below
+            # and leaves .pending-* behind forever. Sweep only stale ones.
+            try:
+                cutoff = time.time() - 24 * 3600
+                for stale in folder.iterdir():
+                    if (stale.name.startswith('.pending-') and stale.is_dir()
+                            and not stale.is_symlink() and stale.stat().st_mtime < cutoff):
+                        shutil.rmtree(stale, ignore_errors=True)
+            except OSError:
+                pass
             stamp = time.strftime('%Y-%m-%d_%H-%M-%S') + '-' + ('自动' if kind == 'automatic' else '手动') + '-' + uuid.uuid4().hex[:12]
             pending, target = folder / ('.pending-' + stamp), folder / stamp
             data = {'format': FORMAT, 'id': stamp, 'complete': True, 'kind': kind, 'requestId': request_id,

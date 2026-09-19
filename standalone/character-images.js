@@ -11,7 +11,7 @@ function path(person,kind,grade,gender,faces={},avatars={},cloth=0,expression=0)
  if(kind==='portrait'||kind==='booth'){const full=face?.[grade?'icon':'icon_xx']||base;return !full?'':custom(full)?full:'role_full/'+full;}
  if(!base)return '';const suffix=kind==='comicHead'?'comic':kind;return custom(base)?companion(base,'_'+suffix):'role_'+(kind==='comicHead'?'comic_head':kind)+'/'+base;
 }
-function file(){return new Promise(resolve=>{const input=document.createElement('input');input.type='file';input.accept='image/png,image/jpeg,image/webp';input.hidden=true;document.body.append(input);const end=v=>{input.remove();resolve(v);};input.onchange=()=>end(input.files[0]||null);input.oncancel=()=>end(null);input.click();});}
+function file(){return new Promise(resolve=>{const input=document.createElement('input');input.type='file';input.accept='image/png,image/jpeg,image/webp,image/bmp,image/x-tga,.bmp,.tga';input.hidden=true;document.body.append(input);const end=v=>{input.remove();resolve(v);};input.onchange=()=>end(input.files[0]||null);input.oncancel=()=>end(null);input.click();});}
 async function select(ctx,kind,gender){
  const {S,options,person,change,all}=ctx,selected=S.selected,grade=S.grade,cloth=S.cloth,expression=S.previewFace;
  if(['portrait','booth'].includes(kind))return ctx.pickMedia('portrait',grade);

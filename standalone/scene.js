@@ -274,13 +274,11 @@ function roleEntry(doc,state,roleId){
   if(!role.entryImplicit)for(let j=rows.length-1;j>=0;j--){const command=rows[j];if(Number(command[0])===roleId&&[1001,1002,1003].includes(Number(command[1])))return {roleId,talkId:talk.id,index:j,axis:Number(command[3])||role.axis};}
   return {roleId,talkId:talk.id,index:-1,axis:role.axis,layer:role.layer,implicit:role.entryBlock||null};
  }
- // Retained for callers without entry provenance (states not produced by apply).
- const trace=state.trace||[];
- for(let i=trace.length-1;i>=0;i--){const row=doc.talks?.[trace[i]];if(!row)continue;
-  for(let j=(row.roles||[]).length-1;j>=0;j--){const command=row.roles[j];if(Number(command[0])===roleId&&[1001,1002,1003].includes(Number(command[1])))return {roleId,talkId:row.id,index:j,axis:Number(command[3])||role.axis};}}
+ // Legacy snapshots lack provenance. Replay native transitions once to recover
+ // the live entry; guessed background cutoffs lose boundary-line or CG entries.
  let scene=blank(state.reference);
- for(const id of trace){const row=doc.talks?.[id];if(!row)continue;scene=apply(doc,scene,row,role.grade,false);
-  if(scene.roles[roleId]?.visible)return {roleId,talkId:row.id,index:-1,axis:scene.roles[roleId].axis,layer:scene.roles[roleId].layer,implicit:!(row.roles||[]).length?scene.motions.filter(m=>[1001,1002,1003].includes(m.code)).map(m=>[m.id,m.code,scene.roles[m.id].layer,scene.roles[m.id].axis,0]):null};}
+ for(const id of state.trace||[]){const row=doc.talks?.[id];if(row)scene=apply(doc,scene,row,role.grade,false);}
+ if(scene.roles[roleId]?.entryTalkId!=null)return roleEntry(doc,scene,roleId);
  return null;
 }
 function setRoleEntry(talk,entry,axis){

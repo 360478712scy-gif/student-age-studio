@@ -67,9 +67,13 @@ class RecordIds:
         with self.store.lock, self.store.catalog_scope():
             project = self.store.project(project_id)
             used = self.occupied()
+            # IDs allocated server-side since startup (e.g. by another window's
+            # asset import) are not on disk yet; publish them so scaffolds in
+            # this window never claim them.
             return {'projectId': project.id, 'revision': self.store.revision(project),
                     'tables': {n: sorted(v) for n, v in used.items() if v}, 'linked': LINKED,
-                    'rules': {n: rule(n) for n in used if n not in DERIVED}}
+                    'rules': {n: rule(n) for n in used if n not in DERIVED},
+                    'reservedIds': sorted(self.reserved)}
 
     def allocate(self, table, rows=None, owner=None):
         with self.store.catalog_scope(): used = self.occupied()
@@ -91,7 +95,9 @@ class RecordIds:
                 self.reserved.add(ident)
                 return ident
         # The preferred block is full: fall back to the rest of the game's range.
-        for ident in range(high + step, 2147483647, step):
+        # Probes stay bounded so a saturated registry raises instead of hanging
+        # the request thread in a billions-long scan.
+        for ident in range(high + step, min(2147483647, high + step + 100000 * step), step):
             if ident not in blocked:
                 self.reserved.add(ident)
                 return ident

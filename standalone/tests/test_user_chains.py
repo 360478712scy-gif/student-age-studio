@@ -94,6 +94,21 @@ class ImageImportChainTest(unittest.TestCase):
             self.assertIn("A", decoded.getbands())
             self.assertEqual(decoded.size, (64, 48))
 
+    def test_bmp_and_tga_import_as_png(self):
+        import server
+
+        for name, fmt in (("note.bmp", "BMP"), ("note.tga", "TGA")):
+            with self.subTest(fmt=fmt):
+                path = self.root / "mods" / name
+                Image.new("RGB", (40, 30), (200, 40, 20)).save(path, format=fmt)
+                info = self.catalog._validate_file(path, "background", self.root / "mods")
+                self.assertEqual((info["width"], info["height"]), (40, 30))
+                out, ext, width, height = server.normalize_image(path.read_bytes())
+                self.assertEqual(ext, ".png")
+                with Image.open(io.BytesIO(out)) as decoded:
+                    decoded.load()
+                    self.assertEqual(decoded.size, (40, 30))
+
     def test_corrupt_image_rejected_same_as_before(self):
         import server
 
