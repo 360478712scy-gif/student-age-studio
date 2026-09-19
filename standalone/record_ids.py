@@ -284,6 +284,7 @@ class RecordIds:
             elif filename=='editor-state.json':
                 if 'externalDialogueIds' in data:data['externalDialogueIds']=m('TalkCfg',data['externalDialogueIds'])
                 for folder in data.get('externalDialogueFolders',{}).values():
+                    if 'giftEventId' in folder:folder['giftEventId']=m('EvtCfg',folder['giftEventId'])
                     if 'talkIds' in folder:folder['talkIds']=m('TalkCfg',folder['talkIds'])
                     from external_usages import KINDS
                     for use in folder.get('uses',[]):

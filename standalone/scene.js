@@ -67,7 +67,7 @@ function pathTo(doc,target,roots) {
     const queue=[],parents=new Map();
     for(const root of unique(list(starts)))if(doc.talks?.[root]){queue.push(root);parents.set(root,null);}
     for(let index=0;index<queue.length&&index<20000;index++){
-      const id=queue[index];if(id===target){const path=[];for(let node=id;node!==null;node=parents.get(node))path.unshift(node);return {path,found:true};}
+      const id=queue[index];if(id===target){const path=[];for(let node=id;node!==null;node=parents.get(node))path.push(node);path.reverse();return {path,found:true};}
       for(const route of routes(doc,doc.talks[id]))if(route.id!==null&&route.available&&!parents.has(route.id)){parents.set(route.id,id);queue.push(route.id);}
     }
     return null;
@@ -321,7 +321,7 @@ function planSceneDrag(selected,before,roleId,target,evaluate){
 const diskStageCaches=new WeakMap();
 function reconstruct(doc,target,options={}) {
   const remote=globalThis.StudentAgeRemoteTalks?.info(doc.talks),source=doc.talks;
-  const cacheKey=remote?JSON.stringify([remote.graphVersion,options.grade,options.reference,options.roots,options.event,doc.protagonistGender,doc.persons,doc.faces,doc.backgrounds,doc.options,doc.branchFolders]):null;
+  const cacheKey=remote?(globalThis.StudentAgeIndexedTalks?.stringify||JSON.stringify)([remote.graphVersion,options.grade,options.reference,options.roots,options.event,doc.protagonistGender,doc.persons,doc.faces,doc.backgrounds,doc.options,doc.branchFolders]):null;
   if(remote)doc={...doc,talks:StudentAgeRemoteTalks.sceneTable(doc.talks,target)};
   const roots=options.roots?.length?options.roots:Object.values(doc.events||{}).flatMap(e=>list(e.talkId));
   const route=options.trace?{path:options.trace,found:true}:pathTo(doc,target,roots);

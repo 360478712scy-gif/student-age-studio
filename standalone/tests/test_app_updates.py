@@ -71,6 +71,46 @@ class UpdatesTest(unittest.TestCase):
         self.assertFalse(any('/releases' in u for u in self.calls))
         self.updater.activate();self.assertTrue(read_state(self.updater.root)['active'])
 
+    def test_official_fallback_recovers_blocked_raw_and_interrupted_download(self):
+        import urllib.error
+        self.updater.config['sourceUpdates']=True
+        feed={'format':1,'runtimeAbi':1,'version':'v1.3.1-beta.1','commit':'a'*40,
+              'size':len(self.payload),'sha256':hashlib.sha256(self.payload).hexdigest()}
+        payload_calls=[]
+        def opener(url):
+            self.calls.append(url)
+            if 'raw.githubusercontent.com' in url:raise urllib.error.URLError('blocked raw')
+            if '/contents/latest.json?ref=updates' in url:return io.BytesIO(json.dumps(feed).encode())
+            self.assertIn('/contents/student-age-studio-update.zip?ref='+'a'*40,url)
+            payload_calls.append(url)
+            return io.BytesIO(self.payload[:70] if len(payload_calls)==1 else self.payload)
+        self.updater.opener=opener
+        self.assertEqual(self.updater.check()['status'],'available')
+        with patch('app_updates.time.sleep'):self.updater._download(self.updater.asset,self.release['tag_name'])
+        self.assertEqual(self.updater.status()['status'],'ready')
+        self.assertEqual(len(payload_calls),2)
+        self.assertFalse(any('/releases?' in url for url in self.calls))
+
+    def test_transfer_never_retries_integrity_failure(self):
+        self.updater.check()
+        self.updater.opener=lambda url:io.BytesIO(b'x'*len(self.payload))
+        with patch.object(self.updater,'opener',wraps=self.updater.opener) as opener:
+            self.updater._download(self.updater.asset,self.release['tag_name'])
+            self.assertEqual(opener.call_count,1)
+        self.assertEqual(self.updater.status()['status'],'error')
+        self.assertFalse(read_state(self.updater.root).get('active'))
+
+    def test_missing_fallback_does_not_hide_network_failure(self):
+        import urllib.error
+        self.updater.config['sourceUpdates']=True
+        def opener(url):
+            if 'raw.githubusercontent.com' in url:raise urllib.error.URLError('offline')
+            raise urllib.error.HTTPError(url,404,'missing',{},None)
+        self.updater.opener=opener
+        with patch('app_updates.time.sleep'):result=self.updater.check()
+        self.assertEqual(result['status'],'error')
+        self.assertIn('已重试',result['message'])
+
     def test_source_feed_rejects_bad_commit_and_runtime(self):
         self.updater.config['sourceUpdates']=True
         feed={'format':1,'runtimeAbi':1,'version':'v1.3.1-beta.1','commit':'../main','size':10,'sha256':'a'*64}

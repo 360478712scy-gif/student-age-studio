@@ -6,6 +6,7 @@ import time
 import threading
 from pathlib import Path
 from PIL import Image
+from platform_support import file_fingerprint
 
 _preview_slots = threading.BoundedSemaphore(4)
 _preview_cleanup = threading.Lock()
@@ -14,8 +15,7 @@ _preview_cleanup = threading.Lock()
 def preview_image(path, cache):
     """Bound picker image decoding without changing the full-resolution asset."""
     path, cache = Path(path), Path(cache)
-    stat = path.stat()
-    key = hashlib.sha256((str(path.resolve()) + str((stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size))).encode()).hexdigest()
+    key = hashlib.sha256((str(path.resolve()) + str(file_fingerprint(path))).encode()).hexdigest()
     target = cache / (key + '.webp')
     if target.is_file():
         return target

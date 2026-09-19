@@ -1,5 +1,32 @@
 [
   {
+    "label": "文字提示",
+    "template": [
+      999,
+      10,
+      5003
+    ],
+    "match": {
+      "0": 999,
+      "1": 10
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "提示文字",
+        "type": "int",
+        "range": {
+          "table": "TextCfg",
+          "startId": 1
+        }
+      }
+    ],
+    "category": "特殊效果",
+    "categoryId": 999,
+    "description": "选择游戏内显示的提示文字，例如“有人记住了你的话”。仅显示提示；剧情判断请另设前提。",
+    "source": "CommonEvtMgr.GetEffector / EffectorSpecial type 10 / TextCfg 5003"
+  },
+  {
     "label": "直接成为恋人",
     "template": [
       20,

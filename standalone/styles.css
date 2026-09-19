@@ -114,3 +114,6 @@ dialog[data-studio-layered]{position:fixed;inset:0;margin:auto;overflow:auto;max
 .studio-layer-shield::backdrop{display:none}
 html body.json-drawer-open dialog[data-studio-layered]:not(.uc-popup){inset:0 var(--json-drawer-width) 0 0}
 .id-notes{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;font-size:11px;line-height:1.5}.id-conflict{color:var(--sg-danger)}.id-pinned{color:var(--sg-gold,#e6cb90);opacity:.85}
+
+
+.talk-action-codes{margin-top:24px;padding-top:20px;border-top:1px solid var(--border,#8885)}.talk-action-codes .helper{margin:6px 0 10px}.talk-action-codes textarea{display:block;width:100%;min-height:90px;box-sizing:border-box;resize:vertical;font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}

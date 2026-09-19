@@ -3,6 +3,7 @@ import ast
 import certifi
 import ssl
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -49,7 +50,8 @@ def tls_context():
 def open_url(url):
     parsed=urllib.parse.urlsplit(url)
     if parsed.scheme!='https' or parsed.hostname not in ('github.com','api.github.com','raw.githubusercontent.com'):raise ValueError('更新地址无效。')
-    req=urllib.request.Request(url,headers={'User-Agent':'StudentAgeStudio-Updater/1','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10'})
+    accept='application/vnd.github.raw+json' if parsed.hostname=='api.github.com' and '/contents/' in parsed.path else 'application/vnd.github+json'
+    req=urllib.request.Request(url,headers={'User-Agent':'StudentAgeStudio-Updater/1','Accept':accept,'X-GitHub-Api-Version':'2022-11-28'})
     return urllib.request.build_opener(HTTPSRedirect(),urllib.request.HTTPSHandler(context=tls_context())).open(req,timeout=30)
 
 
@@ -97,6 +99,30 @@ class AppUpdates:
             return {**self.state,'currentVersion':self.current,'currentDisplayVersion':display_version(self.current),'displayVersion':display_version(self.state.get('version')),'repository':self.config['repository'],'managed':self.managed,
                     'notice':read_state(self.root).get('notice',''),'canRollback':bool(read_state(self.root).get('active'))}
 
+    def transfer(self, url, consume):
+        """Retry the entire read on official endpoints; never resume unverified bytes."""
+        urls=[url]
+        parsed=urllib.parse.urlsplit(url)
+        prefix='/'+self.config['repository']+'/'
+        if parsed.hostname=='raw.githubusercontent.com' and parsed.path.startswith(prefix):
+            ref, path=parsed.path[len(prefix):].split('/',1)
+            urls.append('https://api.github.com/repos/'+self.config['repository']+'/contents/'+path+'?ref='+ref)
+        errors=[]
+        for attempt in range(2):
+            retry=False
+            for candidate in urls:
+                try:
+                    with self.opener(candidate) as response:return consume(response)
+                except (urllib.error.URLError,TimeoutError,ConnectionError,http.client.IncompleteRead) as error:
+                    transient=not isinstance(error,urllib.error.HTTPError) or error.code in (403,408,429,500,502,503,504)
+                    if not transient and not (isinstance(error,urllib.error.HTTPError) and error.code==404):raise
+                    errors.append(error);retry=retry or transient
+                    with self.lock:self.state['message']='更新连接中断，正在重试或切换 GitHub 下载入口…'
+            if not retry:break
+            if attempt==0:time.sleep(.25)
+        # A missing alternative must not hide the original network failure.
+        raise next((e for e in reversed(errors) if not isinstance(e,urllib.error.HTTPError) or e.code!=404),errors[-1])
+
     def check(self):
         with self.lock:
             if self.state['status'] in ('checking','downloading','ready','activating'):return self.status()
@@ -106,8 +132,7 @@ class AppUpdates:
                 result=self.check_source_feed()
                 if result is not None:return result
             url='https://api.github.com/repos/'+self.config['repository']+'/releases?per_page=30'
-            with self.opener(url) as response:
-                data=response.read(2*1024*1024+1)
+            data=self.transfer(url,lambda response:response.read(2*1024*1024+1))
             if len(data)>2*1024*1024:raise ValueError('发布列表超过限制。')
             releases=json.loads(data);candidates=[]
             if not isinstance(releases,list):raise ValueError('GitHub 发布列表格式错误。')
@@ -134,7 +159,7 @@ class AppUpdates:
     def check_source_feed(self):
         prefix='https://raw.githubusercontent.com/'+self.config['repository']+'/'
         try:
-            with self.opener(prefix+'updates/latest.json') as response:data=response.read(32769)
+            data=self.transfer(prefix+'updates/latest.json',lambda response:response.read(32769))
         except urllib.error.HTTPError as error:
             if error.code==404:return None
             raise
@@ -159,7 +184,7 @@ class AppUpdates:
     def error_text(error):
         if isinstance(error,urllib.error.HTTPError):
             return {404:'GitHub 仓库尚未公开或尚无发布版本。',403:'GitHub 暂时限制访问，请稍后重试。',429:'检查过于频繁，请稍后重试。'}.get(error.code,'GitHub 暂时无法访问，请稍后重试。')
-        if isinstance(error,(TimeoutError,urllib.error.URLError)):return '无法连接 GitHub，请检查网络后重试。'
+        if isinstance(error,(TimeoutError,urllib.error.URLError,ConnectionError,http.client.IncompleteRead)):return '无法完整连接或下载 GitHub 更新。已重试；请确认代理覆盖本应用及 raw.githubusercontent.com、api.github.com，然后重试。'
         if isinstance(error,PermissionError):return '更新目录不可写，请检查用户数据目录权限。'
         if isinstance(error,OSError):return '更新文件读写失败，请检查磁盘空间和目录权限。'
         return str(error)
@@ -176,16 +201,21 @@ class AppUpdates:
     def _download(self,asset,version):
         temporary=self.root/('staging-'+uuid.uuid4().hex)
         try:
-            temporary.mkdir(parents=True);archive=temporary/'payload.zip';digest=hashlib.sha256();count=0
-            with self.opener(asset['browser_download_url']) as source, archive.open('xb') as dest:
-                while True:
-                    block=source.read(128*1024)
-                    if not block:break
-                    count+=len(block)
-                    if count>asset['size'] or count>MAX_ARCHIVE:raise ValueError('下载内容超过发布尺寸。')
-                    digest.update(block);dest.write(block)
-                    with self.lock:self.state['progress']=int(count*85/asset['size'])
-            if count!=asset['size'] or 'sha256:'+digest.hexdigest()!=asset['digest']:raise ValueError('更新包校验失败，请重新下载。')
+            temporary.mkdir(parents=True);archive=temporary/'payload.zip'
+            def receive(source):
+                digest=hashlib.sha256();count=0
+                with archive.open('wb') as dest:
+                    while True:
+                        block=source.read(128*1024)
+                        if not block:break
+                        count+=len(block)
+                        if count>asset['size'] or count>MAX_ARCHIVE:raise ValueError('下载内容超过发布尺寸。')
+                        digest.update(block);dest.write(block)
+                        with self.lock:self.state['progress']=int(count*85/asset['size'])
+                if count!=asset['size']:raise http.client.IncompleteRead(b'',asset['size']-count)
+                if 'sha256:'+digest.hexdigest()!=asset['digest']:raise ValueError('更新包校验失败，请重新下载。')
+                return digest
+            digest=self.transfer(asset['browser_download_url'],receive)
             overlay=temporary/'version';overlay.mkdir()
             manifest=unpack_archive(archive,overlay,version)
             # Preserve installed private artwork/optional SDKs without putting them in the update feed.

@@ -275,7 +275,7 @@ class AssetCatalog:
         if kind == 'item':
             books = self.store.catalog_rows('BookCfg') if source == 'original' else self._rows(project, 'BookCfg', warnings_list)
             rows = {**rows, **{key: dict(row, type=3) for key, row in books.items()}}
-        persons = self._people(project, source, warnings_list)
+        persons = self._people(project, source, warnings_list) if kind in {'portrait','social','cg'} else {}
         result = []
         if kind == 'portrait':
             local_faces = self._rows(project, 'ModFaceCfg', warnings_list) if source != 'original' else {}
@@ -528,14 +528,40 @@ class AssetCatalog:
         if not folder or not folder.get('path'): return result
         root=Path(folder['path'])
         if not root.is_dir() or link(root): return [(str(root), None)]
-        for directory, dirs, files in os.walk(root,followlinks=False):
-            base=Path(directory);dirs[:]=[name for name in dirs if not name.startswith('.') and not link(base/name)]
-            result.append((str(base), file_fingerprint(base)))
-            for name in files:
-                path=base/name
-                if path.suffix.lower() in IMAGES|AUDIO and not link(path):
-                    try: result.append((str(path),file_fingerprint(path)))
-                    except OSError: result.append((str(path),None))
+        # Directory identities reveal additions/removals. Reuse their names
+        # while still checking every media file's real change fingerprint.
+        cache = getattr(self, '_directory_watch_cache', None)
+        if cache is None: self._directory_watch_cache = cache = OrderedDict()
+        pending = [root]
+        while pending:
+            base = pending.pop()
+            try: stamp = file_fingerprint(base)
+            except OSError:
+                result.append((str(base), None)); continue
+            result.append((str(base), stamp))
+            saved = cache.get(str(base))
+            if saved and saved[0] == stamp:
+                dirs, files = saved[1:]
+                cache.move_to_end(str(base))
+            else:
+                dirs, files = [], []
+                try:
+                    with os.scandir(base) as entries:
+                        for entry in entries:
+                            if entry.is_symlink(): continue
+                            path = base / entry.name
+                            if entry.is_dir(follow_symlinks=False):
+                                if not entry.name.startswith('.'): dirs.append(path)
+                            elif path.suffix.lower() in IMAGES|AUDIO: files.append(path)
+                except OSError:
+                    result.append((str(base), None)); continue
+                cache[str(base)] = (stamp, dirs, files)
+                while len(cache)>4096: cache.popitem(last=False)
+            pending.extend(path for path in dirs if not link(path))
+            for path in files:
+                if link(path): continue
+                try: result.append((str(path), file_fingerprint(path)))
+                except OSError: result.append((str(path), None))
         return sorted(result)
 
     def _entries(self, query, refresh_media=True):
@@ -545,7 +571,7 @@ class AssetCatalog:
         source_stamps = [(p.id, self.store.revision(p)) for p in sources]
         folders = self.folders() if source == 'custom' else None
         self.store.catalog()
-        key_data = [self._hash_generation, project.id, revision, source, source_project.id, source_revision, kind, grade, cloth,
+        key_data = [project.id, revision, source, source_project.id, source_revision, kind, grade, cloth,
                     self.store._catalog_stamp, folders['revision'] if folders else None, source_stamps, query.get('variantMode'), query.get('variantPerson'), query.get('library')]
         if query.get('variantMode') in ('portrait','expression'):
             key_data.append([(p.parent.name,file_fingerprint(p)) for p in sorted((game_cache(self.store.game) / 'native-models-v1').glob('*/model.json'))])
@@ -556,6 +582,10 @@ class AssetCatalog:
             try: unchanged = cached.get('_folderWatch', []) == folder_watch and all(file_fingerprint(path) == version for path, version in cached.get('_files', []))
             except OSError: unchanged = False
             if unchanged:
+                if '_rawItems' in cached and cached.get('_hashGeneration') != self._hash_generation:
+                    generation = self._hash_generation
+                    cached['items'] = self._deduplicate_backgrounds(cached['_rawItems'])
+                    cached['_hashGeneration'] = generation
                 self.cache.move_to_end(cache_key)
                 return cached
             if not refresh_media:
@@ -583,10 +613,12 @@ class AssetCatalog:
             paths = sorted({entry['_path'] for entry in [item, *item.get('_variants', [])] if entry.get('_path')})
             item['mediaRevision'] = hashlib.sha256(json.dumps([(str(path),versions[path]) for path in paths]).encode()).hexdigest()[:24]
         if source == 'custom' and query.get('library') == '1': items = [item for item in items if item['origin'] == 'folder']
+        raw_items = items; hash_generation = self._hash_generation
         if kind == 'background' and query.get('library') != '1': items = self._deduplicate_backgrounds(items)
         result = {'allMods': all_mods, 'catalogKey': cache_key, 'source': source, 'kind': kind, 'projectId': project.id, 'revision': revision,
                   'sourceProject': source_project.public() if source == 'mod' and not all_mods else None, 'sourceRevision': source_revision,
                   'items': items, 'warnings': list(dict.fromkeys(warnings_list)), '_project': project, '_files': file_versions, '_folderWatch':folder_watch}
+        if kind == 'background' and query.get('library') != '1': result.update(_rawItems=raw_items, _hashGeneration=hash_generation)
         if folders: result['folder'] = {**folders['folders'][kind], 'settingsRevision': folders['revision']}
         self.cache[cache_key] = result
         while len(self.cache) > 96: self.cache.popitem(last=False)
@@ -701,7 +733,7 @@ class AssetCatalog:
             if stamp(item['_path']) != item['_fingerprint']: self.error('素材文件已经变化，请刷新目录。', 409, 'conflict')
             if catalog['kind'] == 'portrait' and query.get('headshot') == '1':
                 return crop_head(item['_path'], game_cache(self.store.game) / 'headshot-cache')
-            if query.get('thumbnail') == '1' and catalog['kind'] in {'background', 'cg'}:
+            if query.get('thumbnail') == '1' and catalog['kind'] in {'background', 'cg', 'item', 'avatar', 'social'}:
                 thumbnail_path = item['_path']
             else:
                 return item['_path']

@@ -269,6 +269,44 @@ class SegmentService:
         self.generations = {}
         self.request_context = threading.local()
 
+    def story_fingerprints(self, project):
+        # A feature save may change ItemCfg without changing the open story.
+        # Track every table the story loader uses, plus all editor metadata.
+        from storage_paths import game_cache
+        tables = {*self.backend.TABLES.values(), 'AudioCfg.json'}
+        paths = [path for path in self.store.revision_paths(project)
+                 if not str(path.relative_to(project.path)).startswith('Cfgs/') or path.name in tables]
+        paths.append(game_cache(self.store.game) / 'game-catalog.json')
+        return tuple((str(path), file_fingerprint(path) if path.exists() else None) for path in paths)
+
+    def refresh_revision(self, project_id, token, expected):
+        with self.store.lock:
+            project = self.store.project(project_id)
+            revision = self.store.revision(project)
+            result = {'projectId': project.id, 'revision': revision, 'unchangedStory': False}
+            generation = self.generations.get(token) if isinstance(token, str) else None
+            if (not generation or project.original_mode
+                    or generation.identity['path'] != str(project.path.resolve())
+                    or generation.identity['originalMode'] != project.original_mode
+                    or getattr(generation, 'document_revision', None) != expected):
+                return result
+            if getattr(generation, 'story_fingerprints', None) != self.story_fingerprints(project):
+                return result
+            # Do not accept corrupt cache files when advancing an unrelated revision.
+            try:
+                intact = (file_fingerprint(generation.path / 'records.json') == generation.file_identity
+                          and file_fingerprint(generation.path / 'search.sqlite') == generation.search_identity
+                          and file_fingerprint(generation.path / 'index.json') == generation.manifest_identity)
+            except OSError:
+                intact = False
+            if not intact: return result
+            if self.store.revision(project) != revision:
+                raise self.backend.ApiError('检查时模组发生变化，请重试。', 409, 'conflict')
+            generation.source_state['revision'] = revision
+            generation.document_revision = revision
+            result['unchangedStory'] = True
+            return result
+
     def open(self, project_id, original_events=()):
         b = self.backend
         original_events = sorted({str(int(i)) for i in original_events if str(i).isdigit()})
@@ -313,6 +351,9 @@ class SegmentService:
                 raise SegmentError('分段缓存目录不能放在模组内部')
             generation = Generation(cache, identity, raw, loaded, check)
             generation.source_state = source_state
+            generation.document_revision = revision
+            generation.story_fingerprints = self.story_fingerprints(project)
+            check()
             self.generations[generation.generation] = generation
             while len(self.generations) > 4:
                 oldest = next(iter(self.generations))
@@ -328,7 +369,7 @@ class SegmentService:
         generation.validate()
         return generation
 
-    def saved(self, project, token, revision):
+    def saved(self, project, token, revision, *, story_saved=False):
         """Keep a session's immutable undo base readable after its own commit.
 
         A new open builds a fresh generation. Only this server's successful save
@@ -338,6 +379,9 @@ class SegmentService:
         if not generation or self.store.revision(project) != revision:
             return False
         source = self.backend.safe_path(project.path, 'Cfgs/zh-cn/TalkCfg.json')
+        if story_saved:
+            generation.story_fingerprints = self.story_fingerprints(project)
+            generation.document_revision = revision
         generation.write_epoch = getattr(generation, 'write_epoch', 0) + 1
         generation.source_state.update(revision=revision,
                                        fingerprint=file_fingerprint(source) if source.exists() else None)

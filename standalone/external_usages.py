@@ -116,7 +116,7 @@ def apply(store,project,groups,previous,all_maps,touched,api,normalized_entries=
     for fid,folder in previous.items():
         for u in folder.get('uses',[]):
             if isinstance(u,dict) and u.get('id'):old[(fid,u['id'])]=u
-    refs={}; changed={}; claims=[]; result=[]; seen=set()
+    refs={}; changed={}; claims=[]; result=[]; seen=set(); gift_modes={}
     def table(name):
         if name not in refs:refs[name]={**rows_for(store,project,name),**copy.deepcopy(all_maps.get(name+'.json',{}))}
         return refs[name]
@@ -169,6 +169,8 @@ def apply(store,project,groups,previous,all_maps,touched,api,normalized_entries=
                 if not gift:raise api.ApiError('礼物不存在。')
                 if gift.get('value',0)<0:raise api.ApiError('该物品在原版中不可赠送，请选择可赠送的礼物。')
                 matches=[r for r in rows.values() if r.get('item')==item and npc in (r.get('npc') or [])]
+                linked=previous.get(fid,{}).get('giftEventId') and old.get(identity,{}).get('eventGiftBinding')
+                if linked and any(r['id']==rid for r in matches):matches=[r for r in matches if r['id']==rid]
                 if len(matches)>1:raise api.ApiError('该人物和礼物已有多条送礼规则，原版会优先匹配其中一条。请先在送礼配置中合并重复入口，再绑定用途。')
                 if matches:rid=matches[0]['id']
                 else:rid=0  # A changed recipient/item gets its own entry; never edits another recipient.
@@ -197,7 +199,10 @@ def apply(store,project,groups,previous,all_maps,touched,api,normalized_entries=
                 if slot==len(row['npc']):row['npc'].append(npc)
                 row['item']=item;path.append(slot)
                 mode=_int(u.get('giftMode',0),'赠送方式',api,0,1)
-                claim(name,rid,['type',slot],identity);write_path(row,['type',slot],mode)
+                mode_key=(rid,slot)
+                if mode_key in gift_modes and gift_modes[mode_key]!=mode:raise api.ApiError('同一人物和礼物的男主、女主入口共用赠送方式，请设置为相同方式。')
+                gift_modes[mode_key]=mode
+                claim(name,rid,['type',slot],(fid,'gift-mode:'+str(rid)+':'+str(slot)) if linked else identity);write_path(row,['type',slot],mode)
             if shape=='answer':
                 answer=u.get('answer','')
                 if not isinstance(answer,str) or not answer or len(answer)>500:raise api.ApiError('请填写要精确匹配的答案。')

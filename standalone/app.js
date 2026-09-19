@@ -94,7 +94,13 @@ function premisePair(row,writer=false){return Array.isArray(row)&&row.length>=5&
 function premiseWriters(value,result=new Set()){if(Remote.nodeInfo(value))value=Remote.projection(value);const pair=premisePair(value,true);if(pair)result.add(pair);else if(value&&typeof value==='object')for(const child of Object.values(value))premiseWriters(child,result);return result;}
 // A premise created on a dialogue line is held by that line itself (the game records reached talks natively);
 // legacy premises are held by their [50,2,event,slot,1] effect rows.
-function premiseHolders(value){const result=premiseWriters(value);const talks=value&&typeof value==='object'?(value.talks?Object.keys(value.talks):(Remote.nodeInfo(value)||value.content!==undefined)&&value.id!==undefined?[value.id]:[]):[];if(talks.length){const set=new Set(talks.map(Number));for(const p of values(S.premises))if(Number.isInteger(p?.talkId)&&set.has(Number(p.talkId)))result.add(p.eventId+':'+p.slot);}return result;}
+function premiseHolders(value){
+ const definitions=values(S.premises);if(!definitions.length)return new Set();
+ // Reached-line premises need an ID lookup; only legacy effect-based premises need a deep scan.
+ const result=definitions.some(p=>!Number.isInteger(p?.talkId))?premiseWriters(value):new Set();
+ for(const p of definitions)if(Number.isInteger(p?.talkId)&&(value?.talks?Object.hasOwn(value.talks,String(p.talkId)):Number(value?.id)===p.talkId))result.add(p.eventId+':'+p.slot);
+ return result;
+}
 function stripPremise(value,pairs){if(!pairs.size)return value;if(Remote.nodeInfo(value)){for(const child of Object.values(Remote.projection(value)))stripPremise(child,pairs);return value;}if(Array.isArray(value)){for(let i=value.length-1;i>=0;i--)if(pairs.has(premisePair(value[i])))value.splice(i,1);else stripPremise(value[i],pairs);}else if(value&&typeof value==='object')for(const child of Object.values(value))stripPremise(child,pairs);return value;}
 window.STUDIO_STRIP_PREMISES=stripPremise;
 function removePremises(keys){const pairs=new Set();for(const key of keys){const p=S.premises[key];if(p){pairs.add(p.eventId+':'+p.slot);delete S.premises[key];}}stripPremise(S.doc,pairs);S.conditionTemplates=S.conditionTemplates.filter(t=>!pairs.has(premisePair(t.template)));return pairs;}
@@ -290,9 +296,10 @@ function renumberPlan(eventId){
   let n=0;for(const id of talksInOrder){if(S.pinned.talks.has(id)){n++;continue;}let fresh;do{n++;fresh=eventId*1000+n;}while(takenTalks.has(fresh)&&fresh!==id);
     if(n>999||fresh>2147483647){if(!renumberWarned.has(eventId)){renumberWarned.add(eventId);toast('本事件对话超过 999 句，无法继续自动编号。','note');}return null;}
     if(fresh!==id)talkMap[id]=fresh;}
+  const foreignOptions=new Set();for(const t of values(S.doc.talks))if(!domain.has(Number(t.id)))for(const oid of ids(t.option))foreignOptions.add(oid);
   const optionMap={},optionOrder=[];const seenOptions=new Set();
   for(const id of talksInOrder)for(const oid of ids(S.doc.talks[id]?.option)){if(seenOptions.has(oid))continue;seenOptions.add(oid);const row=S.doc.options[oid];if(!row||!localOptions.has(oid)||S.pinned.options.has(oid))continue;
-    const parents=values(S.doc.talks).filter(t=>ids(t.option).includes(oid)).map(t=>Number(t.id));if(parents.some(pid=>!domain.has(pid)))continue;optionOrder.push(oid);}
+    if(foreignOptions.has(oid))continue;optionOrder.push(oid);}
   const optionDomain=new Set(optionOrder),takenOptions=new Set([...S.pinned.options,...Object.keys(S.doc.options).map(Number).filter(id=>!optionDomain.has(id))]);
   let j=0;for(const oid of optionOrder){let fresh;do{j++;fresh=eventId*100+j;}while(takenOptions.has(fresh)&&fresh!==oid);if(j>99)break;if(fresh!==oid)optionMap[oid]=fresh;}
   if(!Object.keys(talkMap).length&&!Object.keys(optionMap).length)return null;
@@ -337,15 +344,16 @@ async function renumberEvent(eventId){
   return runRenumber(plan);
 }
 async function runRenumber(plan,label=null){
-  if(!editable())return false;const preparationStamp=currentSignature();await Remote.ensure(S.doc.talks);if(currentSignature()!==preparationStamp){scheduleRenumber();return false;}
+  if(!editable())return false;const preparationStamp=currentSignature();
   const oldIds=[...Object.keys(plan.TalkCfg||{}),...Object.keys(plan.OptionCfg||{}),...Object.keys(plan.EvtCfg||{})];if(!oldIds.length)return false;
   const pattern=new RegExp('(?<![0-9])('+oldIds.join('|')+')(?![0-9])');
   const tables={};
   for(const [table,key]of Object.entries(jsonStoryKeys)){
     const base=S.catalogIds?.[key],local=localStoryIds(key),domain=table==='TalkCfg'?plan.TalkCfg:table==='OptionCfg'?plan.OptionCfg:table==='EvtCfg'?plan.EvtCfg:null,rows={};
-    for(const [id,row]of Object.entries(S.doc[key]||{})){if(base?.has(String(id))&&!local.has(Number(id)))continue;if((domain&&domain[id]!==undefined)||pattern.test(JSON.stringify(row)))rows[id]=row;}
+    for(const [id,row]of Object.entries(S.doc[key]||{})){if(base?.has(String(id))&&!local.has(Number(id)))continue;if((domain&&domain[id]!==undefined)||pattern.test(JSON.stringify(table==='TalkCfg'?Remote.projection(row):row)))rows[id]=row;}
     if(Object.keys(rows).length)tables[table]=rows;
   }
+  await Remote.ensure(S.doc.talks,Object.keys(tables.TalkCfg||{}));if(currentSignature()!==preparationStamp){scheduleRenumber();return false;}
   const stamp=currentSignature();if(renumberPending)return false;renumberPending=true;
   let result;try{result=await api('/api/story/renumber',{projectId:S.project.id,mappings:plan,tables});}finally{renumberPending=false;}
   if(!S.doc||currentSignature()!==stamp){scheduleRenumber();return false;}
@@ -361,7 +369,7 @@ function applyRenumber(result){
   for(const [table,rows]of Object.entries(result.tables||{})){const key=jsonStoryKeys[table];if(!key||!S.doc[key])continue;const map=table==='TalkCfg'?tm:table==='OptionCfg'?om:table==='EvtCfg'?em:null;if(map)for(const old of Object.keys(map))delete S.doc[key][old];Object.assign(S.doc[key],rows);}
   if(Object.keys(tm).length)for(const p of Object.values(S.premises||{}))if(Number.isInteger(p.talkId))p.talkId=mt(p.talkId);
   if(Object.keys(em).length){if(S.event!=='all')S.event=me(S.event);if(S.doc.eventGrades)S.doc.eventGrades=Object.fromEntries(Object.entries(S.doc.eventGrades).map(([k,v])=>[String(me(k)),v]));for(const p of Object.values(S.premises||{})){if(p.eventId!==undefined)p.eventId=me(p.eventId);if(p.event!==undefined)p.event=me(p.event);}renumberWarned.clear();setTimeout(()=>window.STUDIO_EVENTS?.refresh?.(),0);}
-  if(S.doc.externalDialogueIds){S.doc.externalDialogueIds=S.doc.externalDialogueIds.map(mt);for(const f of Object.values(S.doc.externalDialogueFolders||{})){f.talkIds=f.talkIds.map(mt);for(const u of f.uses||[])u.entryId=mt(u.entryId);}}
+  if(S.doc.externalDialogueIds){S.doc.externalDialogueIds=S.doc.externalDialogueIds.map(mt);for(const f of Object.values(S.doc.externalDialogueFolders||{})){f.talkIds=f.talkIds.map(mt);if(f.giftEventId)f.giftEventId=me(f.giftEventId);for(const u of f.uses||[])u.entryId=mt(u.entryId);}}
   S.order=S.order.map(mt);
   const folders={};for(const [key,f]of Object.entries(S.branchFolders)){const g=clone(f);for(const field of ['parentTalkId','routerId','exitId','endId'])if(g[field]!==undefined)g[field]=mt(g[field]);for(const field of ['talkIds','baseNext'])if(Array.isArray(g[field]))g[field]=mtAll(g[field]);if(Array.isArray(g.failureNext))g.failureNext=mtAll(g.failureNext);if(g.optionId!==undefined)g.optionId=mo(g.optionId);if(g.continuation?.kind==='talk')g.continuation.talkId=mt(g.continuation.talkId);if(g.continuation?.kind==='event')g.continuation.eventId=me(g.continuation.eventId);if(g.continuation?.kind==='targets')g.continuation.targets=mtAll(g.continuation.targets);folders[mapKey(key)]=g;}
   S.branchFolders=folders;
@@ -835,7 +843,7 @@ async function loadProject(id,preserve=false) {
   const data=await api('/api/project?id='+encodeURIComponent(id)+'&talkStorage='+(new URLSearchParams(location.search).get('talkStorage')==='indexed'?'indexed':'segmented')+(window.STUDIO_ORIGINAL_MODE()&&originalEvents(id).size?'&originalEvents='+[...originalEvents(id)].join(','):''));await STUDIO_IDS.refresh(id);if(request!==projectLoadSequence)return false;previous={...S};
   if(!isReadableProject(data.project)||String(data.project.id)!==String(id))throw Error('读取的项目与当前选择不符，请重新打开。');
   if(S.project&&String(S.project.id)!==String(data.project.id)){scenePlayer?.dispose();scenePlayer=null;StudentAgeScene.portraitSizes.clear();portraitSizeRequests.clear();}S.project=data.project;S.deferredProject=false;S.referenceResolution=data.referenceResolution||[2560,1440];S.revision=data.revision;S.localIds=data.localIds||{};S.catalogAvailable=!!data.catalogAvailable;
-  S.goalImageIds=data.goalImageIds||[];S.doc={protagonistGender:data.protagonistGender===2?2:1,eventGrades:data.eventGrades||{}};for(const k of MAPS)S.doc[k]=data[k]||{};if(data.indexedTalks)S.doc.talks=IndexedTalks.create(data.indexedTalks.rows);if(data.segmentedTalks){const projectId=id;S.doc.talks=Remote.create(data.segmentedTalks,(path,body)=>api(path,{...body,projectId}),data.revision);}
+  S.goalImageIds=data.goalImageIds||[];S.doc={protagonistGender:data.protagonistGender===2?2:1,eventGrades:data.eventGrades||{}};for(const k of MAPS){const rows=data[k]||{};S.doc[k]=k!=='talks'&&Object.keys(rows).length>500?IndexedTalks.create(Object.entries(rows).map(([id,row])=>[id,JSON.stringify(row)])):rows;}if(data.indexedTalks)S.doc.talks=IndexedTalks.create(data.indexedTalks.rows);if(data.segmentedTalks){const projectId=id;S.doc.talks=Remote.create(data.segmentedTalks,(path,body)=>api(path,{...body,projectId}),data.revision);}
   S.premises=clone(data.premises||{});S.branchFolders=clone(data.branchFolders||{});S.folderOpen={};S.activeFolder=null;S.doc.talkOwners=clone(data.talkOwners||{});StudentAgeEventOwnership.sync(S.doc,S.branchFolders);S.doc.audioCues=data.audioCues||{version:1,sfx:{},bgm:[]};S.bgmDraft=null;S.audios=[];S.defaultBgm=null;stageAudio?.stop();
   const computedOrder=initialOrder();const storedOrder=ids(data.order).filter(id=>S.doc.talks[id]);S.order=[...new Set([...storedOrder,...computedOrder])];S.event=preserve&&(oldEvent==='all'||S.doc.events[oldEvent])?oldEvent:(values(S.doc.events)[0]?.id || 'all');
   searchStamp='';++searchSequence;S.segmentSearch=null;S.search='';$('#talk-search').value='';S.selected=preserve&&S.doc.talks[oldSelection]?oldSelection:(visibleIds()[0]||null);
@@ -847,7 +855,7 @@ async function loadProject(id,preserve=false) {
   localStorage.setItem('studentAgeStudio.project',String(id));renderProjects();render();if(data.warnings?.length||data.project?.warnings?.length)toast((data.warnings||data.project.warnings)[0],'note');
   projectBusy(false);$('#project-load-status')?.remove();
   loadConditionCatalog();
-  loadAudioCatalog().catch(error=>{if(request===projectLoadSequence)toast(error.message,'note')});IndexedTalks.retain(S.doc.talks);window.dispatchEvent(new CustomEvent('studio-project-ready'));return true;
+  loadAudioCatalog().catch(error=>{if(request===projectLoadSequence)toast(error.message,'note')});IndexedTalks.retain(S.doc.talks,MAPS.map(k=>S.doc[k]));window.dispatchEvent(new CustomEvent('studio-project-ready'));return true;
   }catch(error){error.projectId=id;if(request!==projectLoadSequence)return false;if(previous){Object.assign(S,previous);renderProjects();render();}projectBusy(false);projectFeedback('无法打开“'+(availableProject(id)?.name||id)+'”：'+(error.message||error),true,id);throw error;}
 }
 function newProject(copy=false,sourceId=null) {
@@ -871,7 +879,7 @@ function changedStoryPayloadFrom(){
  for(const [key,value] of Object.entries(S.doc)){
   const patch=key==='talks'?IndexedTalks.delta(value,before[key]):null;
   if(patch){if(Object.keys(patch.upsert).length||patch.deleted.length)payload.talkPatch=patch;}
-  else if(JSON.stringify(value)!==JSON.stringify(before[key]))payload[key]=value;
+  else if(IndexedTalks.stringify(value)!==IndexedTalks.stringify(before[key]))payload[key]=value;
  }
  const extras={deletedIds:[S.deleted,baseline[2]],replacements:[S.replacements,baseline[3]],order:[S.order,baseline[1]],branchFolders:[Object.fromEntries(Object.entries(S.branchFolders).map(([key,{collapsed,...folder}])=>[key,folder])),baseline[5]],premises:[S.premises,baseline[4]]};
  for(const [key,[value,old]] of Object.entries(extras))if(JSON.stringify(value)!==JSON.stringify(old))payload[key]=value;
@@ -948,6 +956,7 @@ function eventDetails(id=S.event,creation=null) {
     if(bindingsChanged&&!bindings.social&&[2,21,22,522].includes(type)&&bindings.interactions.some(r=>!String(r.text||'').trim()))throw Error('请填写社交互动的进度条文字。');
     const gifts=type===110?(bindings.gifts||[]):[];
     if(type===110&&(!gifts.length||gifts.some(r=>!Number.isInteger(r.npc)||r.npc<=0||!Number.isInteger(r.item)||r.item<=0)))throw Error('请在事件类型中选择收礼人和礼物物品。');
+    if(gifts.length)StudentAgeEventBindings.resolveGiftSlots(S.doc,e,initialBindings.gifts,gifts);
     const phoneBg=Number($('#event-phone-bg')?.value)||phoneChange?.bg||e.studioPhoneBackground||phoneHome(npc);
     if(bindings.social)StudentAgeEventBindings.validateSocial(S.doc,{...e,npc,maxcount,talkId:first?[first]:[]},bindings,S.conditionRefs);
     closeModal();mutate(creation?'创建事件':'修改事件与触发条件',()=>{
@@ -969,7 +978,7 @@ function eventDetails(id=S.event,creation=null) {
       if(gifts.length&&!ids(e.talkId)[0]){const tid=STUDIO_IDS.allocate('TalkCfg',S.doc.talks,e.id);S.doc.talks[tid]=normalizeTalk({id:tid,content:'',bg:0,roleIds:[]});e.talkId=[tid];S.order.push(tid);}
       if(gifts.length||initialBindings.gifts.length)StudentAgeEventBindings.applyGifts(S.doc,e,initialBindings.gifts,gifts,rows=>STUDIO_IDS.allocate('GiftEvtCfg',rows));
       if(bindings.social?.kind==='minigame'&&!e.talkId?.[0]){const tid=STUDIO_IDS.allocate('TalkCfg',S.doc.talks,e.id);S.doc.talks[tid]=normalizeTalk({id:tid,content:'',bg:0,roleIds:[]});e.talkId=[tid];S.order.push(tid);}
-      e.studioSocial={...(e.studioSocial||{}),conditions:socialApplied.conditions||[],effects:socialApplied.effects||[]};
+      e.studioSocial={...(e.studioSocial||{}),...socialApplied,conditions:socialApplied.conditions||[],effects:socialApplied.effects||[]};
       StudentAgeEventBindings.applySocial(S.doc,e,bindings,S.conditionRefs,(table,rows)=>STUDIO_IDS.allocate(table,rows));
       if([70,71].includes(type)){e.studioPhoneBackground=phoneBg;configurePhone(e,npc,phoneBg);}
     });window.STUDIO_EVENTS?.refresh();
@@ -990,7 +999,7 @@ function eventDetails(id=S.event,creation=null) {
   $('#event-type').onclick=async()=>{await Promise.all(['PersonGrowCfg','MinigameActionCfg'].map(async name=>{if(!S.conditionRefs[name])S.conditionRefs[name]=(await api('/api/table?'+new URLSearchParams({projectId:S.project.id,name}))).rows;}));const button=$('#event-type'),picked=await StudentAgeCharacterUI.eventType(S.project.id,(bindings.social?.kind==='talk'?-2:bindings.social?.kind==='minigame'?-24:Number(button.value)),{event:{...clone(e),studioSocial:socialApplied,title:$('#event-title').value,maxcount:Number($('#event-maxcount').value),condition:conditions,effect:effects},npc:Number($('#event-npc').value),mapId:Number($('#event-map').value),bindings,persons:S.doc.persons,actions:{...S.conditionRefs.ActionCfg,...S.doc.actions},actionEvents:{...S.conditionRefs.ActionEvtCfg,...S.doc.actionEvents},interactions:{...S.conditionRefs.InteractCfg,...S.doc.interactions},talks:S.doc.talks,eventTalks:Object.fromEntries([...eventTalkIds].map(id=>[id,S.doc.talks[id]])),refs:S.conditionRefs,localIds:S.conditionLocalIds,conditionTemplates:allConditionTemplates(),effectTemplates:S.effectTemplates,getPremises:()=>S.premises});if(picked&&button.isConnected){bindings=picked.bindings||bindings;bindingsChanged=true;button.value=picked.id;button.textContent=picked.name+' ▾';$('#event-npc').value=picked.npc;const map=$('#event-map');if(![...map.options].some(o=>Number(o.value)===picked.mapId))map.add(new Option('参数 '+picked.mapId,picked.mapId));map.value=picked.mapId;$('#event-type-note').textContent=StudentAgeCharacterUI.eventDescription(picked.social?.kind==='talk'?-2:picked.id);if(picked.social){const r=picked.social;const max=r.kind==='talk'?1:r.kind==='topic'?(r.repeat?2147483647:1):r.maxcount;$('#event-maxcount').value=max;if(r.kind==='topic')$('#event-title').value=r.title;const out=StudentAgeEventBindings.socialCommands({...e,studioSocial:socialApplied,condition:conditions,effect:effects},r,picked.npc);conditions=out.condition;effects=out.effect;socialApplied=out.studioSocial;mountCommands();}else{const out=StudentAgeEventBindings.socialCommands({...e,studioSocial:socialApplied,condition:conditions,effect:effects},{},picked.npc);conditions=out.condition;effects=out.effect;socialApplied={};mountCommands();}parameters();}};
   parameters();if(creation)setTimeout(()=>$('#event-title')?.focus(),0);
   const refs={...S.conditionRefs,EvtCfg:{...S.conditionRefs.EvtCfg,...S.doc.events},OptionCfg:{...S.conditionRefs.OptionCfg,...S.doc.options}};
-  function mountCommands(){Conditions.mount($('#event-conditions'),{rows:conditions,templates:allConditionTemplates(),refs,localIds:S.conditionLocalIds,readOnly:readOnly||S.conditionsLoading,emptyText:'空列表是否触发由事件类型决定。',description:S.conditionsLoading?'正在读取条件目录，请稍后重新打开设置。':'条件满足时，还会检查事件类型和触发次数。',onChange:rows=>conditions=rows});
+  function mountCommands(){Conditions.mount($('#event-conditions'),{rows:conditions,templates:allConditionTemplates(),refs,localIds:S.conditionLocalIds,readOnly:readOnly||S.conditionsLoading,emptyText:'空列表是否触发由事件类型决定。',description:S.conditionsLoading?'正在读取条件目录，请稍后重新打开设置。':'条件满足时，还会检查事件类型和触发次数。',onChange:rows=>{if(bindings.social){const disabled=new Set(socialApplied.disabledConditions||[]);for(const r of conditions)if(!rows.some(v=>JSON.stringify(v)===JSON.stringify(r))&&(r[0]===7&&r[1]===101||(socialApplied.conditions||[]).some(v=>JSON.stringify(v)===JSON.stringify(r))||(socialApplied.entryConditions||[]).some(v=>JSON.stringify(v)===JSON.stringify(r))))disabled.add(r.slice(0,2).join(':'));socialApplied.disabledConditions=[...disabled];bindings.social.disabledConditions=[...disabled];}conditions=rows;}});
   Effects.mount($('#event-effects'),{rows:effects,templates:S.effectTemplates,refs,getPremises:()=>S.premises,readOnly:readOnly||S.conditionsLoading,onError:fail,onChange:rows=>effects=rows});
   }mountCommands();
 }
@@ -1056,7 +1065,9 @@ function targetSelect(row,field,attributes,exclude=null){
   const targets=ids(row[field]),options=value=>{let html=talkOptions(value,exclude);if(field==='nextTalk2')html=html.replace('结束这段对话','沿用普通出口');else if(field==='talkId2'&&row.nextEvtId)html=html.replace('结束这段对话','接续本选项设置的事件');return html;};if(targets.length<2)return `<select ${attributes}>${options(targets[0]||0)}</select>`;
   return `<div class="target-genders">${[0,1].map(index=>`<label><span>${index===0?'男主角去向':'女主角去向'}</span><select ${attributes} data-target-sex="${index}">${options(targets[index]||0)}</select></label>`).join('')}</div>`;
 }
+function syncTalkActionCodes(){const box=$('#talk-action-codes');if(box&&Number(box.dataset.talkId)===Number(S.selected)&&document.activeElement!==box)box.value=(talk()?.roles||[]).map(row=>Array.isArray(row)?row.join(','):String(row)).join(';');}
 function renderChrome() {
+  syncTalkActionCodes();
   externalSession?.onState?.({busy:!!(S.projectOpening||S.saving),dirty:S.dirty,readOnly:!!S.project?.readOnly,revision:S.revision,canUndo:!!S.undo.length,canRedo:!!S.redo.length});
   const available=!!availableProject(S.project?.id),writable=available&&isLocalProject(S.project);
   $('#undo').disabled=!S.undo.length;$('#redo').disabled=!S.redo.length;$('#copy-project').disabled=!available;
@@ -1140,7 +1151,7 @@ function renderDialogue() {
   html+=`<div class="branch-card conditional-branch-card" data-folder-card="${h(key)}"><div class="row branch-card-head"><strong>分支${f.branchId}</strong><span class="helper">${ids(f.talkIds).length} 句</span><button class="text-button" data-action="reveal-folder" data-folder-key="${h(key)}">在左侧查看</button><button class="icon-button danger-text" data-action="delete-branch" data-folder-key="${h(key)}" aria-label="删除分支">×</button></div>${conditionMarkup('talks',f.routerId,'check','触发条件','按左侧顺序判断，进入首个满足条件的分支；未设置条件时直接进入。',true)}</div>`;
  }
  if(Number(t.screenEffect?.[0])===4015)html+=`<button class="secondary" data-action="pick-cg">更换此 CG</button>`;
- return html+renderAudio();
+ return html+renderAudio()+`<section class="talk-action-codes"><label class="field-label" for="talk-action-codes">动作指令</label><p class="helper">逗号分隔参数，分号分隔多条指令，与原版一致。</p><textarea id="talk-action-codes" data-talk-id="${t.id}" rows="3" spellcheck="false" placeholder="例如：3,3001;4,3001" ${S.project?.readOnly?'readonly':''}>${h((t.roles||[]).map(row=>Array.isArray(row)?row.join(','):String(row)).join(';'))}</textarea></section>`;
 }
 function screenEffectControls(t){const effect=StudentAgeScreenEffects.entries.find(e=>e.id===Number(t.screenEffect?.[0]));return `<section class="screen-effect-controls"><h3>屏幕效果</h3><button data-action="screen-effect">${h(effect?.name|| (t.screenEffect?.length?'已有屏幕效果':'＋ 添加屏幕效果'))}</button>${t.screenEffect?.length?'<button data-action="screen-effect-clear">移除</button>':''}</section>`;}
 async function editScreenEffect(){const t=talk();if(!t||!editable())return;const id=t.id;
@@ -1717,11 +1728,18 @@ document.addEventListener('input',event=>{
     if(!editable())return;const o=S.doc.options[e.dataset.optionId];if(!o)return;history('编辑选项文字','option:'+o.id);o[e.dataset.optionField]=e.value;updateDirty();renderList();return;
   }
   if(e.dataset.arg&&e.type==='range'){
-    if(!editable())return;const i=Number(e.dataset.actionIndex),arg=Number(e.dataset.arg);history('调整动作参数','arg:'+S.selected+':'+i+':'+arg);const row=talk().roles[i];while(row.length<=arg)row.push(0);row[arg]=Number(e.value);updateDirty();const output=$('#range-'+i+'-'+arg);if(output)output.textContent=Number(e.value).toFixed(Number(e.step)>=1?0:1)+(e.dataset.unit||'');
+    if(!editable())return;const i=Number(e.dataset.actionIndex),arg=Number(e.dataset.arg);history('调整动作参数','arg:'+S.selected+':'+i+':'+arg);const row=talk().roles[i];while(row.length<=arg)row.push(0);row[arg]=Number(e.value);updateDirty();const output=$('#range-'+i+'-'+arg);if(output)output.textContent=Number(e.value).toFixed(Number(e.step)>=1?0:1)+(e.dataset.unit||'');syncTalkActionCodes();
   }
 });
 document.addEventListener('change',event=>{
-  const e=event.target;S.coalesce=null;
+  const e=event.target;
+  if(e.id==='talk-action-codes'){
+    if(!editable()||Number(e.dataset.talkId)!==S.selected)return;
+    const text=e.value.trim();let rows;
+    try{rows=text?text.split(/[;；\r\n]+/).filter(row=>row.trim()).map(row=>row.split(/[,，]/).map(value=>{const v=value.trim();if(!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(v)||!Number.isFinite(Number(v)))throw Error('动作指令应为数字；用逗号分隔参数、分号分隔多条指令。原动作已保留。');return Number(v);})):[];}
+    catch(error){e.value=(talk().roles||[]).map(row=>row.join(',')).join(';');fail(error);return;}
+    if(JSON.stringify(rows)!==JSON.stringify(talk().roles||[])){mutate('编辑动作指令',()=>talk().roles=rows,null,false);renderPreview();renderInspector();}return;
+  }S.coalesce=null;
   if(e.dataset.folderFailure){try{setFolderFailure(e.dataset.folderFailure,e.value);}catch(error){fail(error);renderList();}return;}
   if(e.dataset.folderContinuation){try{setFolderContinuation(e.dataset.folderContinuation,e.value);}catch(error){fail(error);renderList();}return;}
   if(e.dataset.bgmTalk!==undefined){const draft=bgmDraft(),member=Number(e.dataset.bgmTalk),members=new Set(draft.ids||[]);if(e.checked)members.add(member);else members.delete(member);draft.ids=visibleIds().filter(id=>members.has(id));if(draft.ids.length){draft.start=draft.ids[0];draft.end=draft.ids[draft.ids.length-1];}if(draft.track||draft.groupId)applyBgmDraft();return;}
@@ -1819,7 +1837,13 @@ window.STUDIO_EDIT_EVENT=eventDetails;
 window.STUDIO_ENTER_EVENT=async id=>{await ensureOriginalDialogue(id);return enterEvent(id);};
 window.STUDIO_DELETE_EVENT=deleteEvent;
 window.STUDIO_SAVE_EVENT_CHANGES=async()=>{const result=await save();window.STUDIO_EVENTS?.refresh();return result;};
-window.STUDIO_REFRESH_CURRENT_PROJECT=async(force=false)=>{if(externalSession)return;if(S.project&&(!S.deferredProject||force))await loadProject(S.project.id,!S.deferredProject);};
+window.STUDIO_DEFER_PROJECT_REFRESH=()=>{if(S.project)S.projectRefreshPending=true;};
+window.STUDIO_REFRESH_CURRENT_PROJECT=async(force=false)=>{
+ if(externalSession||!S.project||S.deferredProject&&!force)return;
+ const id=S.project.id;
+ if(S.doc&&!S.deferredProject){const generation=Remote.stats(S.doc.talks)?.generation||'',current=await api('/api/project-revision?'+new URLSearchParams({id,generation,revision:S.revision}));if(S.project?.id!==id)return;if(current.unchangedStory||!generation&&current.revision===S.revision){S.revision=current.revision;Remote.advance(S.doc.talks,current.revision);S.projectRefreshPending=false;return;}if(S.dirty)throw Error('模组文件已变化，当前剧情草稿仍保留，请先处理保存冲突。');}
+ await loadProject(id,!S.deferredProject);S.projectRefreshPending=false;
+};
 window.STUDIO_REUSE_CONTEXT=()=>({project:S.project,revision:(S.deferredProject?window.STUDIO_WORKSHOP_NAV?.assetContext?.(S.project?.id)?.revision:S.revision)??S.revision,selected:S.selected,previewRole:S.previewRole,grade:S.grade,cloth:S.cloth,face:S.face});
 window.STUDIO_PREPARE_ASSET_REUSE=async()=>{
  if(!editable())return null;

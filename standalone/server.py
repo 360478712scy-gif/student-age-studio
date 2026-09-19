@@ -88,6 +88,11 @@ class ApiError(Exception):
 
 
 def json_bytes(value):
+    # One complete top-level record per line. Keep the C encoder for nested data;
+    # recursive indent formatting is disproportionately costly for large CFG maps.
+    if isinstance(value, dict) and value and all(isinstance(k, str) for k in value):
+        encode = lambda v: json.dumps(v, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        return ("{\n" + ",\n".join("  " + encode(k) + ": " + encode(v) for k, v in value.items()) + "\n}\n").encode("utf-8")
     return (json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
 
 
@@ -472,6 +477,9 @@ class StudioStore:
         self._catalog_lock = threading.RLock()
         self._read_context = threading.local()
         self._revision_cache = {}
+        self._revision_file_digests = {}
+        self._portrait_person_cache = {}
+        self._workshop_tables = {}
         self.asset_catalog = AssetCatalog(self, sys.modules[__name__], asset_settings_path or os.environ.get('STUDIO_ASSET_FOLDER_SETTINGS'))
         self._orphan_cleanup_done = set()
         self._project_paths = {}
@@ -615,9 +623,10 @@ class StudioStore:
         return {name: path for name, path in self.cfg_files(project).items()
                 if name.casefold() not in auxiliary}
 
-    def readable_maps(self, project):
+    def readable_maps(self, project, selected=None):
         maps, failures = {}, {}
         for name, path in self.cfg_table_files(project).items():
+            if selected is not None and name not in selected: continue
             try:
                 rows = read_json(path, {})
                 # Validation changes only the top-level ID; nested payloads stay untouched.
@@ -739,19 +748,48 @@ class StudioStore:
         rows = catalog.get(alias, {}) if alias else {}
         return rows if isinstance(rows, dict) else {}
 
+    def portrait_person(self, project, role):
+        """Read one avatar's person row; stat on every request, parse only on change."""
+        with self.lock:
+            path = safe_path(project.path, 'Cfgs/zh-cn/PersonCfg.json')
+            try:
+                identity = file_fingerprint(path)
+            except FileNotFoundError:
+                self._portrait_person_cache.pop(str(path), None)
+                return copy.deepcopy(self.catalog_rows('PersonCfg').get(role, {}))
+            cached = self._portrait_person_cache.get(str(path))
+            if cached is None or cached[0] != identity:
+                rows = read_json(path, {})
+                if not isinstance(rows, dict): raise ApiError('人物表格式无效。', 422)
+                if file_fingerprint(path) != identity:
+                    raise ApiError('读取时人物配置发生变化，请重试。', 409, 'conflict')
+                size = path.stat().st_size
+                cached = (identity, rows, size)
+                self._portrait_person_cache.pop(str(path), None)
+                if size <= 16*1024*1024:
+                    self._portrait_person_cache[str(path)] = cached
+                    while len(self._portrait_person_cache) > 8 or sum(v[2] for v in self._portrait_person_cache.values()) > 16*1024*1024:
+                        del self._portrait_person_cache[next(iter(self._portrait_person_cache))]
+            rows = cached[1]
+            return copy.deepcopy(rows[role] if role in rows else self.catalog_rows('PersonCfg').get(role, {}))
+
     def api_romance(self, project):
         data = read_json(safe_path(project.path,'StudentAgeStudio/character-romance.json'), {})
         if not isinstance(data, dict): raise ApiError('恋爱配置文件格式无效，原文件已保留。')
         return data
 
+    def revision_paths(self, project):
+        paths = [path for relative,path in self.json_document_files(project).items() if relative != 'manifest.json']
+        paths += [project.path / "manifest.json", project.path / "StudentAgeStudio/deleted-talks.json",
+                  project.path / "StudentAgeStudio/editor-state.json", project.path / "StudentAgeStudio/audio-cues.json",
+                  project.path / "StudentAgeStudio/original-edits.json", project.path / "StudentAgeStudio/social-state.json", project.path / "StudentAgeStudio/character-outfits.json", project.path / "StudentAgeStudio/character-romance.json", project.path / "StudentAgeStudio/space-layouts.json", project.path / "StudentAgeStudio/plugins.json", project.path / "EC2BUnofficialPatch/CustomMinigamecfg.json"]
+        return paths
+
     def revision(self, project):
-        # Keep the byte-identical revision contract while avoiding repeated reads
-        # of the multi-megabyte original catalogue for every image in a picker.
+        # Revision tokens are opaque. Hash per-file digests so changing one JSON
+        # never rereads unrelated files; fingerprints are still fresh on every call.
         with self.lock:
-            paths = [path for relative,path in self.json_document_files(project).items() if relative != 'manifest.json']
-            paths += [project.path / "manifest.json", project.path / "StudentAgeStudio/deleted-talks.json",
-                      project.path / "StudentAgeStudio/editor-state.json", project.path / "StudentAgeStudio/audio-cues.json",
-                      project.path / "StudentAgeStudio/original-edits.json", project.path / "StudentAgeStudio/social-state.json", project.path / "StudentAgeStudio/character-outfits.json", project.path / "StudentAgeStudio/character-romance.json", project.path / "StudentAgeStudio/space-layouts.json", project.path / "StudentAgeStudio/plugins.json", project.path / "EC2BUnofficialPatch/CustomMinigamecfg.json"]
+            paths = self.revision_paths(project)
             catalog_path = game_cache(self.game) / 'game-catalog.json'
             def fingerprint(path):
                 try:
@@ -763,27 +801,36 @@ class StudioStore:
             cached = self._revision_cache.get(key)
             if cached and cached[0] == fingerprints:
                 return cached[1]
-            digest = hashlib.sha256()
+            versions = dict(fingerprints)
+            def content_digest(path):
+                name = str(path); identity = versions[name]
+                if identity is None: return b'<missing>'
+                found = self._revision_file_digests.get(name)
+                if found and found[0] == identity: return found[1]
+                digest = hashlib.sha256()
+                with path.open('rb') as stream:
+                    for block in iter(lambda: stream.read(1024 * 1024), b''): digest.update(block)
+                if fingerprint(path) != identity:
+                    raise ApiError('检查时文件发生变化，请重试。', 409, 'conflict')
+                value = digest.digest()
+                self._revision_file_digests[name] = (identity, value)
+                while len(self._revision_file_digests) > 8192: del self._revision_file_digests[next(iter(self._revision_file_digests))]
+                return value
+            digest = hashlib.sha256(b'StudentAgeStudio-revision-v2\0')
             for path in paths:
-                digest.update(str(path.relative_to(project.path)).encode())
-                if path.exists():
-                    if not inside(path, project.path) or path.stat().st_size > MAX_JSON:
-                        raise ApiError("配置文件过大或路径无效。", 413)
-                    with path.open('rb') as stream:
-                        for block in iter(lambda: stream.read(1024 * 1024), b''):
-                            digest.update(block)
-                else:
-                    digest.update(b"<missing>")
+                digest.update(str(path.relative_to(project.path)).encode()); digest.update(b'\0')
+                if versions[str(path)] is not None and (not inside(path, project.path) or versions[str(path)][2] > MAX_JSON):
+                    raise ApiError('配置文件过大或路径无效。', 413)
+                digest.update(content_digest(path)); digest.update(b'\0')
             if catalog_path.is_file() and inside(catalog_path, game_cache(self.game)) and catalog_path.stat().st_size <= MAX_JSON:
-                digest.update(b"game-catalog.json")
-                with catalog_path.open('rb') as stream:
-                    for block in iter(lambda: stream.read(1024 * 1024), b''):
-                        digest.update(block)
+                digest.update(b'game-catalog.json\0'); digest.update(content_digest(catalog_path))
             revision = digest.hexdigest()
             if tuple((str(path), fingerprint(path)) for path in [*paths, catalog_path]) == fingerprints:
                 if key not in self._revision_cache and len(self._revision_cache) >= 64:
                     self._revision_cache.pop(next(iter(self._revision_cache)))
                 self._revision_cache[key] = (fingerprints, revision)
+            else:
+                raise ApiError('检查时模组发生变化，请重试。', 409, 'conflict')
             return revision
 
     def load(self, project_id, original_events=()):
@@ -1125,7 +1172,7 @@ class StudioStore:
         reveal_file(path)
         return {"ok": True, "path": str(path)}
 
-    def commit(self, project, changes, expected_revision=None, *, allowed_record_ids=None, raw=False):
+    def commit(self, project, changes, expected_revision=None, *, allowed_record_ids=None, raw=False, _verified_text_only=False):
         """Serialize writers across independent desktop application instances."""
         save_review.checkpoint()
         lock_path = safe_path(project.path, "StudentAgeStudio/.save.lock")
@@ -1139,7 +1186,7 @@ class StudioStore:
                     candidate = self.talk_segments.generations.get(context.token)
                     if candidate and candidate.identity['path'] == str(project.path.resolve()):
                         generation = self.talk_segments.get(project.id, context.token)
-                result = self._commit_unlocked(project, changes, expected_revision, allowed_record_ids=allowed_record_ids, raw=raw)
+                result = self._commit_unlocked(project, changes, expected_revision, allowed_record_ids=allowed_record_ids, raw=raw, _verified_text_only=_verified_text_only)
                 if generation:
                     revision = self.revision(project)
                     if self.talk_segments.saved(project, generation.generation, revision):
@@ -1148,7 +1195,7 @@ class StudioStore:
             finally:
                 unlock_file(lock_file)
 
-    def _commit_unlocked(self, project, changes, expected_revision=None, *, allowed_record_ids=None, raw=False):
+    def _commit_unlocked(self, project, changes, expected_revision=None, *, allowed_record_ids=None, raw=False, _verified_text_only=False):
         """Back up every changed file, stage all writes, replace atomically per file, and roll back errors.
 
         raw=True writes the user's own JSON text (raw source editor): the premise
@@ -1171,14 +1218,14 @@ class StudioStore:
         if project.original_mode and not raw:
             import original_mode
             changes = original_mode.compact_changes(self, project, changes, sys.modules[__name__])
-        if not raw: self.commit_warnings.extend(self.record_ids.validate_created(project, changes, allowed_record_ids))
+        if not raw and not _verified_text_only: self.commit_warnings.extend(self.record_ids.validate_created(project, changes, allowed_record_ids))
         normalized = {}
         for relative, data in changes.items():
             path = safe_path(project.path, relative)
             if path.exists():
                 original_bytes = path.read_bytes()
                 if original_bytes == data: continue
-                if not raw and relative.endswith('.json'):
+                if not raw and not _verified_text_only and relative.endswith('.json'):
                     original_value = read_json(path, {})  # Fail closed if this target is unreadable.
                     incoming_value = json.loads(data)
                     ordered_talks = relative == 'Cfgs/zh-cn/TalkCfg.json' and isinstance(original_value,dict) and isinstance(incoming_value,dict) and list(original_value) != list(incoming_value)
@@ -1433,6 +1480,46 @@ class StudioStore:
                 tables[table] = revised
             return {"tables": tables, "mappings": mappings, "conflicts": conflicts}
 
+    def story_save_maps(self, project, payload):
+        """Ordinary edits need story dependencies, not every unrelated mod table.
+
+        Deletion, ID migration and premise-writer changes retain the full reference pass.
+        This selects JSON contents only; revision checks still inspect every file.
+        """
+        if project.original_mode or payload.get('idMappings') or payload.get('deletedIds') or payload.get('replacements') or payload.get('_fullCatalogTable'):
+            return self.readable_maps(project)
+        state = read_json(safe_path(project.path, 'StudentAgeStudio/editor-state.json'), {})
+        if not isinstance(state, dict) or state.get('deletedPremisePairs') or ('premises' in payload and payload['premises'] != state.get('premises', {})) or read_json(safe_path(project.path, 'StudentAgeStudio/deleted-talks.json'), {}):
+            return self.readable_maps(project)
+        selected = {'TalkCfg.json', 'OptionCfg.json', 'EvtCfg.json', 'AudioCfg.json'}
+        selected.update(filename for name, filename in TABLES.items() if name in payload)
+        if 'externalDialogueFolders' in payload:
+            from external_usages import KINDS
+            for groups in (state.get('externalDialogueFolders', {}), payload['externalDialogueFolders']):
+                if not isinstance(groups, dict): continue
+                for folder in groups.values():
+                    if not isinstance(folder, dict): continue
+                    for use in folder.get('uses', []):
+                        definition = KINDS.get(use.get('kind')) if isinstance(use, dict) else None
+                        if definition: selected.add(definition['table'] + '.json')
+        maps, unreadable = self.readable_maps(project, selected)
+        patch = payload.get('talkPatch')
+        if patch and (not isinstance(patch, dict) or patch.get('deleted')):
+            return self.readable_maps(project)
+        for name, filename in TABLES.items():
+            rows = payload.get(name)
+            partial = name == 'talks' and isinstance(patch, dict)
+            if partial: rows = patch.get('upsert')
+            if rows is None: continue
+            old = maps.get(filename, {})
+            if not isinstance(rows, dict) or not partial and set(old) - set(rows):
+                return self.readable_maps(project)
+            if state.get('premises'):
+                for key, row in rows.items():
+                    if premise_writers(row) != premise_writers(old.get(key, {})):
+                        return self.readable_maps(project)
+        return maps, unreadable
+
     def save(self, payload):
         with self.lock:
             save_warnings = []
@@ -1444,8 +1531,11 @@ class StudioStore:
                 self.talk_segments.get(project.id, payload['talkGeneration'])
                 if 'talks' in payload:
                     raise ApiError('分段会话只能显式增量提交对话，不能提交部分完整表。')
+            from text_record_save import save as save_text_records
+            fast_result = save_text_records(self, project, payload, sys.modules[__name__])
+            if fast_result is not None: return fast_result
             catalog = self.catalog()
-            all_maps, unreadable = self.readable_maps(project)
+            all_maps, unreadable = self.story_save_maps(project, payload)
             payload = dict(payload)
             # A partial table must never enter the legacy missing-row deletion path.
             # Expand explicit deltas against this exact revision while holding the save lock.
@@ -1724,7 +1814,7 @@ class StudioStore:
             old_state = copy.deepcopy(state)
             if 'externalDialogueFolders' in payload:
                 from external_dialogues import folders as external_folders
-                external_owners=self.load(project.id).get('talkOwners',{})
+                external_owners=ownership({**self.catalog_rows('EvtCfg',catalog), **all_maps.get('EvtCfg.json',{})}, {**self.catalog_rows('TalkCfg',catalog), **all_maps.get('TalkCfg.json',{})}, all_maps.get('OptionCfg.json',{}), state.get('branchFolders',{}), state.get('talkOwners',{}))
                 previous_external=state.get('externalDialogueFolders',{})
                 shared_external={str(i) for f in previous_external.values() if f.get('uses') for i in f.get('talkIds',[])} | {str(i) for i in state.get('externalDialogueIds',[])}
                 external_rows={k:v for k,v in all_maps.get('TalkCfg.json',{}).items() if not external_owners.get(k) or k in shared_external}
@@ -1735,6 +1825,8 @@ class StudioStore:
                     state['externalDialogueIds']=sorted(set(external_ids))
                 from external_usages import apply as apply_external_uses
                 state['externalDialogueFolders']=apply_external_uses(self,project,groups,previous_external,all_maps,touched,sys.modules[__name__],normalized_external_entries)
+            from event_gift_folders import sync as sync_event_gift_folders
+            sync_event_gift_folders(state, all_maps, touched, external_edit='externalDialogueFolders' in payload, previous=old_state.get('externalDialogueFolders',{}))
             if "protagonistGender" in payload:
                 gender=payload["protagonistGender"]
                 if type(gender) is not int or gender not in (1,2): gender = 1
@@ -1833,7 +1925,7 @@ class StudioStore:
             changes.update({"Cfgs/zh-cn/" + filename: json_bytes(all_maps[filename]) for filename in touched})
             backup = self.commit(project, changes, expected)
             revision = self.revision(project)
-            generation_advanced = self.talk_segments.saved(project, payload.get('talkGeneration'), revision) if 'talkGeneration' in payload else None
+            generation_advanced = self.talk_segments.saved(project, payload.get('talkGeneration'), revision, story_saved=True) if 'talkGeneration' in payload else None
             return {"ok": True, "revision": revision, "backup": backup, "repairedIds": list(redirects),
                     **({'talkGenerationAdvanced': generation_advanced} if generation_advanced is not None else {}),
                     "branchFolders": folders, "premises": premises, "talkOwners": state["talkOwners"],
@@ -2013,6 +2105,14 @@ class StudioStore:
             result, warnings_list = [], []
             for name in names:
                 inherited = self.catalog_rows(name, catalog)
+                source = files.get(name + '.json')
+                identity = (file_fingerprint(source) if source else None, self._catalog_stamp, project.readonly)
+                cache_key = (str(project.path), name)
+                cached = self._workshop_tables.get(cache_key) if not project.original_mode else None
+                if cached and cached[0] == identity:
+                    entry = copy.deepcopy(cached[1]); result.append(entry)
+                    if entry.get('error'): warnings_list.append(entry['error'])
+                    continue
                 error_message = None
                 try:
                     local = read_json(files[name + ".json"], {}) if name + ".json" in files else {}
@@ -2025,6 +2125,9 @@ class StudioStore:
                                "order": schema.get("order", 9999), "count": len(set(local) | set(inherited)), "localCount": len(set(inherited) | (set(local) & set(original_mode.owned(self, project).get(name, [])))) if project.original_mode else len(local),
                                "hasLocal": name + ".json" in files, "hasCatalog": bool(inherited), "readOnly": project.readonly,
                                "schema": schema, "fields": schema["fields"], **({'error': error_message} if error_message else {})})
+                if not project.original_mode and (file_fingerprint(source) if source else None) == identity[0]:
+                    self._workshop_tables[cache_key] = (identity, copy.deepcopy(result[-1]))
+                    while len(self._workshop_tables) > 512: del self._workshop_tables[next(iter(self._workshop_tables))]
             result.sort(key=lambda entry: (entry["order"] if isinstance(entry["order"], (int, float)) else 9999, entry["category"], entry["name"]))
             resolution = catalog.get("referenceResolution")
             if not isinstance(resolution, list) or len(resolution) != 2 or any(not isinstance(value, (int, float)) or value <= 0 for value in resolution):
@@ -2037,6 +2140,19 @@ class StudioStore:
                     "supported": [entry["name"] for entry in result], "catalogAvailable": bool(catalog.get("schemas")),
                     "operations": catalog.get("operations", []), "commands": commands,
                     "referenceResolution": resolution}
+
+    def premise_state(self, project_id):
+        """Effect/condition menus only need named premises, not a full story load."""
+        with self.lock:
+            project = self.project(project_id)
+            revision = self.revision(project)
+            state = read_json(safe_path(project.path, 'StudentAgeStudio/editor-state.json'), {})
+            if not isinstance(state, dict) or not isinstance(state.get('premises', {}), dict):
+                raise ApiError('剧情前提记录格式无效，请先恢复编辑记录备份。', 422)
+            result = {'projectId': project.id, 'revision': revision, 'premises': state.get('premises', {})}
+            if self.revision(project) != revision:
+                raise ApiError('读取时模组发生变化，请重试。', 409, 'conflict')
+            return result
 
     def command_catalog(self, project_id):
         """Read command definitions without enumerating every game configuration table."""
@@ -2444,7 +2560,10 @@ class StudioStore:
             incoming = payload.get("tables")
             if not isinstance(incoming, dict) or set(incoming) != {"ItemCfg", "BookCfg", "ShopCfg"}:
                 raise ApiError("仓库配置不完整。")
-            maps, unreadable = self.readable_maps(project)
+            selected = {name + '.json' for name in incoming}
+            maps, unreadable = self.readable_maps(project, selected)
+            if payload.get('migrations') or any(not isinstance(rows, dict) or set(maps.get(name + '.json', {})) - set(rows) for name, rows in incoming.items()):
+                maps, unreadable = self.readable_maps(project)
             original = copy.deepcopy(maps)
             changes = {}
             for name, values in incoming.items():
@@ -2770,9 +2889,13 @@ class StudioStore:
             return {"ok": True, "id": ident, "row": row, "assetPath": relative, "url": resource_url,
                     "revision": self.revision(project), "backup": backup}
 
-    def asset(self, project_id, requested):
+    def asset(self, project_id, requested, *, thumbnail=False):
         project = self.project(project_id)
-        return self.project_asset(project, requested)
+        path = self.project_asset(project, requested)
+        if thumbnail:
+            from headshots import preview_image
+            return preview_image(path, auxiliary_cache(self.asset_catalog.settings_path.parent, 'PreviewCache'))
+        return path
 
     def mod_image_path(self, project, requested):
         """Resolve Unity-style image names without rescanning the asset library."""
@@ -3673,6 +3796,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                 if query.get("source", [""])[0] == "mods":
                     return self.send_json(self.server.store.conditions.get_mods(query.get("projectId", [""])[0], query.get("modId", ["all"])[0]))
                 return self.send_json(self.server.store.conditions.get(query.get('projectId', [''])[0]))
+            if route == '/api/premise-state':
+                return self.send_json(self.server.store.premise_state(query.get('projectId', [''])[0]))
+            if route == '/api/project-revision':
+                return self.send_json(self.server.store.talk_segments.refresh_revision(query.get('id', [''])[0], query.get('generation', [''])[0], query.get('revision', [''])[0]))
             if route == "/api/project":
                 from playback_repair import repair
                 repair_warning=None
@@ -3736,8 +3863,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 store = self.server.store
                 project = store.project(query.get('projectId', [''])[0])
                 role = str(int(query.get('roleId', ['0'])[0])); grade = int(query.get('grade', ['1'])[0])
-                persons = {**store.catalog_rows('PersonCfg', store.catalog()), **read_json(safe_path(project.path, 'Cfgs/zh-cn/PersonCfg.json'), {})}
-                person = persons.get(role, {})
+                person = store.portrait_person(project, role)
                 for resource in ([] if role == '0' and query.get('gender', ['1'])[0] == '2' else head_paths(person, grade)):
                     try: return self.send_file(store.asset(project.id, resource))
                     except ApiError: pass
@@ -3752,7 +3878,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                     except (ApiError, FileNotFoundError): pass
                 raise ApiError('人物头像尚未读取。', 404)
             if route == "/api/assets":
-                path = self.server.store.asset(query.get("projectId", [""])[0], query.get("path", [""])[0])
+                path = self.server.store.asset(query.get("projectId", [""])[0], query.get("path", [""])[0], thumbnail=query.get("thumbnail", [""])[0] == "1")
                 return self.send_file(path)
             if route == "/api/exports":
                 path = self.server.store.export_file(query.get("name", [""])[0])

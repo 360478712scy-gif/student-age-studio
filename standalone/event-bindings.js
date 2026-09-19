@@ -9,18 +9,20 @@ async function actionPicker(projectId,rows,selected=[],settings={}){
 }
 const socialNames={2:'社交触发事件',22:'恋爱话题事件',11:'约会事件',521:'约会事件',20:'关系事件',[-24]:'社交小游戏事件'};
 const socialKinds={2:'favor',22:'topic',11:'date',521:'date',20:'relation',[-24]:'minigame'};
-function displayType(e){return e?.studioSocial?.kind==='talk'?-2:e?.studioSocial?.kind==='minigame'?-24:e?.studioSocial?.kind==='date'||Number(e?.type)===521?11:Number(e?.type)||0;}
+function displayType(e){return e?.studioSocial?.kind==='talk'?-2:e?.studioSocial?.kind==='date'||Number(e?.type)===521?11:Number(e?.type)||0;}
 function socialDraft(event={}){const old=event.studioSocial||{},kind=old.kind||socialKinds[event.type];return {...old,kind,text:old.text||'',favor:old.favor??event.condition?.find(r=>r[0]===7&&r[1]===1&&r[2]===event.npc)?.[3]??0,title:event.title||'',maxcount:event.maxcount??1,repeat:(event.maxcount??1)>1,intimacy:old.intimacy??event.effect?.find(r=>r[0]===1&&r[1]===520)?.[2]??0,actionId:old.actionId||0,level:old.level||1};}
 function socialCommands(event,draft,npc){
  const previous=event.studioSocial||{},same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
  const condition=(event.condition||[]).filter(r=>!([...(previous.conditions||[]),...(previous.entryConditions||[])]).some(v=>same(v,r))),effect=(event.effect||[]).filter(r=>!(previous.effects||[]).some(v=>same(v,r)));
+ const disabled=new Set([...(previous.disabledConditions||[]),...(draft.disabledConditions||[])]);for(const r of [...(previous.conditions||[]),...(previous.entryConditions||[])])if(!(event.condition||[]).some(v=>same(v,r)))disabled.add(r.slice(0,2).join(':'));
  const generatedConditions=[],generatedEffects=[];
  if(draft.kind==='favor')generatedConditions.push([7,1,npc,Number(draft.favor)||0]);
  if(['topic','loveTalk','date'].includes(draft.kind))generatedConditions.push([7,0,npc,520]);
  if(draft.kind==='topic'&&Number(draft.intimacy))generatedEffects.push([1,520,Number(draft.intimacy)]);
+ for(let i=generatedConditions.length-1;i>=0;i--)if(disabled.has(generatedConditions[i].slice(0,2).join(':')))generatedConditions.splice(i,1);
  for(const r of generatedConditions)if(!condition.some(v=>same(v,r)))condition.push(r);
  for(const r of generatedEffects)if(!effect.some(v=>same(v,r)))effect.push(r);
- return {condition,effect,studioSocial:{...draft,entryConditions:[],conditions:generatedConditions,effects:generatedEffects}};
+ return {condition,effect,studioSocial:{...draft,disabledConditions:[...disabled],entryConditions:[],conditions:generatedConditions,effects:generatedEffects}};
 }
 function socialMount(node,state,parameters,options){
  const kind=socialKinds[options.type];if(!kind)return false;
@@ -65,10 +67,11 @@ function syncSocialEffects(doc){
 }
 function syncSocialEntry(event){
  const old=event.studioSocial.entryConditions||[],same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+ const disabled=new Set(event.studioSocial.disabledConditions||[]);for(const r of old)if(!(event.condition||[]).some(v=>same(v,r)))disabled.add(r.slice(0,2).join(':'));event.studioSocial.disabledConditions=[...disabled];
  event.condition=(event.condition||[]).filter(r=>!old.some(v=>same(v,r)));
  const rows=[];if(event.mapId>0&&event.npc>0)rows.push([7,101,event.npc,event.mapId]);
  if(Number.isFinite(event.rate)&&event.rate<1)rows.push([0,1,event.rate<=0?-1:event.rate]);
- const added=rows.filter(r=>!event.condition.some(v=>same(v,r)));event.condition.push(...added);event.studioSocial.entryConditions=copy(added);
+ const added=rows.filter(r=>!disabled.has(r.slice(0,2).join(':'))&&!event.condition.some(v=>same(v,r)));event.condition.push(...added);event.studioSocial.entryConditions=copy(added);
 }
 function syncChat(doc,event){
  syncSocialEntry(event);
@@ -80,7 +83,7 @@ function syncChat(doc,event){
 function giftConditions(doc,event){
  if(!Number.isInteger(event.studioGiftCounterSlot)){
   // Native event values are a dictionary; reserve an unused negative slot, independent of premise slots.
-  const used=new Set();const visit=value=>{if(Array.isArray(value)){if((value[0]===111||value[0]===50&&[2,20].includes(value[1]))&&value[2]===event.id)used.add(value[3]);for(const v of value)visit(v);}else if(value&&typeof value==='object')for(const v of Object.values(value))visit(v);};visit(doc);
+  const used=new Set();const visit=value=>{if(Array.isArray(value)){if((value[0]===111||value[0]===50&&[2,20].includes(value[1]))&&value[2]===event.id)used.add(value[3]);for(const v of value)visit(v);}else if(value&&typeof value==='object')for(const v of Object.values(value))visit(v);};for(const [key,value] of Object.entries(doc))if(key==='talks')for(const row of Object.values(value||{}))visit(window.StudentAgeRemoteTalks?.projection?.(row)||row);else visit(value);
   let slot=-1;while(used.has(slot))slot--;event.studioGiftCounterSlot=slot;
  }
  const rows=copy(event.condition||[]),count=Math.max(0,Number(event.maxcount)||0);
@@ -124,7 +127,7 @@ function create(parameters){
  state.social=null;
  if(type===110){
   if(!state.gifts.length)state.gifts.push({id:null,index:0,npc:0,item:0,type:0});
-  node.innerHTML='<h3>送礼对话设置</h3>'+state.gifts.map((r,i)=>`<article><label>收礼人<button data-gift-person="${i}">${esc(parameters.persons?.[r.npc]?.name||parameters.refs?.PersonCfg?.[r.npc]?.name||(r.npc?'人物 '+r.npc:'选择收礼人'))} ▾</button></label><label>礼物物品<button data-gift-pick="${i}">${esc(r.itemName||parameters.refs?.ItemCfg?.[r.item]?.name||parameters.refs?.BookCfg?.[r.item]?.name||(r.item?'物品 '+r.item:'打开物品仓库'))} ▾</button></label>${r.sourceName?`<small>来自 ${esc(r.sourceName)} · 游戏中需同时启用该模组</small>`:''}</article>`).join('')+'<p class="helper">赠送指定物品给所选人物时，播放本事件的首句对话。应用后随模组一起保存。</p>';
+  node.innerHTML='<h3>送礼对话设置</h3>'+state.gifts.map((r,i)=>`<article><label>收礼人<button data-gift-person="${i}">${esc(parameters.persons?.[r.npc]?.name||parameters.refs?.PersonCfg?.[r.npc]?.name||(r.npc?'人物 '+r.npc:'选择收礼人'))} ▾</button></label><label>礼物物品<button data-gift-pick="${i}">${esc(r.itemName||parameters.refs?.ItemCfg?.[r.item]?.name||parameters.refs?.BookCfg?.[r.item]?.name||(r.item?'物品 '+r.item:'打开物品仓库'))} ▾</button></label>${r.sourceName?`<small>来自 ${esc(r.sourceName)} · 游戏中需同时启用该模组</small>`:''}</article>`).join('')+'<p class="helper">赠送指定物品给所选人物时，播放本事件的首句对话。同时加入事件外对话的送礼对话夹，两处共享同一份内容，随模组一起保存。</p>';
   node.onclick=async e=>{const b=e.target.closest('button');if(!b)return;try{
    if(b.dataset.giftPerson!==undefined){const r=state.gifts[Number(b.dataset.giftPerson)],people={...parameters.refs?.PersonCfg,...parameters.persons};const chosen=await UI().choices('选择收礼人',Object.values(people).filter(p=>Number(p.id)>0),{selected:r.npc,table:'PersonCfg'});if(chosen){r.npc=Number(chosen.id);options.repaint();}}
    if(b.dataset.giftPick!==undefined){const r=state.gifts[Number(b.dataset.giftPick)],chosen=await StudentAgeWarehouse.pick(options.projectId,r.item);if(chosen){r.item=Number(chosen.id);r.itemName=chosen.name;r.sourceName=chosen.sourceName;r.itemTable=chosen.table;options.repaint();}}
@@ -150,8 +153,16 @@ function giftsForEvent(doc,event){
   return [{id:Number(row.id),index,npc:Number(npc),item:Number(row.item),type:Number(row.type?.[index])||0,itemName:note?.itemName,sourceName:note?.sourceName,itemTable:note?.itemTable}];
  }));
 }
+function resolveGiftSlots(doc,event,before,desired){
+ before=[...before];desired=desired.map(r=>({...r}));
+ // Native gift lookup takes the first matching recipient/item slot. Reuse an
+ // existing unowned slot instead of appending a shadowed second entry.
+ for(const r of desired)if(!r.id){const matches=Object.values(doc.giftEvents||{}).flatMap(row=>Number(row.item)===r.item?(row.npc||[]).flatMap((npc,index)=>Number(npc)===r.npc?[{id:Number(row.id),index}]:[]):[]);if(matches.length){if(matches.length>1||Object.values(doc.events||{}).some(e=>e!==event&&(e.studioGiftBindings||[]).some(b=>matches.some(m=>m.id===Number(b.id)&&m.index===Number(b.index)))))throw Error('这个人物和礼物已有送礼事件，请修改已有事件或选择其他礼物，避免游戏只触发其中一条。');Object.assign(r,matches[0]);before.push({...r});}}
+ return {before,desired};
+}
 function applyGifts(doc,event,before,desired,allocate){
- doc.giftEvents??={};const conditions=desired.length?giftConditions(doc,event):[],original=copy(doc.giftEvents),groups=new Map();
+ ({before,desired}=resolveGiftSlots(doc,event,before,desired));doc.giftEvents??={};
+ const conditions=desired.length?giftConditions(doc,event):[],original=copy(doc.giftEvents),groups=new Map();
  for(const r of before){const key=String(r.id);if(!groups.has(key))groups.set(key,new Set());groups.get(key).add(r.index);}
  for(const [id,indices]of groups){const row=doc.giftEvents[id];if(!row)continue;
   // Slot indexes belong to all events sharing this native row.
@@ -171,4 +182,4 @@ function applyGifts(doc,event,before,desired,allocate){
  for(const id of groups.keys())if(doc.giftEvents[id]&&!doc.giftEvents[id].npc?.length)delete doc.giftEvents[id];
  event.studioGiftBindings=owned;
 }
-window.StudentAgeEventBindings={socialNames,socialKinds,displayType,socialDraft,socialCommands,validateSocial,applySocial,clearSocialBindings,syncSocialEffects,create,actionPicker,giftsForEvent,applyGifts};})();
+window.StudentAgeEventBindings={socialNames,socialKinds,displayType,socialDraft,socialCommands,validateSocial,applySocial,clearSocialBindings,syncSocialEffects,create,actionPicker,giftsForEvent,applyGifts,resolveGiftSlots};})();

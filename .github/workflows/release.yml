@@ -22,6 +22,7 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install 'certifi>=2026.2.25' 'Pillow==12.3.0' 'numpy>=2,<3'
       - run: python -B -m unittest discover -s standalone/tests -p test_save_large.py
+      - run: python -B -m unittest discover -s standalone/tests -p test_event_custom_update.py
       - run: python -B -m unittest discover -s standalone/tests -p test_talk_patch.py
       - run: node standalone/tests/indexed-talks.cjs
       - run: node standalone/tests/remote-talks.cjs
@@ -89,7 +90,7 @@ jobs:
           import hashlib,json,os
           from pathlib import Path
           p=Path('/tmp/studio-feed/student-age-studio-update.zip');data=p.read_bytes()
-          feed={'format':1,'runtimeAbi':1,'version':os.environ['RELEASE_TAG'],'commit':os.environ['PAYLOAD_COMMIT'],'sha256':hashlib.sha256(data).hexdigest(),'size':len(data),'notes':Path('docs/releases/beta13103.md').read_text(encoding='utf-8')}
+          feed={'format':1,'runtimeAbi':1,'version':os.environ['RELEASE_TAG'],'commit':os.environ['PAYLOAD_COMMIT'],'sha256':hashlib.sha256(data).hexdigest(),'size':len(data),'notes':Path('docs/releases/v1311.md').read_text(encoding='utf-8')}
           Path('/tmp/studio-feed/latest.json').write_text(json.dumps(feed,ensure_ascii=False,indent=2),encoding='utf-8')
           PYFEED
           git -C /tmp/studio-feed add latest.json
@@ -129,7 +130,7 @@ jobs:
           fi
           flags=()
           if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
-          gh release create "$RELEASE_TAG" release/student-age-studio-update.zip release/student-age-studio-update.zip.sha256 --target "$GITHUB_SHA" --notes-file docs/releases/beta13103.md "${flags[@]}"
+          gh release create "$RELEASE_TAG" release/student-age-studio-update.zip release/student-age-studio-update.zip.sha256 --target "$GITHUB_SHA" --notes-file docs/releases/v1311.md "${flags[@]}"
 
   windows-launcher:
     needs: publish

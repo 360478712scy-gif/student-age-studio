@@ -19,7 +19,12 @@ def folders(value,talks,api):
 
 def load(store,project_id,api,metadata=False):
     with store.lock,store.catalog_scope():
-        project=store.project(project_id);doc=store.load(project.id);table=store.table(project.id,'TalkCfg')
+        project=store.project(project_id)
+        if metadata:
+            doc=store.talk_segments.open(project.id)
+            table={'localRows':dict.fromkeys(str(i) for i in doc.get('localIds',{}).get('talks',[]))}
+        else:
+            doc=store.load(project.id);table=store.table(project.id,'TalkCfg')
         state=api.read_json(api.safe_path(project.path,'StudentAgeStudio/editor-state.json'),{})
         groups=copy.deepcopy(state.get(META,{}));used=set()
         shared={str(i) for f in groups.values() if f.get('uses') for i in f.get('talkIds',[])} | {str(i) for i in state.get('externalDialogueIds',[])}

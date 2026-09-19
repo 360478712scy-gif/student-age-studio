@@ -1,5 +1,5 @@
-/* An immutable JSON base plus copy-on-write rows. Native JSON serialization is
- * deliberately unchanged; only the story editor's history uses packed snapshots. */
+/* Immutable JSON rows with copy-on-write drafts, also used for large reference
+ * tables. Native JSON serialization is unchanged; history packs only changes. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.StudentAgeIndexedTalks=api;})(typeof window==='object'?window:globalThis,()=>{
 'use strict';
 const tables=new WeakMap(),nodes=new WeakSet(),bases=new Map();let sequence=0;
@@ -105,6 +105,6 @@ function delta(current,before){
 function stats(value){return Remote?.stats(value)||tables.get(value)?.stats();}
 // Read-only scans need not allocate a Proxy and finalizer for every untouched row.
 function keysWithField(value,field){if(Remote?.info(value))return Object.keys(value).filter(id=>field==='content'?!!Remote.summary(value[id]):!!value[id][field]);return tables.get(value)?.keysWithField(field)??Object.keys(value||{}).filter(id=>!!value[id]?.[field]);}
-function retain(value){Remote?.retain(value);const base=tables.get(value)?.base;for(const id of bases.keys())if(id!==base?.id)bases.delete(id);}
+function retain(value,related=[]){Remote?.retain(value);const keep=new Set([value,...related].map(v=>tables.get(v)?.base.id));for(const id of bases.keys())if(!keep.has(id))bases.delete(id);}
 return {create,pack,stringify,parse,clone,delta,stats,keysWithField,retain,Remote};
 });
