@@ -22,6 +22,7 @@ jobs:
       - run: node standalone/tests/remote-scene.cjs
       - run: node standalone/tests/event-list-cache.cjs
       - run: node standalone/tests/bulk-references.cjs
+      - run: node standalone/tests/all-story-export.cjs
       - run: node qa/tests/dialogue-text.cjs
       - run: node qa/tests/scene-engine.cjs
       - run: python -B tools/build_update.py --out release/student-age-studio-update.zip

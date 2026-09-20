@@ -1168,8 +1168,8 @@ class StudioStore:
         kind, content = payload.get("format", "txt"), payload.get("content")
         if kind not in {"txt", "md", "json"} or not isinstance(content, str) or not content.strip():
             raise ApiError("请选择导出格式和有效的对话内容。")
-        if len(content.encode("utf-8")) > 16 * 1024 * 1024:
-            raise ApiError("导出内容超过 16 MB，请分段导出。", 413)
+        if len(content.encode("utf-8")) > 64 * 1024 * 1024:
+            raise ApiError("导出内容超过 64 MB，请缩小导出范围。", 413)
         if kind == "json":
             try:
                 json.loads(content, parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))

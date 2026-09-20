@@ -629,24 +629,21 @@ function historyScene(scene){
 }
 function recordPreviewHistory(event){if(!S.project)return;const recorder=previewHistory();if(event.kind==='start')recorder.begin(S.doc,event.talkId,{title:S.doc.events[S.event]?.title||S.project.name,reason:event.reason,scene:historyScene(event.scene)});else if(event.kind==='line')recorder.visit(S.doc,event.talkId,historyScene(event.scene));else if(event.kind==='choice')recorder.choice(event.route);else if(event.kind==='end')recorder.finish();const count=$('#preview-history-count');if(count)count.textContent='已预演 '+recorder.count()+' 句';}
 function exportDialogueRows(){
- const hidden=Timeline.internals(S.branchFolders),doc=externalSession?{...S.doc,events:{},talks:Object.fromEntries(externalScope().map(id=>[id,S.doc.talks[id]]))}:S.doc,document=HistoryExport.fullStory(doc,S.event,externalSession?externalScope():S.order);
- const folders={...S.branchFolders};
- // Unmanaged native options still export their linear dialogue paths.
- for(const t of Object.values(doc.talks))for(const oid of ids(t.option))if(!folders[Branches.key(t.id,oid)]){
-  const members=[],visited=new Set([Number(t.id),...Timeline.next(doc,folders,t.id)]);let id=ids(doc.options[oid]?.talkId)[0];
-  while(id&&doc.talks[id]&&!visited.has(id)){visited.add(id);if(!hidden.has(id))members.push(id);id=Timeline.next(doc,folders,id)[0];}
-  folders[Branches.key(t.id,oid)]={parentTalkId:Number(t.id),optionId:oid,talkIds:members};
- }
- const rows=document.sessions.flatMap(session=>session.entries).filter(row=>row.kind==='dialogue'&&!hidden.has(row.talkId)),byId=new Map(rows.map(r=>[r.talkId,r])),tokens=[],seen=new Set();
- function emit(row,depth=0){if(!row||seen.has(row.talkId))return;seen.add(row.talkId);tokens.push(row);
-  const groups=Object.values(folders).filter(f=>Number(f.parentTalkId)===row.talkId).sort((a,b)=>(a.branchId||0)-(b.branchId||0));
-  for(const f of groups){tokens.push({marker:'\t'.repeat(depth)+(f.kind==='condition'?'分支'+f.branchId:'选项 '+StudentAgeDialogueText.encode(S.doc.options[f.optionId]?.content||'未命名选项'))});for(const id of ids(f.talkIds))emit(byId.get(id),depth+1);if(f.kind==='condition')tokens.push({marker:'\t'.repeat(depth)+'。'});}
-  if(groups.some(f=>f.kind!=='condition'))tokens.push({marker:'\t'.repeat(depth)+'。'});
- }
- for(const row of rows)if(!Timeline.owner(folders,row.talkId))emit(row);
- for(const row of rows)emit(row);
- Object.defineProperty(rows,'tokens',{value:tokens});return rows;
+ const doc=externalSession?{...S.doc,events:{},talks:Object.fromEntries(externalScope().map(id=>[id,S.doc.talks[id]]))}:S.doc;
+ return HistoryExport.dialogueRows(doc,S.event,externalSession?externalScope():S.order,S.branchFolders,{Timeline,Branches,encode:StudentAgeDialogueText.encode});
 }
+async function exportAllStories(eventIds){
+ if(!S.project||!S.doc)throw Error('请先打开模组。');
+ const project=S.project,doc=S.doc,stamp=currentSignature(),folders=S.branchFolders,order=S.order;
+ const current=()=>{if(S.project!==project||S.doc!==doc||currentSignature()!==stamp)throw Error('导出期间内容发生变化，请重新导出。');};
+ const content=await HistoryExport.allStories(doc,eventIds,{order,branchFolders:folders,Timeline,Branches,text:StudentAgeDialogueText,
+  load:async keys=>{current();await Remote.ensure(doc.talks,keys);current();await new Promise(resolve=>setTimeout(resolve,0));},
+  progress:(done,total)=>{const button=document.querySelector('[data-events-export]');if(button)button.textContent=`正在导出 ${done} / ${total}`;}
+ });current();
+ const result=await api('/api/export',{projectId:project.id,format:'txt',filename:project.name+'-全部剧情.txt',content});
+ modal('导出完成',`<p>已将 ${eventIds.length} 个事件合并为一个 TXT，包含选项和分支对话。</p><p class="link-path">${h(result.path)}</p><a href="${h(result.url+'&token='+encodeURIComponent(token))}" download="${h(result.name)}">下载全部剧情</a>`,[{label:'关闭',run:closeModal},{label:'打开所在文件夹',primary:true,run:()=>api('/api/open-export',{name:result.name})}]);
+}
+window.STUDIO_EXPORT_ALL_STORIES=exportAllStories;
 async function showHistoryExport(){
  if(!S.project)return;await Remote.ensure(S.doc.talks);stopLinePlayback();scenePlayer?.pause();
  const rows=exportDialogueRows();let content=StudentAgeDialogueText.serialize(rows);

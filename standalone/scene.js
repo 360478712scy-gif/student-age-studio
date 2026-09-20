@@ -465,7 +465,7 @@ class Renderer {
     const failure=()=>{if(!current())return;const retained=keep&&parent.classList.contains('scene-actor-art');if(!retained)parent.replaceChildren();parent.classList.add('asset-missing');onFailure?.(retained);};
     if(!paths.length){failure();return;}
     const firstUrl=this.options.assetUrl(paths[0]);
-    if(keep&&previous.dataset.sceneAssetEpoch===String(epoch)&&previous.src===new URL(firstUrl,document.baseURI).href){parent.classList.remove('asset-missing');onSuccess?.(paths[0]);return;}
+    if(keep&&previous.dataset.sceneAssetEpoch===String(epoch)&&previous.src===new URL(firstUrl,document.baseURI).href){load.install=()=>{if(!current()||canInstall&&!canInstall(previous,paths[0]))return;load.install=null;previous.dataset.scenePath=paths[0];parent.classList.remove('asset-missing');onSuccess?.(paths[0]);};load.install();return;}
     img.dataset.sceneAssetEpoch=String(epoch);img.className=className;img.alt=alt;img.draggable=false;let index=0;
     // Keep the last decoded portrait until the replacement is ready. Late callbacks
     // from superseded face/cache requests must never clear the current image.
@@ -473,7 +473,7 @@ class Renderer {
       img.dataset.scenePath=paths[index];
       // A bitmap may finish before its native bounds. Keep the previous image
       // until both are ready, then install and position in the same task.
-      load.install=()=>{if(!current()||canInstall&&!canInstall(img,paths[index]))return;load.install=null;const displayed=parent.querySelector('img');if(!(displayed?.complete&&displayed.naturalWidth>0&&displayed.dataset.sceneAssetEpoch===String(epoch)&&displayed.src===img.src))parent.replaceChildren(img);parent.classList.remove('asset-missing');onSuccess?.(paths[index]);};load.install();
+      load.install=()=>{if(!current()||canInstall&&!canInstall(img,paths[index]))return;load.install=null;parent.replaceChildren(img);parent.classList.remove('asset-missing');onSuccess?.(paths[index]);};load.install();
     };
     img.onerror=()=>{if(!current())return;if(++index<paths.length)img.src=this.options.assetUrl(paths[index]);else failure();};img.src=firstUrl;
   }
@@ -586,7 +586,7 @@ class Renderer {
     if(nodes.some(([,node])=>node.getAnimations?.({subtree:true}).some(a=>a.playState==='running')))this.queueCast();
   }
   updateActorImage(doc,role,node){
-    const art=node.querySelector('.scene-actor-art'),key=[role.id,role.grade,role.cloth,role.face,portraitCandidates(doc,role).join('|')].join('-');
+    const art=node.querySelector('.scene-actor-art'),key=[role.id,role.grade,role.cloth,role.face,Number(role.id)===0?protagonistGender(doc):0,portraitCandidates(doc,role).join('|')].join('-');
       if(node.dataset.asset!==key){node.dataset.asset=key;this.assetWarnings.delete(role.id);node.querySelector('.scene-asset-note').textContent='';
         const retry=()=>{if(this.disposed||this.actors.get(role.id)!==node||node.dataset.asset!==key)return;node.dataset.asset='';const latest=this.state?.roles[role.id];if(latest?.visible)this.updateActorImage(this.doc,latest,node);};
         const scheduleRetry=()=>{const note=node.querySelector('.scene-asset-note');note.onclick=e=>{e.stopPropagation();node.sceneRetryCount=0;retry();};if((node.sceneRetryCount||0)<3){node.sceneRetryCount=(node.sceneRetryCount||0)+1;setTimeout(retry,1000*Math.pow(3,node.sceneRetryCount-1));}};
@@ -603,7 +603,9 @@ class Renderer {
           if(this.options.portraitGeometryPending?.(path))return false;
           const cached=portraitCacheKey(path),person=doc.persons?.[role.id];
           const params=(cached?.grade===0?person?.l2dParm:person?.l2dParm2)?.[cached?.female?1:0];
-          return !cached||!(Number(params?.[0])>0)||!portraitBox(doc,role,img,path).fallback;
+          if(cached&&Number(params?.[0])>0&&portraitBox(doc,role,img,path).fallback)return false;
+          // Retained artwork must keep its own grade/gender until its replacement installs.
+          img.scenePortraitRole={...role};img.scenePortraitGender=protagonistGender(doc);return true;
         });
       }
       this.imageLoads.get(art)?.install?.();
@@ -639,7 +641,7 @@ class Renderer {
   updateUIScale(){this.container.style.setProperty('--game-ui-scale',this.unitScale(this.state?.reference||[2560,1440]));}
   stageRect(){return (this.actorLayer||this.container).getBoundingClientRect();}
   unitScale(reference){const box=this.stageRect();return Math.min(box.width/reference[0],box.height/reference[1])||1;}
-  artBox(node,role){if(this.drag?.node===node&&this.drag.art)return this.drag.art;const img=node.querySelector('.scene-actor-art img');const box=portraitBox(this.doc,role,img,img?.dataset.scenePath||'');
+  artBox(node,role){if(this.drag?.node===node&&this.drag.art)return this.drag.art;const img=node.querySelector('.scene-actor-art img');const sourceRole=img?.scenePortraitRole||role,sourceDoc=img?.scenePortraitGender?{...this.doc,protagonistGender:img.scenePortraitGender}:this.doc;const box=portraitBox(sourceDoc,sourceRole,img,img?.dataset.scenePath||'');
     // Geometry still loading: keep the last resolved box for this actor rather than jumping to the generic size.
     if(box.fallback){const last=node.sceneLastBox;if(last&&last.id===role.id)return last.box;return box;}
     node.sceneLastBox={id:role.id,box};return box;}

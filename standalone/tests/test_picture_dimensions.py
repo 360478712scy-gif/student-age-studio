@@ -27,3 +27,19 @@ class PictureDimensionTests(unittest.TestCase):
     load.assert_called_once()
     self.assertEqual(module.portrait_dimensions(root,catalog,['Mods/a.png']),{})
    self.assertEqual(old.read_bytes(),before)
+
+ def test_known_measurements_require_exact_bundle_bytes(self):
+  import hashlib
+  with patch.dict(sys.modules,{'UnityPy':SimpleNamespace(), 'UnityPy.helpers':SimpleNamespace(CompressionHelper=SimpleNamespace())}):
+   spec=importlib.util.spec_from_file_location('dimension_seed_fixture',Path(__file__).resolve().parents[1]/'extract_game_assets.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+  with tempfile.TemporaryDirectory() as tmp:
+   bundle=Path(tmp)/'role.bundle';bundle.write_bytes(b'exact-original')
+   entry={'size':14,'sha256':hashlib.sha256(b'exact-original').hexdigest(),'sizes':{'role_full/person':[1081,2704]}}
+   seed=SimpleNamespace(read_text=lambda **kwargs:json.dumps({'bundles':{'role.bundle':entry}}))
+   with patch.object(module.Path,'with_name',return_value=seed):
+    self.assertEqual(module._known_portrait_dimensions(bundle,'role.bundle'),entry['sizes'])
+    bundle.write_bytes(b'edited-original')
+    self.assertIsNone(module._known_portrait_dimensions(bundle,'role.bundle'))
+    bundle.write_bytes(b'EXACT-original')
+    self.assertIsNone(module._known_portrait_dimensions(bundle,'role.bundle'))
+    self.assertIsNone(module._known_portrait_dimensions(bundle,'other.bundle'))

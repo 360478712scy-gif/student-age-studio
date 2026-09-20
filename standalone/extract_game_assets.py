@@ -138,6 +138,23 @@ def portrait_dimensions(game, catalog, paths):
         return _portrait_dimensions(game, catalog, paths)
 
 
+def _known_portrait_dimensions(path, relative):
+    """Reuse measured sprite units only for the exact shipped game resource bytes."""
+    try:
+        import hashlib
+        seed = json.loads(Path(__file__).with_name('native-portrait-dimensions.json').read_text(encoding='utf-8'))
+        entry = seed.get('bundles', {}).get(relative)
+        if not entry or path.stat().st_size != entry['size']:
+            return None
+        with path.open('rb') as stream:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if digest == entry['sha256']:
+            return entry['sizes']
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
 def _portrait_dimensions(game, catalog, paths):
     """Read native portrait sizes, without decoding textures or enlarging thumbnails.
 
@@ -181,23 +198,25 @@ def _portrait_dimensions(game, catalog, paths):
         stamp = f'{path.stat().st_size}:{path.stat().st_mtime_ns}'
         entry = cache.get(relative, {})
         if entry.get('stamp') != stamp:
-            env = UnityPy.load(str(path))
-            dimensions = {}
-            for name, pointer in env.container.items():
-                resource = resource_name(name, 'textures')
-                if not resource or not resource.startswith(('role_full/', 'role_half/', 'role_head/', 'role_comic/', 'role_comic_head/', 'role_photo/')):
-                    continue
-                obj = pointer.deref()
-                if obj.type.name == 'Sprite':
-                    data = obj.parse_as_object()
-                    # Unity Image.SetNativeSize uses sprite pixels / pixelsPerUnit
-                    # relative to the canvas's default 100 reference pixels.
-                    ppu = float(data.m_PixelsToUnits)
-                    if ppu > 0:
-                        dimensions[resource] = [data.m_Rect.width * 100 / ppu, data.m_Rect.height * 100 / ppu]
-                elif obj.type.name == 'Texture2D':
-                    data = obj.parse_as_object()
-                    dimensions.setdefault(resource, [data.m_Width, data.m_Height])
+            dimensions = _known_portrait_dimensions(path, relative)
+            if dimensions is None:
+                dimensions = {}
+                env = UnityPy.load(str(path))
+                for name, pointer in env.container.items():
+                    resource = resource_name(name, 'textures')
+                    if not resource or not resource.startswith(('role_full/', 'role_half/', 'role_head/', 'role_comic/', 'role_comic_head/', 'role_photo/')):
+                        continue
+                    obj = pointer.deref()
+                    if obj.type.name == 'Sprite':
+                        data = obj.parse_as_object()
+                        # Unity Image.SetNativeSize uses sprite pixels / pixelsPerUnit
+                        # relative to the canvas's default 100 reference pixels.
+                        ppu = float(data.m_PixelsToUnits)
+                        if ppu > 0:
+                            dimensions[resource] = [data.m_Rect.width * 100 / ppu, data.m_Rect.height * 100 / ppu]
+                    elif obj.type.name == 'Texture2D':
+                        data = obj.parse_as_object()
+                        dimensions.setdefault(resource, [data.m_Width, data.m_Height])
             entry = {'stamp': stamp, 'sizes': dimensions}
             cache[relative] = entry
             changed = True
