@@ -44,3 +44,8 @@ UI 验收只在隔离的 Windows QA 源码副本注入假远端 bridge，使用�
 验证：Windows 11 隔离模组，使用实际安装游戏已提取的原版数据库，在正常界面首次导入 311001「男生校庆铺垫1」→ 46 句；删除事件及对话 → 保存 → 重新导入 → 仍为 46 句，首句正文恢复并可进入编辑。另用真实外部文件变更触发保存弹窗：返回修改保留草稿，再次保存并确认成功写入草稿。无页面 JS 异常。
 
 新增证据：`output/pr5/windows-event-qa.py`、`windows-event-reimport-results.json`、`windows-original-restored.png`、`windows-original-dialogue.png`、`windows-save-confirmation.png`、`windows-toolbar.png`。Windows 的 92 项相关 Python 回归通过；最终 50 项定点回归及全部改动源码语法检查通过。上述窗口是原生 WebView2，原版对话数据真实；仅 Steam 远端发布服务仍为隔离模拟，未发布真实条目。
+
+
+## 发布前跨事件回归
+
+本机 Windows 原版数据库共 2576 个事件，其中 2457 个有可达对话。遍历全部对话图后，按所有 44 种类型、最多对话/选项/入口及用户反馈的 311001–311006 选择 60 个代表事件。每个事件实际删除并保存后重新导入，交替覆盖删除标记存在与仅余空覆盖记录两种情况；逐字段核对原版正文、人物动作、入口和选项，并再次保存、重新读取。60/60 通过，Windows 用时 39.56 秒。此为真实数据库上的隔离读写验收，不是逐事件游戏播放验收。证据 `output/pr5/original-batch-catalog.json`、`original-batch-results.json`、`windows-original-batch.py`。
