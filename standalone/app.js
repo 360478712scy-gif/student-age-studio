@@ -117,7 +117,7 @@ async function deletePremise(rowOrId){
 }
 window.STUDIO_DELETE_PREMISE=deletePremise;
 function eventRoots(e){return [...ids(e.talkId),...ids(e.options).flatMap(id=>[...ids(S.doc.options[id]?.talkId),...ids(S.doc.options[id]?.talkId2)])];}
-function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));fn();StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds);syncExternal(beforeIds);cleanLostPremises(writers);updateDirty();if(redraw)render();scheduleRenumber();return true;}
+function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));fn();StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds);syncExternal(beforeIds);cleanLostPremises(writers);reconcileStoryClaims();updateDirty();if(redraw)render();scheduleRenumber();return true;}
 let textDirtyTimer=null,textSearchTimer=null;
 function updateTextDirty(){
  // Input changes the live row immediately. Full-document comparison waits for a pause.
@@ -125,7 +125,7 @@ function updateTextDirty(){
  textDirtyTimer=setTimeout(()=>{textDirtyTimer=null;updateDirty();},600);
 }
 function updateDirty() {clearTimeout(textDirtyTimer);textDirtyTimer=null;invalidateStageMemo();S.dirty=S.doc !== null && (currentSignature() !== S.saved||Object.values(S.idMappings||{}).some(m=>Object.keys(m).length));renderChrome();}
-function restore(entry) {if(externalSession&&entry.externalFolder!==undefined)externalSession.folder=entry.externalFolder;S.doc=entry.doc;S.order=entry.order;S.premises=entry.premises||{};S.branchFolders=entry.branchFolders||{};S.activeFolder=entry.activeFolder||null;S.selected=entry.selected;S.event=entry.event;S.deleted=entry.deleted;S.replacements=entry.replacements;S.pinned=Object.fromEntries(['talks','options','events'].map(k=>[k,new Set(entry.pinnedIds?.[k]||[])]));S.idMappings=clone(entry.idMappings||{});if(entry.localIds)S.localIds=clone(entry.localIds);clearTimeout(renumberTimer);S.coalesce=null;updateDirty();render();}
+function restore(entry) {if(externalSession&&entry.externalFolder!==undefined)externalSession.folder=entry.externalFolder;S.doc=entry.doc;S.order=entry.order;S.premises=entry.premises||{};S.branchFolders=entry.branchFolders||{};S.activeFolder=entry.activeFolder||null;S.selected=entry.selected;S.event=entry.event;S.deleted=entry.deleted;S.replacements=entry.replacements;S.pinned=Object.fromEntries(['talks','options','events'].map(k=>[k,new Set(entry.pinnedIds?.[k]||[])]));S.idMappings=clone(entry.idMappings||{});if(entry.localIds)S.localIds=clone(entry.localIds);clearTimeout(renumberTimer);S.coalesce=null;reconcileStoryClaims();updateDirty();render();}
 function undo() {if(!S.undo.length)return;const e=S.undo.pop();S.redo.push(snapshot(e.label));restore(e);toast('已撤销：'+e.label);}
 function redo() {if(!S.redo.length)return;const e=S.redo.pop();S.undo.push(snapshot(e.label));restore(e);toast('已重做：'+e.label);}
 function links(t) {
@@ -169,7 +169,12 @@ function selectTalk(id) {
 }
 function syncFaceFromTalk() {const actor=currentStage().roles[S.previewRole];S.face=actor?.face??0;S.cloth=actor?.cloth??0;S.previewCG=false;}
 
-function nextId(map, base) {const table=map===S.doc.events?'EvtCfg':map===S.doc.options?'OptionCfg':'TalkCfg';return STUDIO_IDS.allocate(table,{...map,...Object.fromEntries(S.deleted.map(id=>[id,true]))},table==='EvtCfg'?undefined:Math.floor(base/(table==='TalkCfg'?1000:100)));}
+const storyClaims=new Map();
+function reconcileStoryClaims(){
+ for(const [id,claim]of storyClaims){if(claim.project!==S.project?.id){STUDIO_IDS.release([id]);storyClaims.delete(id);}else if(!S.doc?.[claim.key]?.[id]){STUDIO_IDS.release([id]);if(claim.key==='talks'){S.deleted=S.deleted.filter(v=>Number(v)!==id);delete S.replacements[id];}}}
+}
+function trackStoryClaim(id,key){storyClaims.set(id,{project:S.project?.id,key});return id;}
+function nextId(map, base) {const table=map===S.doc.events?'EvtCfg':map===S.doc.options?'OptionCfg':'TalkCfg';return trackStoryClaim(STUDIO_IDS.allocate(table,{...map,...Object.fromEntries(S.deleted.map(id=>[id,true]))},table==='EvtCfg'?undefined:Math.floor(base/(table==='TalkCfg'?1000:100))),table==='EvtCfg'?'events':table==='OptionCfg'?'options':'talks');}
 function eventForTalk() {if(externalSession)return 900000;if(S.event!=='all')return Number(S.event);const e=values(S.doc.events).find(x=>graphOrder(ids(x.talkId)).includes(S.selected));return e?e.id:900000;}
 function newTalkId() {let base=eventForTalk()*1000+1;if(base>2147483000)base=900000001;return nextId(S.doc.talks,base);}
 function normalizeTalk(t) {for(const k of ['nextTalk','nextTalk2','roleIds','roles','option','check','effect','effect2','highlights','replace','screenEffect'])if(!Array.isArray(t[k]))t[k]=[];return t;}
@@ -179,7 +184,7 @@ function continuationTalk(id,previous,stage,blank=false) {
     bg:blank?0:Number(stage?.background)||0,highlights:[],roles:[],screenEffect:[]});
 }
 function stageAt(id) {
-  return Number(id)===S.selected?currentStage():StudentAgeScene.reconstruct({...S.doc,branchFolders:S.branchFolders},Number(id),sceneContext());
+  return Number(id)===S.selected?currentStage():StudentAgeScene.reconstruct({...S.doc,talks:Remote.sceneTable(S.doc.talks,null),branchFolders:S.branchFolders},Number(id),sceneContext());
 }
 function closeCGBeforeFollowing(row,folder=null) {
   const transitions=[],replacements=new Map();
@@ -208,7 +213,7 @@ function addTalk(duplicate=false,options={}) {
   mutate(options.cgId?'添加 CG':options.blank?'添加空白对话':duplicate?'复制对话':'添加对话',()=>{
     const roots=!current?ids(S.doc.events[S.event]?.talkId).filter(id=>id>0):[],entry=roots[0];
     const adopted=entry!==undefined&&!S.deleted.includes(entry)&&!roots.some(id=>S.doc.talks[id])&&STUDIO_IDS.claim('TalkCfg',entry,S.doc.talks);
-    const id=adopted?entry:newTalkId(),item=duplicate&&current?normalizeTalk(clone(current)):continuationTalk(id,current,previousStage,options.blank);item.id=id;if(options.cgId){item.screenEffect=[4015,Number(options.cgId)];item.roleIds=[];item.roleName='';item.highlights=[];}
+    const id=adopted?trackStoryClaim(entry,'talks'):newTalkId(),item=duplicate&&current?normalizeTalk(clone(current)):continuationTalk(id,current,previousStage,options.blank);item.id=id;if(options.cgId){item.screenEffect=[4015,Number(options.cgId)];item.roleIds=[];item.roleName='';item.highlights=[];}
     if(roots.length)S.pinned.talks.add(id);
     if(duplicate && current){item.check=[];item.nextTalk2=[];item.option=[];for(const oid of ids(current.option)){const old=S.doc.options[oid];if(!old)continue;const newId=nextId(S.doc.options,eventForTalk()*100+1);S.doc.options[newId]={...clone(old),id:newId};item.option.push(newId);}}
     item.nextTalk=current?Timeline.next(S.doc,S.branchFolders,current.id):[];
@@ -381,8 +386,9 @@ function applyRenumber(result){
   S.deleted=S.deleted.filter(id=>!reused.has(Number(id)));
   S.replacements=Object.fromEntries(Object.entries(S.replacements).filter(([id])=>!reused.has(Number(id))).map(([id,v])=>[id,mtAll(v)]));
   S.selected=S.selected==null?null:mt(S.selected);S.activeFolder=mapKey(S.activeFolder);S.folderOpen=Object.fromEntries(Object.entries(S.folderOpen).map(([k,v])=>[mapKey(k),v]));
+  for(const [id,claim]of [...storyClaims]){const mapped=({talks:tm,options:om,events:em})[claim.key]?.[id];if(claim.project===S.project?.id&&mapped!==undefined&&STUDIO_IDS.claim(({talks:'TalkCfg',options:'OptionCfg',events:'EvtCfg'})[claim.key],mapped))trackStoryClaim(Number(mapped),claim.key);}
   S.idMappings=composeMappings(S.idMappings,result.mappings);S.coalesce=null;
-  invalidateStageMemo();updateDirty();render();
+  reconcileStoryClaims();invalidateStageMemo();updateDirty();render();
 }
 // ---- Double-click an ID to open the shared draft-aware number editor. ----
 function inlineIdEdit(prefix,commit){
@@ -545,6 +551,15 @@ function reorderTalk(source,target,after=false){
   if(JSON.stringify(order)===JSON.stringify(S.order))return;
   mutate('调整对话顺序',()=>{S.doc=doc;S.branchFolders=folders;S.order=order;S.selected=Number(source);S.activeFolder=Timeline.owner(folders,source);});
   toast('对话顺序与播放顺序已更新。');
+}
+function moveTalkToFolder(source,key){
+ if(!editable())return;
+ const doc=clone(S.doc),folders=clone(S.branchFolders);
+ if(!folders[key]){const [parent,option]=key.split(':').map(Number);Branches.create(doc,folders,parent,option);}
+ const order=Timeline.moveToFolder(doc,folders,S.order,source,key);
+ if(Timeline.owner(S.branchFolders,source)===key)return;
+ mutate('移入对话夹',()=>{S.doc=doc;S.branchFolders=folders;S.order=order;S.selected=Number(source);S.activeFolder=key;S.folderOpen[key]=true;});
+ toast('已移入对话夹，播放连接已同步更新。');
 }
 function moveTalk(direction){const list=visibleIds().filter(id=>Timeline.owner(S.branchFolders,id)===S.activeFolder),at=list.indexOf(S.selected),other=list[at+direction];if(other!==undefined)reorderTalk(S.selected,other,direction>0);}
 function addConditionalBranch(){
@@ -713,25 +728,40 @@ function showDialogueImport(){
  $('#dialogue-import-text').oninput=refresh;
  $('#dialogue-import-file').onchange=async event=>{const file=event.target.files[0];if(!file)return;try{if(file.size>2*1024*1024)throw Error('对话文件不能超过 2 MB。');const bytes=await file.arrayBuffer();let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{text=new TextDecoder('gb18030').decode(bytes);}if(S.project.id!==project||!$('#dialogue-import-text'))return;$('#dialogue-import-text').value=text;refresh();}catch(error){fail(error);}};refresh();
 }
-let conditionLoadSequence=0,conditionLoadAbort=null;
+let conditionLoadSequence=0;
+const conditionCatalogCache=new Map();
+function preloadConditionCatalog(projectId,revision,force=false){
+ const key=projectId+':'+!!window.STUDIO_ORIGINAL_MODE?.(),cached=conditionCatalogCache.get(key);
+ if(!force&&cached&&cached.revision===revision)return cached.promise;
+ const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),45000),entry={revision};
+ const get=async path=>{const r=await fetch(path,{headers:{'X-Studio-Token':token},signal:controller.signal}),d=await r.json();if(!r.ok||d.error)throw Error(d.error||'目录读取失败');return d;};
+ entry.promise=(async()=>{
+  const data=await get('/api/commands?projectId='+encodeURIComponent(projectId));
+  const templates=[...(data.commands?.condition||[]),...(data.commands?.effect||[])];
+  const names=[...new Set(['ConditionTypeCfg','EffectTypeCfg','EvtTypeCfg','MapCfg','ActionCfg','ActionEvtCfg','InteractCfg',...templates.flatMap(t=>(t.parameters||[]).map(p=>p.range?.table).filter(Boolean))])];
+  const dataRefs=await get('/api/command-references?'+new URLSearchParams({projectId,names:names.join(','),loaded:'PersonCfg,EvtCfg,OptionCfg,TalkCfg'}));
+  entry.revision=dataRefs.revision;
+  if(Object.keys(dataRefs.errors||{}).length&&conditionCatalogCache.get(key)===entry)conditionCatalogCache.delete(key);
+  return {data,dataRefs};
+ })().catch(error=>{if(conditionCatalogCache.get(key)===entry)conditionCatalogCache.delete(key);if(error.name==='AbortError')throw Error('读取超时，请重试');throw error;}).finally(()=>clearTimeout(timeout));
+ conditionCatalogCache.set(key,entry);while(conditionCatalogCache.size>2)conditionCatalogCache.delete(conditionCatalogCache.keys().next().value);
+ return entry.promise;
+}
+window.STUDIO_PRELOAD_COMMANDS=(id,revision)=>preloadConditionCatalog(id,revision).catch(()=>null);
 function refreshConditionNotice(){
  const root=$('#editor-content');if(!root)return;root.querySelector('#condition-loading-notice')?.remove();
  if(!S.conditionsLoading&&!S.conditionsError)return;const notice=document.createElement('div');notice.id='condition-loading-notice';notice.className='notice-panel';notice.setAttribute('role','status');
  notice.append(document.createTextNode(S.conditionsLoading?'正在读取条件和效果目录，可先编辑对话内容。':S.conditionsError));
  if(!S.conditionsLoading){const retry=document.createElement('button');retry.dataset.action='retry-conditions';retry.textContent='重试读取';notice.append(retry);}root.prepend(notice);
 }
-async function loadConditionCatalog(){
- conditionLoadAbort?.abort();const controller=new AbortController();conditionLoadAbort=controller;const timeout=setTimeout(()=>controller.abort(),45000);
+async function loadConditionCatalog(force=false){
  const projectId=S.project.id,sequence=++conditionLoadSequence;
  S.conditionsLoading=true;S.conditionsError='';refreshConditionNotice();
  const current=()=>S.project?.id===projectId&&sequence===conditionLoadSequence;
- const get=async path=>{try{const r=await fetch(path,{headers:{'X-Studio-Token':token},signal:controller.signal}),d=await r.json();if(!r.ok||d.error)throw Error(d.error||'目录读取失败');return d;}catch(e){if(e.name==='AbortError')throw Error('读取超时，请重试');throw e;}};
  try{
-  const data=await get('/api/commands?projectId='+encodeURIComponent(projectId)),templates=data.commands?.condition||[],effects=data.commands?.effect||[],refs={},localIds={};
+  const {data,dataRefs}=await preloadConditionCatalog(projectId,S.revision,force),templates=[...(data.commands?.condition||[])],effects=data.commands?.effect||[],refs={},localIds={};
   if(!templates.some(t=>Number(t.template?.[0])===7&&Number(t.template?.[1])===0))templates.unshift({label:'人物关系',template:[7,0,0,1],match:{0:7,1:0},parameters:[{index:2,label:'与谁',type:'int',range:{table:'PersonCfg'}},{index:3,label:'关系是',type:'int',range:{table:'OtherRelationCfg'}}]});
-  const tables=[...new Set(['ConditionTypeCfg','EffectTypeCfg','EvtTypeCfg','MapCfg','ActionCfg','ActionEvtCfg','InteractCfg',...[...templates,...effects].flatMap(t=>(t.parameters||[]).map(p=>p.range?.table).filter(Boolean))])];
   const loaded={PersonCfg:'persons',EvtCfg:'events',OptionCfg:'options',TalkCfg:'talks'},failures=[];
-  const dataRefs=await get('/api/command-references?'+new URLSearchParams({projectId,names:tables.join(','),loaded:Object.keys(loaded).join(',')}));
   for(const [name,d]of Object.entries(dataRefs.tables||{})){refs[name]=d.rows;localIds[name]=d.localIds||[];}
   for(const [name,error]of Object.entries(dataRefs.errors||{}))failures.push(name+'：'+error);
   for(const [name,key]of Object.entries(loaded))localIds[name]=S.localIds[key]||[];
@@ -742,9 +772,9 @@ async function loadConditionCatalog(){
   S.conditionTemplates=templates;S.effectTemplates=effects;S.conditionRefs=refs;S.conditionLocalIds=localIds;
   S.conditionsError=failures.length?'部分目录未读取成功：'+failures.join('；'):'';return true;
  }catch(error){if(current())S.conditionsError='条件和效果目录读取失败：'+error.message;return false;}
- finally{clearTimeout(timeout);if(current()){conditionLoadAbort=null;S.conditionsLoading=false;if(!storyPreview){window.STUDIO_EVENTS?.refresh();refreshConditionNotice();const root=$('#editor-content');mountConditionEditors(root);mountEffectEditors(root);}}}
+ finally{if(current()){S.conditionsLoading=false;if(!storyPreview){window.STUDIO_EVENTS?.refresh();refreshConditionNotice();const root=$('#editor-content');mountConditionEditors(root);mountEffectEditors(root);}}}
 }
-window.STUDIO_RETRY_CONDITIONS=()=>loadConditionCatalog();
+window.STUDIO_RETRY_CONDITIONS=()=>loadConditionCatalog(true);
 function conditionMarkup(scope,id,field,title,description,forceOpen=false){return `<details class="condition-section" ${forceOpen||(S.doc?.[scope]?.[id]?.[field]||[]).length?'open':''}><summary>${h(title)} <span>${S.doc?.[scope]?.[id]?.[field]?.length||0} 项</span></summary><div data-condition-scope="${scope}" data-condition-id="${id}" data-condition-field="${field}" data-condition-description="${h(description)}"></div></details>`;}
 function mountConditionEditors(root){
   root.querySelectorAll('[data-condition-scope]').forEach(node=>{const scope=node.dataset.conditionScope,id=Number(node.dataset.conditionId),field=node.dataset.conditionField,row=S.doc?.[scope]?.[id];if(!row)return;
@@ -845,7 +875,7 @@ async function loadProject(id,preserve=false) {
   if(!preserve&&(S.deferredProject||String(S.project?.id)!==String(id))&&isLocalProject(availableProject(id))&&!availableProject(id).originalMode){projectFeedback('正在备份模组：'+availableProject(id).name+'…');let backup;try{backup=await api('/api/backup',{projectId:id,kind:'automatic',requestId:crypto.randomUUID()});}catch(error){error.message='自动备份未完成：'+error.message;throw error;}if(backup.warning)toast(backup.warning,'note');if(request!==projectLoadSequence)return false;}
   const data=await api('/api/project?id='+encodeURIComponent(id)+'&talkStorage='+(new URLSearchParams(location.search).get('talkStorage')==='indexed'?'indexed':'segmented')+(window.STUDIO_ORIGINAL_MODE()&&originalEvents(id).size?'&originalEvents='+[...originalEvents(id)].join(','):''));await STUDIO_IDS.refresh(id);if(request!==projectLoadSequence)return false;previous={...S};
   if(!isReadableProject(data.project)||String(data.project.id)!==String(id))throw Error('读取的项目与当前选择不符，请重新打开。');
-  if(S.project&&String(S.project.id)!==String(data.project.id)){scenePlayer?.dispose();scenePlayer=null;StudentAgeScene.portraitSizes.clear();portraitSizeRequests.clear();}S.project=data.project;S.deferredProject=false;S.referenceResolution=data.referenceResolution||[2560,1440];S.revision=data.revision;S.localIds=data.localIds||{};S.catalogAvailable=!!data.catalogAvailable;
+  if(S.project&&String(S.project.id)!==String(data.project.id)){scenePlayer?.dispose();scenePlayer=null;StudentAgeScene.portraitSizes.clear();portraitSizeRequests.clear();portraitSizePending.clear();reconcileStoryClaims();}S.project=data.project;S.deferredProject=false;S.referenceResolution=data.referenceResolution||[2560,1440];S.revision=data.revision;S.localIds=data.localIds||{};S.catalogAvailable=!!data.catalogAvailable;
   S.goalImageIds=data.goalImageIds||[];S.doc={protagonistGender:data.protagonistGender===2?2:1,eventGrades:data.eventGrades||{}};for(const k of MAPS){const rows=data[k]||{};S.doc[k]=k!=='talks'&&Object.keys(rows).length>500?IndexedTalks.create(Object.entries(rows).map(([id,row])=>[id,JSON.stringify(row)])):rows;}if(data.indexedTalks)S.doc.talks=IndexedTalks.create(data.indexedTalks.rows);if(data.segmentedTalks){const projectId=id;S.doc.talks=Remote.create(data.segmentedTalks,(path,body)=>api(path,{...body,projectId}),data.revision);}
   S.premises=clone(data.premises||{});S.branchFolders=clone(data.branchFolders||{});S.folderOpen={};S.activeFolder=null;S.doc.talkOwners=clone(data.talkOwners||{});StudentAgeEventOwnership.sync(S.doc,S.branchFolders);S.doc.audioCues=data.audioCues||{version:1,sfx:{},bgm:[]};S.bgmDraft=null;S.audios=[];S.defaultBgm=null;stageAudio?.stop();
   const computedOrder=initialOrder();const storedOrder=ids(data.order).filter(id=>S.doc.talks[id]);S.order=[...new Set([...storedOrder,...computedOrder])];S.event=preserve&&(oldEvent==='all'||S.doc.events[oldEvent])?oldEvent:(values(S.doc.events)[0]?.id || 'all');
@@ -895,7 +925,7 @@ async function save() {
   StudentAgeEventBindings.syncSocialEffects(S.doc);
   for(const id of Timeline.internals(S.branchFolders)){const t=S.doc.talks[id];if(!t)continue;if(Remote.hasText(t)||t.roles?.length||t.option?.length||t.effect?.length||t.screenEffect?.length){t.content='';t.roles=[];t.option=[];t.effect=[];t.screenEffect=[];}}S.saving=true;renderChrome();const submittedSignature=currentSignature();
   const sentMappings=S.idMappings;S.idMappings={};
-  try{const submitted=IndexedTalks.parse(submittedSignature)[0],before=IndexedTalks.parse(S.saved)[0];await Remote.ensure(submitted.talks,Remote.changed(submitted.talks,before.talks));const live={doc:S.doc,order:S.order,deleted:S.deleted,replacements:S.replacements,premises:S.premises,branchFolders:S.branchFolders,pinned:S.pinned},parts=IndexedTalks.parse(submittedSignature);let payload;try{Object.assign(S,{doc:submitted,order:parts[1],deleted:parts[2],replacements:parts[3],premises:parts[4],branchFolders:parts[5],pinned:Object.fromEntries(Object.entries(parts[6]).map(([k,v])=>[k,new Set(v)]))});payload=changedStoryPayload.call(null,sentMappings);}finally{Object.assign(S,live);}const data=await api('/api/save',payload);if(data.talkGenerationAdvanced)Remote.advance(S.doc.talks,data.revision);S.revision=data.revision??S.revision;const inverse=Object.fromEntries(Object.entries(sentMappings||{}).map(([t,m])=>[t,Object.fromEntries(Object.entries(m).map(([a,b])=>[b,Number(a)]))]));for(const entry of [...S.undo,...S.redo])entry.idMappings=composeMappings(inverse,entry.idMappings||{});const unchanged=currentSignature()===submittedSignature;if(data.branchFolders&&unchanged)S.branchFolders=clone(data.branchFolders);if(data.premises&&unchanged)S.premises=clone(data.premises);S.saved=unchanged?currentSignature():submittedSignature;S.dirty=currentSignature()!==S.saved;if(data.warnings?.length)toast('已保存。'+data.warnings.join(' '),'note');else toast(S.dirty?'已保存此前的修改，继续编辑的内容仍待保存。':'模组已保存，修改前的文件已备份。');return !S.dirty;}
+  try{const submitted=IndexedTalks.parse(submittedSignature)[0],before=IndexedTalks.parse(S.saved)[0];await Remote.ensure(submitted.talks,Remote.changed(submitted.talks,before.talks));const live={doc:S.doc,order:S.order,deleted:S.deleted,replacements:S.replacements,premises:S.premises,branchFolders:S.branchFolders,pinned:S.pinned},parts=IndexedTalks.parse(submittedSignature);let payload;try{Object.assign(S,{doc:submitted,order:parts[1],deleted:parts[2],replacements:parts[3],premises:parts[4],branchFolders:parts[5],pinned:Object.fromEntries(Object.entries(parts[6]).map(([k,v])=>[k,new Set(v)]))});payload=changedStoryPayload.call(null,sentMappings);}finally{Object.assign(S,live);}const data=await api('/api/save',payload);for(const [id,claim]of storyClaims)if(claim.project===payload.projectId&&submitted[claim.key]?.[id]){STUDIO_IDS.commitClaims([id]);storyClaims.delete(id);}if(data.talkGenerationAdvanced)Remote.advance(S.doc.talks,data.revision);S.revision=data.revision??S.revision;const inverse=Object.fromEntries(Object.entries(sentMappings||{}).map(([t,m])=>[t,Object.fromEntries(Object.entries(m).map(([a,b])=>[b,Number(a)]))]));for(const entry of [...S.undo,...S.redo])entry.idMappings=composeMappings(inverse,entry.idMappings||{});const unchanged=currentSignature()===submittedSignature;if(data.branchFolders&&unchanged)S.branchFolders=clone(data.branchFolders);if(data.premises&&unchanged)S.premises=clone(data.premises);S.saved=unchanged?currentSignature():submittedSignature;S.dirty=currentSignature()!==S.saved;if(data.warnings?.length)toast('已保存。'+data.warnings.join(' '),'note');else toast(S.dirty?'已保存此前的修改，继续编辑的内容仍待保存。':'模组已保存，修改前的文件已备份。');return !S.dirty;}
   catch(error){S.idMappings=composeMappings(sentMappings,S.idMappings);fail(error);throw error;}finally{S.saving=false;renderChrome();storySelection.render();scheduleRenumber();}
 }
 function unassignedTalkIds() {
@@ -1213,7 +1243,7 @@ function openStoryPreview(){
  document.activeElement?.blur();window.getSelection()?.removeAllRanges();
  controls.innerHTML='<button type="button" data-story-preview="history" aria-label="Tab 日志"><i aria-hidden="true"></i><span>日志</span></button><button type="button" data-story-preview="auto" aria-label="Shift 自动播放" aria-pressed="false"><i aria-hidden="true"></i><span>自动</span></button><button type="button" data-story-preview="exit" aria-label="Esc 退出剧情预览"><i aria-hidden="true"></i><span>菜单</span></button>';
  document.body.classList.add('story-fullscreen');controls.hidden=false;sceneMode='play';
- const id=S.selected;scenePlayer.select(id,storyPreview.trace.at(-1)===id?storyPreview.trace:null);stageAudio.prime(scenePlayer.trace.slice(0,-1));prepareSceneExpressions(scenePlayer.scene);scenePlayer.play();updateStoryPreviewControls();$('#large-scene').focus();
+ const id=S.selected;scenePlayer.select(id,storyPreview.trace.at(-1)===id?storyPreview.trace:null);stageAudio.prime(scenePlayer.trace.slice(0,-1));prepareSceneExpressions(scenePlayer.scene);scenePlayer.play({initial:true});updateStoryPreviewControls();$('#large-scene').focus();
 }
 let historyImageObserver=null,historyImageEpoch=0;
 const historyPortraitLoads=new Map();
@@ -1432,7 +1462,7 @@ function scenePlayerRender(state,flags) {
 }
 function ensureScene() {
   if(!stageAudio)stageAudio=new StudentAgeScene.AudioPlayer({getCues:()=>S.doc?.audioCues,getUrl:audioUrl,getDefaultBgm:()=>S.defaultBgm?{...S.defaultBgm,url:assetUrl(S.defaultBgm.url)}:null,getLegacy:id=>S.audios.find(a=>Number(a.id)===Number(S.doc?.talks[id]?.audio)),onWarning:m=>toast(m,'note')});
-  if(!largeScene)largeScene=new StudentAgeScene.Renderer($('#large-scene'),{screenRefs:()=>S.conditionRefs,onPaperClose:()=>scenePlayer?.schedule(),assetUrl,emojiAtlas:'/api/social-emojis?token='+encodeURIComponent(token),talkUi:{manifest:'/api/talk-ui?token='+encodeURIComponent(token),resource:name=>'/api/talk-ui?resource='+encodeURIComponent(name)+'&token='+encodeURIComponent(token)},onBeforeInteract:()=>{if(storyPreview||!isLocalProject(S.project))return false;if(linePlayback)stopLinePlayback();return sceneMode==='edit';},onDrag:commitSceneDrag,onSelectRole:selectStageRole,onContextMenu:openActorMenu,onCGContextMenu:openCGMenu,onAssetStatus:renderSceneWarnings,canEditDialogue:()=>sceneMode==='edit'&&isLocalProject(S.project)&&!!talk(),onChooseSpeaker:cycleSpeaker});
+  if(!largeScene)largeScene=new StudentAgeScene.Renderer($('#large-scene'),{portraitGeometryPending:path=>portraitSizePending.has(S.project?.id+':'+path),screenRefs:()=>S.conditionRefs,onPaperClose:()=>scenePlayer?.schedule(),assetUrl,emojiAtlas:'/api/social-emojis?token='+encodeURIComponent(token),talkUi:{manifest:'/api/talk-ui?token='+encodeURIComponent(token),resource:name=>'/api/talk-ui?resource='+encodeURIComponent(name)+'&token='+encodeURIComponent(token)},onBeforeInteract:()=>{if(storyPreview||!isLocalProject(S.project))return false;if(linePlayback)stopLinePlayback();return sceneMode==='edit';},onDrag:commitSceneDrag,onSelectRole:selectStageRole,onContextMenu:openActorMenu,onCGContextMenu:openCGMenu,onAssetStatus:renderSceneWarnings,canEditDialogue:()=>sceneMode==='edit'&&isLocalProject(S.project)&&!!talk(),onChooseSpeaker:cycleSpeaker});
   if(!scenePlayer)scenePlayer=new StudentAgeScene.Player({loadTalk:id=>Remote.ensure(S.doc.talks,[id],{pin:true}),getDoc:()=>({...S.doc,branchFolders:S.branchFolders}),onHistory:recordPreviewHistory,getContext:sceneContext,manual:()=>!!largeScene?.paperVisible||!!storyPreview&&(!storyPreview.auto||storyPreview.exiting||$('#story-history').open),getChoices:previewRoutes,onRender:scenePlayerRender,onChoices:choices=>{largeScene.showChoices(choices,route=>scenePlayer.choose(route));$('#scene-status').textContent='请选择要预览的路线。';},onSelect:id=>{S.selected=id;S.activeFolder=Branches.ownedBy(S.branchFolders,id);if(S.activeFolder)S.folderOpen[S.activeFolder]=true;S.coalesce=null;if(!storyPreview){renderChrome();renderList();renderEditor();}},onWarning:m=>toast(m,'note'),onPlaying:()=>updateStoryPreviewControls()});
 }
 function renderPreview() {
@@ -1583,16 +1613,18 @@ function refreshSceneAssets(){
   }
   renderPreview();
 }
-const portraitSizeRequests=new Set();
+const portraitSizeRequests=new Set(),portraitSizePending=new Set();
 function prepareSceneExpressions(state){
  const project=S.project?.id,paths=[...new Set(values(state?.roles).filter(r=>r.visible).flatMap(r=>StudentAgeScene.portraitCandidates(S.doc,r)))].filter(p=>p&&!p.startsWith('portrait-cache/')&&!portraitSizeRequests.has(project+':'+p));
  if(paths.length){
-  paths.forEach(p=>portraitSizeRequests.add(project+':'+p));
+  paths.forEach(p=>{portraitSizeRequests.add(project+':'+p);portraitSizePending.add(project+':'+p);});
   api('/api/portrait-dimensions',{projectId:project,paths}).then(sizes=>{
    if(S.project?.id!==project)return;
    for(const [path,size] of Object.entries(sizes))StudentAgeScene.portraitSizes.set(path,size);
-   if(Object.keys(sizes).length)largeScene?.refreshPortraits();
-  }).catch(()=>paths.forEach(p=>portraitSizeRequests.delete(project+':'+p)));
+     }).catch(()=>paths.forEach(p=>portraitSizeRequests.delete(project+':'+p))).finally(()=>{
+   if(S.project?.id!==project)return;
+   paths.forEach(p=>portraitSizePending.delete(project+':'+p));largeScene?.refreshPortraits();
+  });
  }
 
  for(const role of values(state?.roles)){
@@ -1670,7 +1702,7 @@ function updateTalkTextCard(speakerChanged=false){
 const actions={
   'refresh-projects':()=>refreshProjects(),'create-project':()=>unsaved(()=>newProject(false)),'copy-project':()=>newProject(true),'save':save,'undo':undo,'redo':redo,
   'talk-page':b=>{S.listStart=Number(b.dataset.start);renderList();$('#talk-list').scrollTop=0;},
-  'retry-conditions':()=>loadConditionCatalog(),'select-talk':b=>selectTalk(b.dataset.id),'add-blank-talk':()=>addTalk(false,{blank:true}),'add-talk':()=>addTalk(false),'duplicate-talk':()=>addTalk(true),'delete-talk':()=>storySelection.active?storySelection.remove():deleteTalk(),'move-up':()=>moveTalk(-1),'move-down':()=>moveTalk(1),
+  'retry-conditions':()=>loadConditionCatalog(true),'select-talk':b=>selectTalk(b.dataset.id),'add-blank-talk':()=>addTalk(false,{blank:true}),'add-talk':()=>addTalk(false),'duplicate-talk':()=>addTalk(true),'delete-talk':()=>storySelection.active?storySelection.remove():deleteTalk(),'move-up':()=>moveTalk(-1),'move-down':()=>moveTalk(1),
   'toggle-folder':b=>toggleFolder(b.dataset.folderKey),'folder-add-blank':b=>addFolderTalk(b.dataset.folderKey,false,null,{blank:true}),'folder-add':b=>addFolderTalk(b.dataset.folderKey),'reveal-folder':b=>{S.folderOpen[b.dataset.folderKey]=true;renderList();document.querySelector('[data-folder="'+b.dataset.folderKey+'"]')?.scrollIntoView({block:'nearest'});},
   'history-export':showHistoryExport,
   'dialogue-import':showDialogueImport,
@@ -1714,13 +1746,13 @@ document.addEventListener('contextmenu',event=>{
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#talk-context-menu'))closeTalkMenu();});
 document.addEventListener('input',e=>{if(e.target.matches('[data-speaker-name]'))setSpeakerName(e.target.value);});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeTalkMenu();});
-function clearTalkDrop(){document.querySelectorAll('.talk-drop-before,.talk-drop-after').forEach(n=>n.classList.remove('talk-drop-before','talk-drop-after'));}
+function clearTalkDrop(){document.querySelectorAll('.talk-drop-before,.talk-drop-after,.talk-drop-folder').forEach(n=>n.classList.remove('talk-drop-before','talk-drop-after','talk-drop-folder'));}
 document.addEventListener('dragstart',e=>{const card=e.target.closest('#talk-list .talk-card');if(!card||S.project?.readOnly)return;closeTalkMenu();talkDrag=Number(card.dataset.id);e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(talkDrag));card.classList.add('talk-dragging');});
 document.addEventListener('dragover',e=>{
- if(talkDrag===null)return;const card=e.target.closest('#talk-list .talk-card');clearTalkDrop();if(!card||Number(card.dataset.id)===talkDrag)return;e.preventDefault();e.dataTransfer.dropEffect='move';const rect=card.getBoundingClientRect();card.classList.add(e.clientY>rect.top+rect.height/2?'talk-drop-after':'talk-drop-before');
+ if(talkDrag===null)return;const card=e.target.closest('#talk-list .talk-card'),folder=e.target.closest('#talk-list .branch-folder-title');clearTalkDrop();if(folder){if(!folder.dataset.folderKey.endsWith(':legacy')){e.preventDefault();e.dataTransfer.dropEffect='move';folder.classList.add('talk-drop-folder');}return;}if(!card||Number(card.dataset.id)===talkDrag)return;e.preventDefault();e.dataTransfer.dropEffect='move';const rect=card.getBoundingClientRect();card.classList.add(e.clientY>rect.top+rect.height/2?'talk-drop-after':'talk-drop-before');
  const list=$('#talk-list'),bounds=list.getBoundingClientRect();if(e.clientY<bounds.top+45)list.scrollTop-=18;else if(e.clientY>bounds.bottom-45)list.scrollTop+=18;
 });
-document.addEventListener('drop',e=>{if(talkDrag===null)return;e.preventDefault();const card=e.target.closest('#talk-list .talk-card'),source=talkDrag;talkDrag=null;const after=card?.classList.contains('talk-drop-after');clearTalkDrop();if(card)try{reorderTalk(source,Number(card.dataset.id),after);}catch(error){fail(error);}});
+document.addEventListener('drop',e=>{if(talkDrag===null)return;e.preventDefault();const card=e.target.closest('#talk-list .talk-card'),folder=e.target.closest('#talk-list .branch-folder-title'),source=talkDrag;talkDrag=null;const after=card?.classList.contains('talk-drop-after');clearTalkDrop();try{if(folder&&!folder.dataset.folderKey.endsWith(':legacy'))moveTalkToFolder(source,folder.dataset.folderKey);else if(card)reorderTalk(source,Number(card.dataset.id),after);}catch(error){fail(error);}});
 document.addEventListener('dragend',()=>{talkDrag=null;clearTalkDrop();document.querySelectorAll('.talk-dragging').forEach(n=>n.classList.remove('talk-dragging'));});
 document.addEventListener('input',event=>{
   const e=event.target;
@@ -1805,9 +1837,9 @@ async function selectProjectHome(id,keepSource=false){
  if(S.dirty)throw Error('请先保存当前剧情草稿。');const project=availableProject(id);if(!project)throw Error('模组已不在列表中，请刷新。');
  if(!keepSource)window.STUDIO_ORIGINAL_SOURCE.set(null);
  window.STUDIO_PAUSE_PREVIEW?.();scenePlayer?.dispose();scenePlayer=null;window.STUDIO_EVENTS?.close();
- ++projectLoadSequence;StudentAgeScene.portraitSizes.clear();portraitSizeRequests.clear();S.project=project;S.doc=null;S.localIds={};S.conditionRefs={};S.deferredProject=true;S.selected=null;S.event='all';S.revision=null;S.undo=[];S.redo=[];S.saved='';S.order=[];S.premises={};S.branchFolders={};S.conditionsLoading=false;
+ ++projectLoadSequence;StudentAgeScene.portraitSizes.clear();portraitSizeRequests.clear();portraitSizePending.clear();reconcileStoryClaims();S.project=project;S.doc=null;reconcileStoryClaims();S.localIds={};S.conditionRefs={};S.deferredProject=true;S.selected=null;S.event='all';S.revision=null;S.undo=[];S.redo=[];S.saved='';S.order=[];S.premises={};S.branchFolders={};S.conditionsLoading=false;
  localStorage.setItem('studentAgeStudio.project',String(id));renderProjects();renderChrome();
- await window.STUDIO_OPEN_WORKSHOP();window.dispatchEvent(new CustomEvent('studio-project-ready'));return true;
+ await window.STUDIO_OPEN_WORKSHOP();preloadConditionCatalog(id,window.STUDIO_WORKSHOP_NAV?.assetContext?.(id)?.revision).catch(()=>{});window.dispatchEvent(new CustomEvent('studio-project-ready'));return true;
 }
 window.STUDIO_SELECT_PROJECT=selectProjectHome;
 window.STUDIO_SET_ORIGINAL_MODE=async value=>{
@@ -1999,7 +2031,7 @@ window.STUDIO_STORY_JSON={
  }
 };
 window.STUDIO_CURRENT_REVISION=()=>S.revision;
-window.StudentAgeStudioTest={S,addTalk,deleteTalk,storySelection,undo,redo,renameEvent,addAfterBranches,addSpeaker,removeSpeaker,openJumpPicker,addOptionWithSettings,openScreenEffectMenu,openCGMenu,renumberEvent,renumberPlan,eventTraversal,branchBlock,selectTalk,save,toggleStoryAuto,setEventGrade,currentEventGrade,openStoryHistory,closeStoryHistory,scrollStoryHistory,importDialogueRows,exportDialogueRows,playCurrentLine,openStoryPreview,closeStoryPreview,Timeline,Branches,Conditions,Effects,HistoryExport,previewHistory,showHistoryExport,initialEntry,setInitialPosition,getScenePlayer:()=>scenePlayer,getSceneRenderer:()=>largeScene,reorderTalk,addConditionalBranch,addFolderTalk,setFolderContinuation,setFolderFailure,replaceEdges,graphOrder,moveTalk,normalizeTalk,nextId,currentStage,commitSceneDrag,refreshSceneAssets,enterSceneRole,removeStageRole,flipStageRole,applyBgmDraft,addSfx,audioNeedsPlugin,changedStoryPayload,getAudioPlayer:()=>stageAudio};
+window.StudentAgeStudioTest={S,addTalk,deleteTalk,storySelection,undo,redo,renameEvent,addAfterBranches,addSpeaker,removeSpeaker,openJumpPicker,addOptionWithSettings,openScreenEffectMenu,openCGMenu,renumberEvent,renumberPlan,eventTraversal,branchBlock,selectTalk,save,toggleStoryAuto,setEventGrade,currentEventGrade,openStoryHistory,closeStoryHistory,scrollStoryHistory,importDialogueRows,exportDialogueRows,playCurrentLine,openStoryPreview,closeStoryPreview,Timeline,Branches,Conditions,Effects,HistoryExport,previewHistory,showHistoryExport,initialEntry,setInitialPosition,getScenePlayer:()=>scenePlayer,getSceneRenderer:()=>largeScene,reorderTalk,moveTalkToFolder,addConditionalBranch,addFolderTalk,setFolderContinuation,setFolderFailure,replaceEdges,graphOrder,moveTalk,normalizeTalk,nextId,currentStage,commitSceneDrag,refreshSceneAssets,enterSceneRole,removeStageRole,flipStageRole,applyBgmDraft,addSfx,audioNeedsPlugin,changedStoryPayload,getAudioPlayer:()=>stageAudio};
 // The event-less workbench mounts this same editor; folders are metadata, never EvtCfg rows.
 function externalScope(){
  if(!externalSession||!S.doc)return [];

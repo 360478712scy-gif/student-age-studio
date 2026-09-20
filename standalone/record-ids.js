@@ -25,6 +25,9 @@ function claim(table,id,rows={}){
  id=Number(id);if(!Number.isInteger(id)||id<1||id>2147483647||used.has(id)||reserved.has(id)||rows[id]||blocks[table]?.has(id))return false;
  reserved.add(id);return true;
 }
+// Release only explicit caller-owned draft claims; disk/server reservations remain in used.
+function release(ids){for(const id of ids)reserved.delete(Number(id));}
+function commitClaims(ids){for(const id of ids){used.add(Number(id));reserved.delete(Number(id));}}
 function canHistory(kind){const entry=kind==='undo'?undoEntry:redoEntry;return !!entry&&entry.projectId===project()&&entry.revision===revision()&&!window.STUDIO_HAS_UNSAVED_CHANGES?.()&&!window.STUDIO_WORKSHOP_NAV?.dirty();}
 function mapState(view,maps){if(!view)return view;const result=structuredClone(view),s=result.state||{},m=(table,v)=>maps[table]?.[v]??v;
  const folder=key=>typeof key==='string'?key.split(':').map((v,i,arr)=>i===0?m('TalkCfg',v):i===1&&arr.length===2?m('OptionCfg',v):v).join(':'):key;
@@ -94,5 +97,5 @@ function editDraft({oldId,title='修改编号',commit}){
  dialog.innerHTML=`<header><div><span class="record-id-eyebrow">编号设置</span><h2>${esc(title)}</h2></div><button data-id-cancel aria-label="关闭编号设置">×</button></header><p class="record-id-current">当前编号 <strong>${esc(oldId)}</strong></p><label for="record-id-value">新的编号</label><div class="record-id-input-row"><input id="record-id-value" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" value="${esc(oldId)}"></div><p class="helper">输入 1–2147483647 之间的整数。与本模组已有编号重复时互换，相关引用同步更新。</p><p class="record-id-draft-note">应用到当前草稿，可撤销；保存模组后写入文件。手动指定的对话和选项编号会保持固定。</p><p data-id-error role="alert"></p><footer><button data-id-cancel>取消</button><button class="primary" data-id-apply>应用编号</button></footer>`;
  dialog.showModal();const input=dialog.querySelector('input');input.focus();input.select();
 }
-window.STUDIO_IDS={inline,editDraft,configure,refresh,ensure,allocate,claim,rule,open,apply,history,canUndo:()=>canHistory('undo'),canRedo:()=>canHistory('redo'),get busy(){return working;}};
+window.STUDIO_IDS={inline,editDraft,configure,refresh,ensure,allocate,claim,release,commitClaims,rule,open,apply,history,canUndo:()=>canHistory('undo'),canRedo:()=>canHistory('redo'),get busy(){return working;}};
 })();

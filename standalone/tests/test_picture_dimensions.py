@@ -21,7 +21,8 @@ class PictureDimensionTests(unittest.TestCase):
    with patch.dict(sys.modules,{'UnityPy':SimpleNamespace(), 'UnityPy.helpers':SimpleNamespace(CompressionHelper=SimpleNamespace())}):
     spec=importlib.util.spec_from_file_location('picture_dimension_fixture',Path(__file__).resolve().parents[1]/'extract_game_assets.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
    with patch.object(module,'game_cache',return_value=cache),patch.object(module.UnityPy,'load',return_value=env,create=True) as load:
-    catalog={'assetMap':{**mapping,**{'Textures/'+k:v for k,v in mapping.items()}},'bundles':{bundle.name:'fixture'}}
+    unrelated=root/'textures_assets_role_unrelated.bundle';unrelated.write_bytes(b'other portraits')
+    catalog={'assetMap':{**mapping,**{'Textures/'+k:v for k,v in mapping.items()}},'bundles':{bundle.name:'fixture',unrelated.name:'fixture'},'bundleOutputs':{bundle.name:list(mapping.values()),unrelated.name:['assets/unrelated.png']}}
     for _ in range(2):self.assertEqual(module.portrait_dimensions(root,catalog,list(mapping)),{k:[625,2500] for k in mapping})
     load.assert_called_once()
     self.assertEqual(module.portrait_dimensions(root,catalog,['Mods/a.png']),{})

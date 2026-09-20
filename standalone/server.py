@@ -477,6 +477,7 @@ class StudioStore:
         self.backups = ModBackups(self, sys.modules[__name__], backup_root)
         self.conditions = ConditionLibrary(self, sys.modules[__name__])
         self._catalog_stamp = None
+        self._core_catalog_source = None
         self._catalog_cache = {}
         # Startup preparation, location polling and asset requests may all ask for
         # the catalog at once; one load at a time keeps the memory peak single.
@@ -717,7 +718,7 @@ class StudioStore:
                     return {}
                 return data if isinstance(data, dict) else {}
             if path.name in ('asset-map.json', 'audio-map.json'):
-                names = ('assetMap', 'bundles', 'failures') if path.name == 'asset-map.json' else ('audioMap', 'audioMetadata', 'audioBundles', 'audioFailures')
+                names = ('assetMap', 'bundles', 'bundleOutputs', 'failures') if path.name == 'asset-map.json' else ('audioMap', 'audioMetadata', 'audioBundles', 'audioFailures')
                 expected = (path.stat().st_mtime_ns, path.stat().st_size)
                 def deferred(path=path, names=names, expected=expected, read_generated=read_generated):
                     if (path.stat().st_mtime_ns, path.stat().st_size) != expected:
@@ -726,7 +727,12 @@ class StudioStore:
                     return {key: data[key] for key in names if key in data}
                 deferred_maps.append((names, deferred))
                 continue
-            data = read_generated()
+            source_stamp = (str(path), path.stat().st_mtime_ns, path.stat().st_size)
+            if self._core_catalog_source and self._core_catalog_source[0] == source_stamp:
+                data = self._core_catalog_source[1]
+            else:
+                data = read_generated()
+                self._core_catalog_source = (source_stamp, data)
             for key, value in data.items():
                 if isinstance(value, dict) and isinstance(merged.get(key), dict):
                     merged[key].update(value)
@@ -1352,6 +1358,8 @@ class StudioStore:
             raise ApiError("对话夹记录必须是完整的对象。")
         if len(incoming) > 20000:
             raise ApiError("对话夹数量过多。", 413)
+        if not incoming:
+            return {}
 
         def preserve_unknown(old, new):
             result = copy.deepcopy(old) if isinstance(old, dict) else {}
@@ -1633,9 +1641,6 @@ class StudioStore:
             original_maps = copy.deepcopy(all_maps)
             original_talks = original_maps.get("TalkCfg.json", {})
             catalog_talks = self.catalog_rows("TalkCfg", catalog)
-            base_talk_ids = set(catalog_talks)
-            if isinstance(catalog.get("baseTalkIds"), list):
-                base_talk_ids.update(str(ident) for ident in catalog["baseTalkIds"] if valid_id(ident))
             previous_options = set(all_maps.get("OptionCfg.json", {}))
             touched = set()
             for name, filename in TABLES.items():
@@ -1809,6 +1814,9 @@ class StudioStore:
                 from external_usages import entry_values
                 external_entries_before = entry_values(premise_state.get('externalDialogueFolders', {}), all_maps)
             if redirects:
+                base_talk_ids = set(catalog_talks)
+                if isinstance(catalog.get("baseTalkIds"), list):
+                    base_talk_ids.update(str(ident) for ident in catalog["baseTalkIds"] if valid_id(ident))
                 all_maps.setdefault("TalkCfg.json", {})
                 for filename, table in all_maps.items():
                     if not isinstance(table, dict):
@@ -2289,7 +2297,7 @@ class StudioStore:
             if name in ('MinigameCfg','MinigameActionCfg'):
                 games,stages,_=plugin_mode.references(project,sys.modules[__name__])
                 inherited={**(games if name=='MinigameCfg' else stages),**inherited}
-            if name == 'MinigameActionCfg':
+            if name == 'MinigameActionCfg' and not self.catalog_rows(name):
                 from character_rules import native_rules
                 inherited = {**native_rules(self.game).get(name, {}), **inherited}
             warnings_list = []
@@ -3975,10 +3983,11 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.audio_resources.get())
             if route == '/api/talk-head':
                 from headshots import head_paths, crop_head
-                store = self.server.store
-                project = store.project(query.get('projectId', [''])[0])
-                role = str(int(query.get('roleId', ['0'])[0])); grade = int(query.get('grade', ['1'])[0])
-                person = store.portrait_person(project, role)
+                with self.server.location_lock:
+                    store = self.server.store
+                    project = store.project(query.get('projectId', [''])[0])
+                    role = str(int(query.get('roleId', ['0'])[0])); grade = int(query.get('grade', ['1'])[0])
+                    person = store.portrait_person(project, role)
                 for resource in ([] if role == '0' and query.get('gender', ['1'])[0] == '2' else head_paths(person, grade)):
                     try: return self.send_file(store.asset(project.id, resource))
                     except ApiError: pass
@@ -4147,17 +4156,20 @@ class StudioHandler(BaseHTTPRequestHandler):
             if self.server.locations and not self.server.locations.active:
                 raise ApiError("请先选择《学生时代》的安装目录。",409)
             if route == "/api/portrait-dimensions":
-                self.server.store.project(payload.get("projectId"))
                 paths = payload.get("paths", [])
                 if not isinstance(paths, list) or len(paths) > 128:
                     raise ApiError("立绘尺寸请求无效。")
                 from extract_game_assets import portrait_dimensions
-                with self.server.store.lock:
-                    result = portrait_dimensions(self.server.store.game, self.server.store.catalog(), paths)
+                with self.server.location_lock:
+                    store = self.server.store
+                    with store.lock:
+                        store.project(payload.get("projectId"))
+                        game, catalog = store.game, store.catalog()
+                result = portrait_dimensions(game, catalog, paths)
                 for path in paths:
                     if path in result:continue
                     try:
-                        with Image.open(self.server.store.asset(payload.get('projectId'),path)) as source:result[path]=list(source.size)
+                        with Image.open(store.asset(payload.get('projectId'),path)) as source:result[path]=list(source.size)
                     except (ApiError,OSError,ValueError):pass
                 return self.send_json(result)
             if route == '/api/live-model':
@@ -4307,7 +4319,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             route = urllib.parse.urlsplit(self.path).path
             independent = method == 'GET' and (
                 (not route.startswith('/api/') and route not in ('/', '/index.html'))
-                or route in {'/api/assets', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui'})
+                or route in {'/api/assets', '/api/talk-head', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui'})
+            independent = independent or method == 'POST' and route == '/api/portrait-dimensions'
             with nullcontext() if independent else self.server.location_lock:
                 with original_mode.scope(self.headers.get("X-Studio-Original-Project")):
                     self.dispatch(method)

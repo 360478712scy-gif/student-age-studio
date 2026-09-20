@@ -1,0 +1,8 @@
+const assert=require('node:assert/strict'),T=require('../timeline.js');
+function fixture(){return {doc:{talks:{1:{id:1,nextTalk:[2],option:[10]},2:{id:2,nextTalk:[3],content:'保留正文',roles:[[7,3000,2]]},3:{id:3,nextTalk:[]},4:{id:4,nextTalk:[3]}},events:{1:{id:1,talkId:[1]}},options:{10:{id:10,talkId:[4]}}},folders:{'1:10':{parentTalkId:1,optionId:10,talkIds:[4],continuation:{kind:'talk',talkId:3}}},order:[1,4,2,3]};}
+let {doc,folders,order}=fixture();order=T.moveToFolder(doc,folders,order,2,'1:10');assert.deepEqual(folders['1:10'].talkIds,[4,2]);assert.deepEqual(doc.talks[1].nextTalk,[3]);assert.deepEqual(doc.talks[4].nextTalk,[2]);assert.deepEqual(doc.talks[2].nextTalk,[3]);assert.equal(doc.talks[2].content,'保留正文');assert.deepEqual(doc.talks[2].roles,[[7,3000,2]]);
+// Moving the old folder's first/only member to an empty conditional folder.
+let n=100;const branch=T.addCondition(doc,folders,3,()=>n++);T.moveToFolder(doc,folders,order,4,branch.key);assert.deepEqual(folders['1:10'].talkIds,[2]);assert.deepEqual(doc.options[10].talkId,[2]);assert.deepEqual(doc.talks[branch.folder.routerId].nextTalk,[4]);assert.deepEqual(doc.talks[4].nextTalk,[branch.folder.exitId]);
+assert.throws(()=>T.moveToFolder(doc,folders,order,3,branch.key),/自己/);assert.throws(()=>T.moveToFolder(doc,folders,order,1,branch.key),/分支出口/);
+({doc,folders,order}=fixture());folders['1:10'].talkIds=[];doc.options[10].talkId=[2];T.moveToFolder(doc,folders,order,2,'1:10');assert.deepEqual(doc.options[10].talkId,[2]);assert.deepEqual(doc.talks[2].nextTalk,[3]);assert.deepEqual(folders['1:10'].continuation,{kind:'talk',talkId:3});
+console.log('timeline-folder-drop: populated/empty option and condition folders, old links, content, self/shared route protection passed');

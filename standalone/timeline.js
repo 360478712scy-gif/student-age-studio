@@ -113,6 +113,25 @@ function reorder(doc,folders,order,source,target,after=false){
  const newLane=all.slice(),laneSet=new Set(all);newLane.splice(lo,segment.length,...sorted);let at=0;
  return order.map(id=>laneSet.has(id)?newLane[at++]:id);
 }
+// Move a simple authored line between lanes without changing its identity.
+// Validate on the caller's private draft before committing an undoable edit.
+function moveToFolder(doc,folders,order,source,key){
+ source=Number(source);const row=doc.talks[source],folder=folders[key],lane=owner(folders,source);
+ if(!row||!folder||internals(folders).has(source))throw Error('对话或对话夹已变化，请重新选择。');
+ if(lane===key)return order.slice();
+ if(source===Number(folder.parentTalkId))throw Error('不能把对话拖进它自己的对话夹。');
+ if(ids(row.option).length||entries(folders,source).length||row.miniGame?.length||row.check?.length||ids(row.nextTalk2).length||ids(row.nextTalk).length>1)throw Error('这句带有分支出口，不能单独移入；可以拖动分支里的普通对话。');
+ if(ids(doc.talkOwners?.[source]).length>1)throw Error('这句被多个事件共用，不能单独移入对话夹。');
+ for(const f of [folder,folders[lane]].filter(Boolean))if(f.kind!=='condition'&&Object.values(doc.talks).filter(t=>ids(t.option).includes(Number(f.optionId))).length>1)throw Error('这个选项被多句共用，请先制作独立选项。');
+ const following=next(doc,folders,source);
+ if(following.includes(source))throw Error('这句有循环连接，不能直接移动。');
+ replace(doc,folders,source,following,new Set([source]));
+ if(lane){const old=folders[lane];old.talkIds=ids(old.talkIds).filter(id=>id!==source);if(old.kind==='condition')sync(doc,folders,old.parentTalkId);}
+ insert(doc,folders,folder,row);
+ const result=order.filter(id=>Number(id)!==source),previous=folder.talkIds.at(-2)??folder.parentTalkId;
+ result.splice(result.indexOf(Number(previous))+1,0,source);
+ folder.collapsed=false;return result;
+}
 function removeFolder(doc,folders,key){
  const parentId=Number(key.split(':')[0]),parent=doc.talks[parentId];
  if(!parent)throw Error('所属对话已不存在。');
@@ -138,5 +157,5 @@ function removeFolder(doc,folders,key){
  return {parentId,deleted:[...dead],replacements};
 }
 
-return {ids,entries,internals,owner,next,setNext,setFailure,sync,blank,addCondition,insert,setContinuation,replace,replaceMany,reorder,removeFolder};
+return {ids,entries,internals,owner,next,setNext,setFailure,sync,blank,addCondition,insert,setContinuation,replace,replaceMany,reorder,moveToFolder,removeFolder};
 });

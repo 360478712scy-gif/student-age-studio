@@ -50,15 +50,20 @@ class RecordIds:
         saved = load(preference_path()).get('idCheckExcludedProjects', [])
         return {v for v in saved if isinstance(v, str)} if isinstance(saved, list) else set()
 
-    def occupied(self, exclude=None, exclude_projects=()):
-        catalog = self.store.catalog()
-        names = set(catalog.get('tables', {})) | set(catalog.get('schemas', {})) | set(gameplay_features.NAMES)
-        names.update(['EvtCfg', 'TalkCfg', 'OptionCfg', 'PersonCfg', POST, COMMENT, 'ModFaceCfg'])
-        occupied = {n.removesuffix('.json'): {int(k) for k in self.store.catalog_rows(n.removesuffix('.json')) if str(k).isdigit()} for n in names}
-        occupied.setdefault('TalkCfg', set()).update(int(k) for k in catalog.get('baseTalkIds', []) if str(k).isdigit())
+    def occupied(self, exclude=None, exclude_projects=(), tables=None, include_catalog=True):
+        occupied = {}
+        if include_catalog:
+            catalog = self.store.catalog()
+            names = set(catalog.get('tables', {})) | set(catalog.get('schemas', {})) | set(gameplay_features.NAMES)
+            names.update(['EvtCfg', 'TalkCfg', 'OptionCfg', 'PersonCfg', POST, COMMENT, 'ModFaceCfg'])
+            if tables is not None: names.intersection_update(tables)
+            occupied = {n.removesuffix('.json'): {int(k) for k in self.store.catalog_rows(n.removesuffix('.json')) if str(k).isdigit()} for n in names}
+            if tables is None or 'TalkCfg' in tables:
+                occupied.setdefault('TalkCfg', set()).update(int(k) for k in catalog.get('baseTalkIds', []) if str(k).isdigit())
         for project in self.store.projects():
             if project.id == exclude or project.id in exclude_projects: continue
             for name, path in self.store.cfg_table_files(project).items():
+                if tables is not None and name[:-5] not in tables: continue
                 try: occupied.setdefault(name[:-5], set()).update(self.keys(path))
                 except (self.b.ApiError, OSError): continue  # Only known, readable configurations participate.
         return occupied
@@ -120,7 +125,7 @@ class RecordIds:
                 new -= {int(k) for k in self.store.catalog_rows(table) if str(k).isdigit()}
                 if new: candidates[table] = new
             if not candidates: return []
-            occupied = self.occupied(exclude=project.id, exclude_projects=self.check_exclusions())
+            occupied = self.occupied(exclude=project.id, exclude_projects=self.check_exclusions(), tables=set(candidates), include_catalog=False)
             notes = []
             for table, ids in candidates.items():
                 conflict = sorted(ids & occupied.get(table, set()))

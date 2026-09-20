@@ -61,6 +61,29 @@ class WarmReferences(unittest.TestCase):
         with patch.object(self.store,'catalog',return_value=catalog),patch.object(self.store,'table',side_effect=AssertionError('loaded local table')):
             result=self.store.command_references(self.id,['TalkCfg','EvtCfg'],['TalkCfg','EvtCfg'])
         self.assertEqual(result['tables']['TalkCfg']['rows'],catalog['tables']['TalkCfg']);self.assertIn('9',result['tables']['EvtCfg']['rows'])
+    def test_cached_native_minigames_do_not_reopen_game_bundles(self):
+        catalog={'tables':{'MinigameActionCfg':{'1':{'id':1,'name':'original'}}}}
+        with patch.object(self.store,'catalog',return_value=catalog),patch('character_rules.native_rules',side_effect=AssertionError('already in catalog')):
+            result=self.store.command_references(self.id,['MinigameActionCfg'])
+        self.assertFalse(result['errors']);self.assertIn('1',result['tables']['MinigameActionCfg']['rows'])
+
+    def test_asset_index_update_reuses_unchanged_core_catalog(self):
+        from storage_paths import game_cache
+        import catalog_reader
+        root=game_cache(self.store.game);root.mkdir(parents=True,exist_ok=True)
+        path=root/'game-catalog.json';path.write_bytes(b.json_bytes({'tables':{'PaperCfg':{},'GiftEvtCfg':{}},'persons':{'1':{'id':1}}}))
+        assets=root/'asset-map.json';assets.write_bytes(b.json_bytes({'assetMap':{'a':'a.png'}}))
+        self.store.catalog()
+        original=catalog_reader.read_catalog
+        def guarded(p):
+            self.assertNotEqual(Path(p),path,'unchanged core must not be reparsed for each asset update')
+            return original(p)
+        assets.write_bytes(b.json_bytes({'assetMap':{'b':'longer.png'}}))
+        with patch('catalog_reader.read_catalog',side_effect=guarded):
+            current=self.store.catalog();self.assertEqual(current['assetMap'],{'b':'longer.png'});self.assertIn('1',current['persons'])
+        path.write_bytes(b.json_bytes({'tables':{'PaperCfg':{},'GiftEvtCfg':{}},'persons':{'2':{'id':2}}}))
+        self.assertIn('2',self.store.catalog()['persons'])
+
     def test_reference_conflict_and_partial_failure_retry(self):
         original=self.store.table
         def race(*args,**kwargs):

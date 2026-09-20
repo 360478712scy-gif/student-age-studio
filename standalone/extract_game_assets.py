@@ -9,6 +9,7 @@ import json
 import os
 import struct
 import sys
+import threading
 
 HERE = Path(__file__).resolve().parent
 for directory in (HERE / 'vendor', HERE.parent / 'tools/asset-reader'):
@@ -128,7 +129,16 @@ def cached_file(output, mapping, aliases):
     return None
 
 
+_portrait_dimensions_lock = threading.RLock()
+
+
 def portrait_dimensions(game, catalog, paths):
+    # Serialize this metadata manifest, never the editing/saving store.
+    with _portrait_dimensions_lock:
+        return _portrait_dimensions(game, catalog, paths)
+
+
+def _portrait_dimensions(game, catalog, paths):
     """Read native portrait sizes, without decoding textures or enlarging thumbnails.
 
     Cache by bundle fingerprint. Older thumbnail caches can be upgraded on demand.
@@ -148,8 +158,9 @@ def portrait_dimensions(game, catalog, paths):
     except (OSError, ValueError):
         cache = {}
     resources = {}
+    wanted_exports = set(wanted.values())
     for alias, exported in mapping.items():
-        if exported in wanted.values():
+        if exported in wanted_exports:
             resource = resource_name('/' + alias.lstrip('/'), 'textures')
             if resource and resource.startswith(('role_full/', 'role_half/', 'role_head/', 'role_comic/', 'role_comic_head/', 'role_photo/')):
                 resources[resource] = exported
@@ -160,6 +171,9 @@ def portrait_dimensions(game, catalog, paths):
     changed = False
     for relative in catalog.get('bundles', {}):
         if 'textures_assets_' not in relative.lower() or 'role' not in Path(relative).name.lower():
+            continue
+        outputs = catalog.get('bundleOutputs', {}).get(relative)
+        if isinstance(outputs, list) and not wanted_exports.intersection(outputs):
             continue
         path = game / relative
         if not path.is_file():

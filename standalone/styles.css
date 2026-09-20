@@ -117,3 +117,6 @@ html body.json-drawer-open dialog[data-studio-layered]:not(.uc-popup){inset:0 va
 
 
 .talk-action-codes{margin-top:24px;padding-top:20px;border-top:1px solid var(--border,#8885)}.talk-action-codes .helper{margin:6px 0 10px}.talk-action-codes textarea{display:block;width:100%;min-height:90px;box-sizing:border-box;resize:vertical;font:13px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}
+
+/* A folder heading is a drop target even while its contents are collapsed. */
+.branch-folder-title.talk-drop-folder{outline:2px solid var(--accent,#a98ac6);outline-offset:-2px;background:color-mix(in srgb,var(--accent,#a98ac6) 22%,transparent);}

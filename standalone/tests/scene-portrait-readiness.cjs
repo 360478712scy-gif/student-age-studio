@@ -1,0 +1,20 @@
+// Inspect the first visible frame, not only the eventual settled geometry.
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright'),assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});try{
+ const page=await browser.newPage({viewport:{width:1920,height:1080}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.setContent('<div id="large-scene"></div>');for(const f of ['styles.css','preview-ui.css'])await page.addStyleTag({path:'standalone/'+f});await page.addScriptTag({path:process.env.SCENE_SOURCE||'standalone/scene.js'});
+ await page.evaluate(()=>{document.body.classList.add('story-fullscreen');window.pending=true;
+  window.doc={persons:{1:{id:1,name:'模型',l2d:['one','two'],l2dParm:[[1500,0,410,0]]}},talks:{1:{id:1,content:'台词',roleIds:[1],roles:[[1,1001,0,3,0,0,0]]}},backgrounds:{}};
+  const svg='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="600"><rect width="300" height="600" fill="red"/></svg>');window.renderer=new StudentAgeScene.Renderer(document.querySelector('#large-scene'),{assetUrl:path=>svg+'#'+path,portraitGeometryPending:path=>path==='role_static'&&pending});window.state=StudentAgeScene.reconstruct(doc,1,{grade:0});renderer.draw(doc,state,{animate:true});
+ });
+ await page.waitForTimeout(500);assert.equal(await page.locator('.scene-actor img').count(),0,'do not show a model at placeholder coordinates');
+ await page.evaluate(()=>{const r=state.roles[1];StudentAgeScene.portraitFrames.set(`1-${r.grade}-${r.cloth}`,{bounds:[-.2,-.6,.4,1.2]});renderer.refreshPortraits();});await page.waitForTimeout(50);assert.equal(await page.locator('.scene-actor img').count(),1);
+ const original=await page.locator('.scene-actor img').getAttribute('src');
+ await page.evaluate(()=>{state.roles[1].cloth=2;renderer.draw(doc,state,{animate:false});});await page.waitForTimeout(100);assert.equal(await page.locator('.scene-actor img').getAttribute('src'),original,'keep the resolved old image while replacement geometry loads');
+ await page.evaluate(()=>{StudentAgeScene.portraitFrames.set('1-0-2',{bounds:[-.3,-.5,.6,1.1]});renderer.refreshPortraits();});assert.notEqual(await page.locator('.scene-actor img').getAttribute('src'),original);
+ await page.evaluate(()=>{renderer.dispose();document.querySelector('#large-scene').replaceChildren();doc.persons[1]={id:1,name:'静态人物',url:['role_static'],urlParm:[65,190,.63]};renderer=new StudentAgeScene.Renderer(document.querySelector('#large-scene'),{assetUrl:()=> 'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="600"><rect width="300" height="600" fill="blue"/></svg>'),portraitGeometryPending:()=>pending});state=StudentAgeScene.reconstruct(doc,1,{grade:0});renderer.draw(doc,state,{animate:true});});
+ await page.waitForTimeout(400);assert.equal(await page.locator('.scene-actor img').count(),0,'thumbnail must wait for native dimensions');
+ await page.evaluate(()=>{StudentAgeScene.portraitSizes.set('role_static',[1081,2704]);pending=false;renderer.refreshPortraits();});assert.equal(await page.locator('.scene-actor img').count(),1);
+ const box=await page.evaluate(()=>renderer.actors.get(1).sceneLastBox.box);assert.equal(box.height,2704*.63);assert.equal(box.bottom,50+190-2704*.63/2);assert.deepEqual(errors,[]);
+ console.log('scene-portrait-readiness: first frame, retained outfit, late model bounds and thumbnail metadata passed');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

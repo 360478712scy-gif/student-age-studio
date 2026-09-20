@@ -1,0 +1,7 @@
+// Mod-home and editor consumers must share an in-flight catalogue, including retries.
+const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
+const source=fs.readFileSync('standalone/app.js','utf8'),start=source.indexOf('const conditionCatalogCache='),end=source.indexOf('function refreshConditionNotice',start);
+let calls=[],mode=false,fail=false,revision='r1';
+const context={AbortController,URLSearchParams,setTimeout,clearTimeout,token:'qa',window:{STUDIO_ORIGINAL_MODE:()=>mode},fetch:async url=>{calls.push(url);await new Promise(r=>setTimeout(r,5));if(fail)throw Error('offline');return {ok:true,json:async()=>url.startsWith('/api/commands?')?{commands:{condition:[],effect:[]}}:{revision,tables:{},errors:{}}};}};
+vm.createContext(context);vm.runInContext(source.slice(start,end),context);
+(async()=>{const load=context.preloadConditionCatalog,p1=load('a','r1'),p2=load('a','r1');assert.equal(p1,p2);await p1;await load('a','r1');assert.equal(calls.length,2);revision='r2';await load('a','r2');assert.equal(calls.length,4);await load('b','r2');assert.equal(calls.length,6);mode=true;await load('b','r2');assert.equal(calls.length,8);fail=true;await assert.rejects(load('b','r2',true),/offline/);fail=false;await load('b','r2');assert.equal(calls.length,11);console.log('catalog-preload: shared pending/ready, revision/project/mode and failed retry passed');})().catch(e=>{console.error(e);process.exitCode=1;});
