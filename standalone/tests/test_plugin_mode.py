@@ -143,7 +143,7 @@ class PluginModeTests(unittest.TestCase):
   dest=self.store.workshop/'sub';dest.mkdir(parents=True);b.atomic_write(dest/'manifest.json',b.json_bytes({'title':'订阅'}));ident=next(p.id for p in self.store.projects() if p.readonly)
   with self.assertRaises(b.ApiError):removal.remove(self.store,{'projectId':ident},b)
  def test_player_prefs_and_import_do_not_touch_mod(self):
-  out=music.access(self.store,b);self.assertEqual(out['tracks'][0]['name'],'遠い空へ');self.assertFalse(out['tracks'][0]['local'])
+  out=music.access(self.store,b);self.assertEqual(out['tracks'][0]['id'],'tifa-theme');self.assertTrue(out['tracks'][0]['bundled']);self.assertEqual(len([r for r in out['tracks'] if r.get('bundled')]),4)
   raw=b'RIFF'+b'\x00'*4+b'WAVEfmt '+b'\x00'*32
   music.access(self.store,b,dict(mode='shuffle',collapsed=True,volume=.4,fileName='music.wav',data=base64.b64encode(raw).decode()))
   self.assertEqual(music.media(b).read_bytes(),raw);self.assertTrue(music.access(self.store,b)['preferences']['collapsed']);self.assertEqual(self.protected.read_bytes(),self.before)
