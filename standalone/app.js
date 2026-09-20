@@ -180,7 +180,7 @@ function newTalkId() {let base=eventForTalk()*1000+1;if(base>2147483000)base=900
 function normalizeTalk(t) {for(const k of ['nextTalk','nextTalk2','roleIds','roles','option','check','effect','effect2','highlights','replace','screenEffect'])if(!Array.isArray(t[k]))t[k]=[];return t;}
 function continuationTalk(id,previous,stage,blank=false) {
   // Actors keep their preceding state in the game; copying actions would move them twice.
-  return normalizeTalk({id,content:'',roleIds:blank?[]:ids(previous?.roleIds),roleName:blank?null:previous?.roleName||null,
+  return normalizeTalk({id,content:'',audio:0,roleIds:blank?[]:ids(previous?.roleIds),roleName:blank?null:previous?.roleName||null,
     bg:blank?0:Number(stage?.background)||0,highlights:[],roles:[],screenEffect:[]});
 }
 function stageAt(id) {
@@ -1515,7 +1515,7 @@ async function loadAudioCatalog() {
 }
 function bgmDraft() {
   const cues=audioData(),stamp=JSON.stringify(cues),group=cues.bgm.find(g=>ids(g.talkIds).includes(S.selected));
-  if(!S.bgmDraft||S.bgmDraft.talk!==S.selected||S.bgmDraft.stamp!==stamp){const groupIds=new Set(ids(group?.talkIds)),members=group?visibleIds().filter(id=>groupIds.has(id)):[];S.bgmDraft={talk:S.selected,stamp,groupId:group?.id||null,track:group?Number(group.audioId):null,start:members[0]??null,end:members.at(-1)??null,loop:group?.loop??true,volume:group?.volume??1,ids:members};}
+  if(!S.bgmDraft||S.bgmDraft.talk!==S.selected||S.bgmDraft.stamp!==stamp){const groupIds=new Set(ids(group?.talkIds)),members=group?visibleIds().filter(id=>groupIds.has(id)):[];S.bgmDraft={talk:S.selected,stamp,groupId:group?.id||null,track:group?Number(group.audioId):0,trackChosen:!!group,start:members[0]??null,end:members.at(-1)??null,loop:group?.loop??true,volume:group?.volume??1,ids:members};}
   return S.bgmDraft;
 }
 function audioOptions(type,selected=0) {
@@ -1555,12 +1555,12 @@ function setBgmRange(field,value,editing=false){
   if(a<0||b<0||a>b){invalid('结束对话必须在开始对话之后。');return;}
   // Input state survives async catalogue/body refreshes before blur fires.
   draft.ids=list.slice(a,b+1);draft.rangeInvalid=false;
-  if(editing)return;if(draft.track!==null)applyBgmDraft();else refreshBgmEditor();
+  if(editing)return;if(draft.trackChosen)applyBgmDraft();else refreshBgmEditor();
 }
 function toggleBgmAll(){
   const draft=bgmDraft(),list=visibleIds(),chosen=new Set(draft.ids||[]),all=list.length&&list.every(id=>chosen.has(id));
   delete draft.startText;delete draft.endText;draft.rangeInvalid=false;draft.ids=all?[]:list;draft.start=draft.ids[0]??null;draft.end=draft.ids.at(-1)??null;
-  if(draft.track!==null||draft.groupId)applyBgmDraft();else refreshBgmEditor();
+  if(draft.trackChosen||draft.groupId)applyBgmDraft();else refreshBgmEditor();
 }
 function renderBgmChoices(draft=bgmDraft()){const selected=new Set(draft.ids||[]);return (S.project?.readOnly?(draft.ids||[]).slice(0,100):visibleIds()).map(id=>`<label><input type="checkbox" data-bgm-talk="${id}" ${selected.has(id)?'checked':''}><span>${StudentAgeRecordLabels.html(id,talkLabel(id))}</span></label>`).join('');}
 function renderAudio(){return '<section id="audio-section" class="audio-section">'+renderAudioContents()+'</section>';}
@@ -1587,7 +1587,8 @@ function preserveLegacyAudio(talkId,replacingBgm) {
   if(replacingBgm&&cues.nativeAudio)delete cues.nativeAudio[talkId];
 }
 function applyBgmDraft() {
-  const draft={...bgmDraft()},allowed=new Set(visibleIds()),members=(draft.ids||[]).filter(id=>allowed.has(id));
+  const current=bgmDraft();current.trackChosen=true;
+  const draft={...current},allowed=new Set(visibleIds()),members=(draft.ids||[]).filter(id=>allowed.has(id));
   if(draft.track===null)return;
   if(draft.rangeInvalid){toast('请填写有效的开始和结束 ID，或重新勾选对话。','note');return;}
   if(!members.length&&!draft.groupId){refreshBgmEditor();toast('请先选择需要设置 BGM 的对话。','note');return;}
@@ -1840,12 +1841,12 @@ document.addEventListener('change',event=>{
   }S.coalesce=null;
   if(e.dataset.folderFailure){try{setFolderFailure(e.dataset.folderFailure,e.value);}catch(error){fail(error);renderList();}return;}
   if(e.dataset.folderContinuation){try{setFolderContinuation(e.dataset.folderContinuation,e.value);}catch(error){fail(error);renderList();}return;}
-  if(e.dataset.bgmTalk!==undefined){const draft=bgmDraft();delete draft.startText;delete draft.endText;draft.rangeInvalid=false;const member=Number(e.dataset.bgmTalk),members=new Set(draft.ids||[]);if(e.checked)members.add(member);else members.delete(member);draft.ids=visibleIds().filter(id=>members.has(id));if(draft.ids.length){draft.start=draft.ids[0];draft.end=draft.ids[draft.ids.length-1];}else{draft.start=null;draft.end=null;}if(draft.track!==null||draft.groupId)applyBgmDraft();else refreshBgmEditor();return;}
+  if(e.dataset.bgmTalk!==undefined){const draft=bgmDraft();delete draft.startText;delete draft.endText;draft.rangeInvalid=false;const member=Number(e.dataset.bgmTalk),members=new Set(draft.ids||[]);if(e.checked)members.add(member);else members.delete(member);draft.ids=visibleIds().filter(id=>members.has(id));if(draft.ids.length){draft.start=draft.ids[0];draft.end=draft.ids[draft.ids.length-1];}else{draft.start=null;draft.end=null;}if(draft.trackChosen||draft.groupId)applyBgmDraft();else refreshBgmEditor();return;}
   if(e.dataset.sfxVolume!==undefined){warnAudioPlugin();const section=$('#audio-section');if(section)section.innerHTML=renderAudioContents();return;}
   if(e.id==='sfx-add'){if(Number(e.value)>0)addSfx(e.value);return;}
   if(['bgm-track','bgm-loop','bgm-volume','bgm-range-start','bgm-range-end'].includes(e.id)){
     const draft=bgmDraft();if(e.id==='bgm-track')draft.track=Number(e.value);else if(e.id==='bgm-loop')draft.loop=e.value==='loop';else if(e.id==='bgm-volume')draft.volume=Number(e.value);else {setBgmRange(e.id==='bgm-range-start'?'start':'end',e.value);return;}
-    if(draft.track!==null||draft.groupId)applyBgmDraft();return;
+    if(draft.trackChosen||draft.groupId)applyBgmDraft();return;
   }
   if(e.id==='audio-file'){const file=e.files[0];e.value='';importAudioFile(file,S.audioImportType||2).catch(fail);return;}
   if(e.id==='project-select'){const id=e.value;e.value=S.project?.id||'';if(id&&String(id)!==String(S.project?.id))unsaved(()=>selectProjectHome(id)).catch(fail);return;}

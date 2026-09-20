@@ -7,7 +7,7 @@ let notices=[],undo=[],scope=S.order;
 const c={S,Set,Map,Number,Math,Date,JSON,$:()=>null,ids:v=>(v||[]).map(Number),visibleIds:()=>scope,toast:s=>notices.push(s),mutate:(_,fn)=>{undo.push(JSON.stringify(S.doc));fn();},warnAudioPlugin:()=>{}};
 vm.createContext(c);
 for(const [start,end] of [['function audioData()','function audioName('],['function bgmDraft()','function audioOptions('],['function bgmRangeLabel(','function renderBgmChoices('],['function preserveLegacyAudio(','async function previewAudio(']])vm.runInContext(source.slice(source.indexOf(start),source.indexOf(end)),c);
-assert.equal(c.bgmDraft().ids.length,0);assert.equal(c.bgmDraft().track,null);
+assert.equal(c.bgmDraft().ids.length,0);assert.equal(c.bgmDraft().track,0);assert.equal(c.bgmDraft().trackChosen,false);assert.equal(undo.length,0);
 c.toggleBgmAll();assert.equal(c.bgmDraft().ids.length,99);c.toggleBgmAll();assert.equal(c.bgmDraft().ids.length,0);assert.equal(undo.length,0);
 c.setBgmRange('start','001');c.setBgmRange('end','030');assert.equal(c.bgmDraft().ids.length,30);
 c.bgmDraft().track=7;c.applyBgmDraft();assert.equal(S.doc.audioCues.bgm[0].talkIds.length,30);assert(Object.values(rows).every(r=>r.audio===0));
