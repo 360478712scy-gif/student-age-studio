@@ -4319,7 +4319,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             route = urllib.parse.urlsplit(self.path).path
             independent = method == 'GET' and (
                 (not route.startswith('/api/') and route not in ('/', '/index.html'))
-                or route in {'/api/assets', '/api/talk-head', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui'})
+                or route in {'/api/assets', '/api/talk-head', '/api/editor-music-file', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui'})
             independent = independent or method == 'POST' and route == '/api/portrait-dimensions'
             with nullcontext() if independent else self.server.location_lock:
                 with original_mode.scope(self.headers.get("X-Studio-Original-Project")):
