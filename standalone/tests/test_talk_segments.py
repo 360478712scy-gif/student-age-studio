@@ -139,9 +139,13 @@ class SegmentTests(unittest.TestCase):
         stat = path.stat()
         path.write_bytes(path.read_bytes().replace('中文'.encode(), '变化'.encode()))
         os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        self.assertEqual(json.loads(gen.page(['1'])['rows'][0][1]),self.talks['1'])
+        changed=path.read_bytes()
         with self.assertRaises(b.ApiError) as error:
-            gen.page(['1'])
-        self.assertEqual(error.exception.status, 409)
+            self.store.save({'projectId':self.ident,'revision':gen.identity['revision'],
+                             'talkGeneration':gen.generation,'talkPatch':{'version':1,'upsert':{'1':{**self.talks['1'],'content':'草稿'}},'deleted':[]}})
+        self.assertEqual(error.exception.status,409)
+        self.assertEqual(path.read_bytes(),changed)
         _, rebuilt = self.open()
         self.assertNotEqual(rebuilt.generation, gen.generation)
 
@@ -151,8 +155,9 @@ class SegmentTests(unittest.TestCase):
         temporary = self.cfg/'event.tmp'
         temporary.write_bytes(b.json_bytes(self.events))
         temporary.replace(self.cfg/'EvtCfg.json')
-        with self.assertRaises(b.ApiError):
-            gen.page(['1'])
+        self.assertEqual(json.loads(gen.page(['1'])['rows'][0][1]),self.talks['1'])
+        fresh,_=self.open()
+        self.assertEqual(fresh['events']['7']['talkId'],[200])
 
     def test_cache_tamper_or_removal_cannot_be_empty_success(self):
         _, gen = self.open()

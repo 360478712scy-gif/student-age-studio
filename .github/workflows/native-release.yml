@@ -133,23 +133,15 @@ jobs:
 
           客户端自带 Python，无需自行安装开发环境。首次打开请选择自己的《学生时代》游戏目录；所需游戏界面素材在本机准备。公开版本不附带原游戏数据。Live2D 动态预览暂时停用，保留静态立绘和原有模型配置，并修复关闭预览后的资源回调残留。
 
-          ## 本版新增
+          ## 本版更新
 
-          - 事件外对话：右键左侧对话夹，选择用途并配置可视化参数；保存时写入游戏真实配置。
-          - 送礼可指定人物、礼物、主角性别、触发条件和交付方式；重复入口会提示冲突。
-          - 小游戏沿用人物页绑定，可选第 1～5 关的开场、胜利或失败对话，不需要再次选择小游戏。
-          - 支持闲聊、物品使用、目标完成／失败、CG 回忆、恋爱画作、交涉阶段、输入答案与对话／选项分支；保留未知字段及其他入口。
-          - 支持多用途、取消／撤销、改号同步和解除新绑定；右键菜单点击外侧关闭。
-          - 保留校服换装、表情差分、空事件与电话兼容修复。感谢若心知（ruoxingzhi，PR #1）的性能优化贡献；本次用途功能、检查和修复由 Codex 完成。
+          {Path('docs/releases/v131111.md').read_text(encoding='utf-8')}
 
           ## 应用内更新
 
-          启动后自动检查并后台下载轻量更新，保存并重启后生效。本页仅提供完整客户端，不附加更新补丁。
-
-          ## 验证范围
-
-          用途配置与保存回归、四主题浏览器操作、联网更新链路及两端打包检查通过。对照原版反编译调用核验字段与关卡映射；尚未完成所有用途的真实游戏操作验收。
-          '''
+          启动后可检查并后台下载轻量更新，保存并重启后生效。
+                    '''
           Path('release-notes.md').write_text(text,encoding='utf-8')
           PY
-          gh release edit "$TAG" --title "拾光工坊 $VERSION · 完整客户端" --notes-file release-notes.md --prerelease=false --latest
+          display_version="$(python -c 'import sys;sys.path.insert(0,"standalone");from error_logs import APP_VERSION,display_version;print(display_version(APP_VERSION))')"
+          gh release edit "$TAG" --title "拾光工坊 $display_version · 完整客户端" --notes-file release-notes.md --prerelease=false --latest

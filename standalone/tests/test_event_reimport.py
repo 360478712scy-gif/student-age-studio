@@ -81,6 +81,8 @@ class EventReimportTests(unittest.TestCase):
                  'talkPatch':{'version':1,'upsert':{'1500000001':{'id':1500000001,'content':'确认的草稿'}},'deleted':[]}}
         rows=b.read_json(self.cfg/'TalkCfg.json');rows['1003001']['content']='外部修改其他句'
         self.write('TalkCfg',rows)
+        generation=self.store.talk_segments.get(self.ident,token)
+        self.assertEqual(__import__('json').loads(generation.page(['1003001'])['rows'][0][1])['content'],'模组改写的丙')
         with self.assertRaises(b.ApiError) as error:save_review.perform(self.store.save,copy.deepcopy(payload),b.ApiError)
         self.assertEqual(error.exception.code,'save_warnings')
         save_review.perform(self.store.save,{**payload,'_confirmedSaveWarnings':error.exception.warnings},b.ApiError)

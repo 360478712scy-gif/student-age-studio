@@ -194,7 +194,10 @@ class Generation:
             raise
 
     def validate(self):
-        self.check()
+        # This immutable snapshot is the open document/undo base. External disk
+        # edits must not prevent reading its untouched pages to finish a draft.
+        # Current project identity is checked by get(); live revisions are still
+        # checked by save/commit. Building a new snapshot retains self.check().
         if (file_fingerprint(self.path / 'records.json') != self.file_identity
                 or file_fingerprint(self.path / 'search.sqlite') != self.search_identity
                 or file_fingerprint(self.path / 'index.json') != self.manifest_identity):
