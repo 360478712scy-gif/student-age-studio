@@ -494,6 +494,9 @@ class StudioStore:
         self._project_index_path = auxiliary_cache(self.asset_catalog.settings_path.parent, 'AssetCache/project-paths-v1.json')
         self._project_index_roots = [str(self.mods), str(self.workshop), *map(str, self.extra_mods)]
         self._project_index_saved = None
+        from project_preferences import ProjectPreferences
+        self.project_preferences = ProjectPreferences(self, sys.modules[__name__])
+        self.active_project_id = None
         self._load_project_paths()
         self.social = SocialEditor(self, sys.modules[__name__])
         self.space = SpaceEditor(self, sys.modules[__name__])
@@ -502,6 +505,8 @@ class StudioStore:
         self.talk_segments = SegmentService(self, sys.modules[__name__])
         from original_dialogue import OriginalDialogue
         self.original_dialogue = OriginalDialogue(lambda: self.game)
+        if self.project_preferences.saved.get('cleanupPending'):
+            self.project_preferences.apply(self.project_preferences.saved, self.project_preferences.ignored)
 
     def close(self):
         # Release OS handles (read-only SQLite locks the file on Windows) so
@@ -527,7 +532,7 @@ class StudioStore:
             for row in data.get('entries', [])[:10000]:
                 if not isinstance(row, dict) or not isinstance(row.get('path'), str) or type(row.get('readonly')) is not bool: continue
                 path, readonly = Path(row['path']), row['readonly']
-                if not path.is_absolute() or self._project_root(path, readonly) is None: continue
+                if not path.is_absolute() or self._project_root(path, readonly) is None or self.project_preferences.blocked(path): continue
                 if not isinstance(row.get('name'), str) or not isinstance(row.get('package'), str): continue
                 ident = ('workshop:' if readonly else 'local:') + hashlib.sha256(str(path).encode()).hexdigest()[:24]
                 self._project_paths[ident] = Project(ident, path, readonly, row['name'], row['package'])
@@ -536,7 +541,7 @@ class StudioStore:
             self._project_paths.clear(); self._project_metadata.clear()
 
     def _project_at(self, root, path, readonly):
-        if root is None or self.backups.excluded(path): return None
+        if root is None or self.project_preferences.blocked(path) or self.backups.excluded(path): return None
         if not path.is_dir() or path.name.startswith('.') or path.is_symlink() or (hasattr(path, 'is_junction') and path.is_junction()) or not inside(path, root): return None
         manifest_path = path / 'manifest.json'
         if not manifest_path.is_file() and not (path / 'Cfgs/zh-cn').is_dir(): return None
@@ -603,6 +608,8 @@ class StudioStore:
     def project(self, project_id, writable=False):
         if not isinstance(project_id, str) or not project_id.startswith(('local:', 'workshop:')):
             raise ApiError('模组编号无效，请刷新列表。', 404, 'not_found')
+        if project_id in self.project_preferences.ignored:
+            raise ApiError("此订阅模组已设为不读取，可在工坊设置中重新启用。", 404, "ignored_project")
         with self.lock:
             known = self._project_paths.get(project_id)
             if known:
@@ -2170,6 +2177,7 @@ class StudioStore:
     def workshop_info(self, project_id):
         with self.lock, self.catalog_scope():
             project = self.project(project_id)
+            self.active_project_id = project.id
             catalog = self.catalog()
             files = self.cfg_files(project)
             names = {filename[:-5] for filename in files if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*Cfg\.json", filename)}
@@ -3537,6 +3545,8 @@ class StudioServer(ThreadingHTTPServer):
         self.locations = locations
         self.error_logs = ErrorLogs()
         self.location_lock = threading.RLock()
+        from project_preferences import RequestGate
+        self.project_request_gate = RequestGate()
         self.display_lock = threading.RLock()
         self.display_path = Path(os.environ.get('STUDIO_DISPLAY_SETTINGS') or settings_path().with_name('display-settings.json'))
         self.condition_presets = UserConditionPresets(self.display_path.with_name('condition-presets.json'), sys.modules[__name__])
@@ -3926,6 +3936,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.location_state())
             if route == "/api/backups":
                 return self.send_json(self.server.store.backups.status(query.get('projectId', [None])[0]))
+            if route == "/api/project-preferences":
+                if query.get("startup", [""])[0] == "1":
+                    return self.send_json({"defaultProjectId": self.server.store.project_preferences.saved.get("defaultProjectId", "")})
+                return self.send_json(self.server.store.project_preferences.public())
             if route == "/api/projects":
                 return self.send_json([project.public() for project in self.server.store.project_list()])
             if route == "/api/condition-presets":
@@ -4112,6 +4126,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                 raise ApiError("请求 JSON 无效。")
             if not isinstance(payload, dict):
                 raise ApiError("请求内容必须为对象。")
+            if route == "/api/project-preferences":
+                from project_preferences import update
+                return self.send_json(update(self.server, payload))
             if route == "/api/condition-presets":
                 return self.send_json(self.server.condition_presets.access(payload))
             if route == "/api/cache-settings":
@@ -4331,6 +4348,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         return self.server.error_logs.response(error, message, code, method + " " + route, (self.server.token,))
 
     def handle_request(self, method):
+        from project_preferences import ProjectSettingsBusy
         try:
             self.connection.settimeout(30)
             # Resolved image/audio paths remain valid during a location switch.
@@ -4340,9 +4358,12 @@ class StudioHandler(BaseHTTPRequestHandler):
                 (not route.startswith('/api/') and route not in ('/', '/index.html'))
                 or route in {'/api/assets', '/api/talk-head', '/api/editor-music-file', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui'})
             independent = independent or method == 'POST' and route == '/api/portrait-dimensions'
-            with nullcontext() if independent else self.server.location_lock:
-                with original_mode.scope(self.headers.get("X-Studio-Original-Project")):
-                    self.dispatch(method)
+            with self.server.project_request_gate.access(exclusive=method == "POST" and route == "/api/project-preferences"):
+                with nullcontext() if independent else self.server.location_lock:
+                    with original_mode.scope(self.headers.get("X-Studio-Original-Project")):
+                        self.dispatch(method)
+        except ProjectSettingsBusy as exc:
+            self.send_json({"error": str(exc), "code": "busy"}, 409)
         except ApiError as exc:
             try:
                 diagnostic = exc.status >= 500 or isinstance(exc.__cause__ or exc.__context__, (OSError, json.JSONDecodeError))

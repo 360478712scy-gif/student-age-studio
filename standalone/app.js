@@ -840,7 +840,7 @@ async function unsaved(next) {
 }
 async function refreshProjects(preferredId=null,lazy=false) {
   const data=await api('/api/projects');S.projects=(Array.isArray(data)?data:data.projects||[]).filter(isReadableProject);S.connected=true;
-  const last=preferredId||localStorage.getItem('studentAgeStudio.project');if(last&&!availableProject(last))localStorage.removeItem('studentAgeStudio.project');
+  const last=availableProject(preferredId)?preferredId:localStorage.getItem('studentAgeStudio.project');if(last&&!availableProject(last))localStorage.removeItem('studentAgeStudio.project');
   if(S.project&&!availableProject(S.project.id)){
     if(S.dirty){renderProjects();renderChrome();toast('当前项目已不在模组列表中。未保存的草稿仍保留在窗口内，请处理草稿后再切换。','note');return;}
     scenePlayer?.dispose();scenePlayer=null;stageAudio?.stop();stopAudition();S.project=null;S.doc=null;S.selected=null;S.previewRole=null;S.revision=null;S.order=[];S.undo=[];S.redo=[];S.saved='';S.event='all';S.audios=[];S.defaultBgm=null;S.premises={};S.branchFolders={};S.folderOpen={};S.activeFolder=null;
@@ -2136,5 +2136,5 @@ window.STUDIO_EXTERNAL_EDITOR={
  focusSearch:()=>$('#talk-search').focus()
 };
 
-window.STUDIO_INITIALIZE=async()=>{await refreshProjects(null,true);};
+window.STUDIO_INITIALIZE=async()=>{const preferences=await api('/api/project-preferences?startup=1');await refreshProjects(preferences.defaultProjectId||null,true);};
 })();

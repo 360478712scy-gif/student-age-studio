@@ -120,3 +120,10 @@ html body.json-drawer-open dialog[data-studio-layered]:not(.uc-popup){inset:0 va
 
 /* A folder heading is a drop target even while its contents are collapsed. */
 .branch-folder-title.talk-drop-folder{outline:2px solid var(--accent,#a98ac6);outline-offset:-2px;background:color-mix(in srgb,var(--accent,#a98ac6) 22%,transparent);}
+
+/* Project preferences reuse the settings layout and keep long subscriptions bounded. */
+.project-ignore-list{max-height:240px;overflow:auto;margin:10px 0;padding:0 4px}
+.project-ignore-list .location-backup-setting{padding:7px 0;align-items:flex-start}
+.project-ignore-list [hidden]{display:none!important}
+.project-ignore-list span{overflow-wrap:anywhere}
+#default-project-choice{width:100%}

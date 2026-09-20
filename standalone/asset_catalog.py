@@ -77,6 +77,10 @@ class AssetCatalog:
         self.hash_index_path = auxiliary_cache(self.settings_path.parent, 'AssetCache/pixel-hashes-v1.json')
         self.request_resources = None
 
+    def _blocked(self, path):
+        policy = getattr(self.store, 'project_preferences', None)
+        return bool(policy and policy.blocked(path))
+
     def error(self, text, status=400, code='invalid_request'):
         raise self.api.ApiError(text, status, code)
 
@@ -97,7 +101,7 @@ class AssetCatalog:
         for kind in KINDS:
             path = settings.get('folders', {}).get(kind, '')
             path = path if isinstance(path, str) else ''
-            exists = bool(path) and Path(path).is_dir() and not link(Path(path))
+            exists = bool(path) and not self._blocked(path) and Path(path).is_dir() and not link(Path(path))
             result[kind] = {'path': path, 'exists': exists,
                             'message': '打开素材目录时自动检索此文件夹和子文件夹。' if exists else '文件夹已移动或不可用。' if path else '尚未设置文件夹。'}
         return {'revision': hashlib.sha256(self.api.json_bytes(settings)).hexdigest(), 'folders': result}
@@ -160,6 +164,7 @@ class AssetCatalog:
 
     def _check_path(self, path, root):
         path, root = Path(path), Path(root)
+        if self._blocked(path): self.error("此素材所属订阅模组已设为不读取。", 404)
         if link(root) or not self.api.inside(path, root): self.error('素材路径已变化或超出了所选文件夹。', 403)
         try: relative = path.relative_to(root)
         except ValueError: self.error('素材路径超出了所选文件夹。', 403)
@@ -406,6 +411,7 @@ class AssetCatalog:
         result = []
         if not folder.get('path'): return result
         root = Path(folder['path'])
+        if self._blocked(root): return result
         if not root.is_dir() or link(root):
             warnings_list.append('素材文件夹已移动、不可读或已成为链接。'); return result
         persons = self._people(project, 'custom', warnings_list)
@@ -416,7 +422,7 @@ class AssetCatalog:
         def walk_error(error): warnings_list.append('部分子文件夹不可读取：' + str(error.filename or ''))
         for directory, folders, files in os.walk(root, followlinks=False, onerror=walk_error):
             base = Path(directory)
-            folders[:] = [name for name in sorted(folders) if not name.startswith('.') and not link(base / name)]
+            folders[:] = [name for name in sorted(folders) if not name.startswith('.') and not self._blocked(base / name) and not link(base / name)]
             for name in sorted(files):
                 path = base / name
                 if path.suffix.lower() not in (AUDIO if kind == 'audio' else IMAGES): continue
@@ -526,7 +532,8 @@ class AssetCatalog:
                 self._hash_running = True
                 self._hash_done = 0
                 self._hash_total = len(self._hash_pending)
-                threading.Thread(target=self._hash_worker,daemon=True).start()
+                self._hash_thread = threading.Thread(target=self._hash_worker,daemon=True)
+                self._hash_thread.start()
         unique = {}
         for original in items:
             item = dict(original)
@@ -550,6 +557,7 @@ class AssetCatalog:
         result=[]
         if not folder or not folder.get('path'): return result
         root=Path(folder['path'])
+        if self._blocked(root): return []
         if not root.is_dir() or link(root): return [(str(root), None)]
         # Directory identities reveal additions/removals. Reuse their names
         # while still checking every media file's real change fingerprint:
@@ -560,6 +568,7 @@ class AssetCatalog:
         pending = [root]
         while pending:
             base = pending.pop()
+            if self._blocked(base): continue
             try: stamp = file_fingerprint(base)
             except OSError:
                 result.append((str(base), None)); continue
