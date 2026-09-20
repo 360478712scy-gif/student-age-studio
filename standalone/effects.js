@@ -1,7 +1,7 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.StudentAgeEffects=api;})(typeof window==='object'?window:globalThis,()=>{
 'use strict';
 const copy=v=>JSON.parse(JSON.stringify(v)),escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const name=row=>{const value=row?.name||row?.title||row?.text||row?.content;return (Array.isArray(value)?value[0]:value)||'未命名';};
+const name=row=>{const value=row?.name||row?.title||row?.text||(globalThis.StudentAgeRemoteTalks?.summary(row)??row?.content);return (Array.isArray(value)?value[0]:value)||'未命名';};
 const match=(row,t)=>Array.isArray(row)&&row.length===t.template?.length&&Object.entries(t.match||{}).every(([i,v])=>Number(row[i])===Number(v));
 function allowedReference(row,range={}){const id=Number(row?.id);return !!row&&Number.isFinite(id)&&(!range.startId||id>=Number(range.startId))&&(!range.endId||id<=Number(range.endId))&&!(range.skips||[]).map(Number).includes(id)&&(!range.filter||range.filter.values?.includes(row[range.filter.field]));}
 function initializeTemplate(template,refs={}){const row=copy(template.template);for(const parameter of template.parameters||[]){if(!parameter.range?.table)continue;const available=Object.values(refs[parameter.range.table]||{}).filter(value=>allowedReference(value,parameter.range)),current=available.find(value=>Number(value.id)===Number(row[parameter.index]));if(!available.length)throw Error('没有可选的'+(parameter.label||'引用项目')+'，无法添加“'+template.label+'”。请先载入或添加对应内容。');row[parameter.index]=Number((current||available[0]).id);}return row;}

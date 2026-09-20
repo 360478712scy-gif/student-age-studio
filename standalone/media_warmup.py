@@ -349,15 +349,13 @@ class MediaWarmup:
 
     def scan(self):
         store=self.server.store
-        projects=store.projects()
-        for project in projects:
-            if self.stop.is_set(): return
-            # Existing, writable local mods only. This method is idempotent for
-            # the session, and the foreground load uses the same barrier.
-            try: store.clean_orphan_dialogues(project.id)
-            except Exception as error:
-                logger=getattr(self.server,'error_logs',None)
-                if logger:logger.write(error,operation='后台清理无归属对话')
+        # Prewarm only the project the user opened. Subscriptions remain available
+        # through explicit pickers, without decoding every installed mod at startup.
+        projects=[]
+        active=getattr(store, 'active_project_id', None)
+        if active:
+            try: projects=[store.project(active)]
+            except Exception: pass
         warnings=[];self.update(abandoned=[])
         # Live2D preview and model prewarming are temporarily paused.
         # Static portrait rendering remains available on demand.
@@ -403,8 +401,14 @@ class MediaWarmup:
         roots += [Path(row['path']) for row in store.asset_catalog.folders()['folders'].values() if row.get('path')]
         # Original assets and local mod media stay in their source location;
         # only their indexes and generated previews live in the selected cache.
-        found=self.files(roots,{cache.resolve(),manifest.parent.resolve()})
-        entries={};pending=[]
+        policy=getattr(store, 'project_preferences', None)
+        ignored={Path(p) for p in policy.roots} if policy else set()
+        roots=[p for p in roots if not policy or not policy.blocked(p)]
+        found=self.files(roots,{cache.resolve(),manifest.parent.resolve(),*ignored})
+        # Preserve dormant caches without reading their source files.
+        from project_preferences import under
+        scanned={os.path.normcase(os.path.abspath(p)) for p in roots}
+        entries={p:r for p,r in previous.items() if not under(p,scanned) and (not policy or not policy.blocked(p))};pending=[]
         for path,stamp in found.items():
             old=previous.get(path,{})
             if old.get('stamp')==stamp and 'validation' in old and all(Path(p).is_file() for p in old.get('outputs',[])):
@@ -446,7 +450,7 @@ class MediaWarmup:
             if not ok and not self.stop.is_set():
                 self.give_up(store,key,signature,message); abandoned.append(Path(path).name+'：'+message)
         if abandoned: self.update(abandoned=list(dict.fromkeys(self.get().get('abandoned',[])+abandoned)))
-        images=[{'_path':Path(p),'assetId':p,'name':Path(p).name} for p in entries if Path(p).suffix.lower() in IMAGES]
+        images=[{'_path':Path(p),'assetId':p,'name':Path(p).name} for p in found if p in entries and Path(p).suffix.lower() in IMAGES]
         store.asset_catalog._deduplicate_backgrounds(images)
         while store.asset_catalog.hash_progress()['running'] and not self.stop.is_set():
             status=store.asset_catalog.hash_progress()

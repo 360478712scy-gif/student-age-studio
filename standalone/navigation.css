@@ -85,4 +85,7 @@ html[data-theme=classic] .settings-identity,html[data-theme=classic] .settings-c
 html[data-theme=classic] #studio-toolbar{gap:7px}
 #studio-corner-tools:popover-open{position:fixed;inset:auto;right:18px;bottom:18px;margin:0;padding:0;border:0;background:transparent;overflow:visible;width:auto;height:auto;max-width:none;max-height:none;color:inherit}
 #studio-corner-tools::backdrop{display:none}
+body.story-fullscreen #studio-corner-tools,
+body.story-fullscreen #studio-cache-progress,
+body.story-fullscreen #studio-cache-details{display:none!important}
 html body.json-drawer-open #studio-corner-tools:popover-open{right:calc(var(--json-drawer-width) + 12px)}

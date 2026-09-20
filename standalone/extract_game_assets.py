@@ -9,6 +9,7 @@ import json
 import os
 import struct
 import sys
+import threading
 
 HERE = Path(__file__).resolve().parent
 for directory in (HERE / 'vendor', HERE.parent / 'tools/asset-reader'):
@@ -128,7 +129,33 @@ def cached_file(output, mapping, aliases):
     return None
 
 
+_portrait_dimensions_lock = threading.RLock()
+
+
 def portrait_dimensions(game, catalog, paths):
+    # Serialize this metadata manifest, never the editing/saving store.
+    with _portrait_dimensions_lock:
+        return _portrait_dimensions(game, catalog, paths)
+
+
+def _known_portrait_dimensions(path, relative):
+    """Reuse measured sprite units only for the exact shipped game resource bytes."""
+    try:
+        import hashlib
+        seed = json.loads(Path(__file__).with_name('native-portrait-dimensions.json').read_text(encoding='utf-8'))
+        entry = seed.get('bundles', {}).get(relative)
+        if not entry or path.stat().st_size != entry['size']:
+            return None
+        with path.open('rb') as stream:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if digest == entry['sha256']:
+            return entry['sizes']
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
+def _portrait_dimensions(game, catalog, paths):
     """Read native portrait sizes, without decoding textures or enlarging thumbnails.
 
     Cache by bundle fingerprint. Older thumbnail caches can be upgraded on demand.
@@ -142,16 +169,17 @@ def portrait_dimensions(game, catalog, paths):
     if not wanted:
         return {}
     home = game_cache(game)
-    manifest = home / 'portrait-dimensions-v3.json'
+    manifest = home / 'portrait-dimensions-v4.json'
     try:
         cache = json.loads(manifest.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         cache = {}
     resources = {}
+    wanted_exports = set(wanted.values())
     for alias, exported in mapping.items():
-        if exported in wanted.values():
+        if exported in wanted_exports:
             resource = resource_name('/' + alias.lstrip('/'), 'textures')
-            if resource and resource.startswith(('role_full/', 'role_comic/')):
+            if resource and resource.startswith(('role_full/', 'role_half/', 'role_head/', 'role_comic/', 'role_comic_head/', 'role_photo/')):
                 resources[resource] = exported
     if not resources:
         return {}
@@ -161,22 +189,34 @@ def portrait_dimensions(game, catalog, paths):
     for relative in catalog.get('bundles', {}):
         if 'textures_assets_' not in relative.lower() or 'role' not in Path(relative).name.lower():
             continue
+        outputs = catalog.get('bundleOutputs', {}).get(relative)
+        if isinstance(outputs, list) and not wanted_exports.intersection(outputs):
+            continue
         path = game / relative
         if not path.is_file():
             continue
         stamp = f'{path.stat().st_size}:{path.stat().st_mtime_ns}'
         entry = cache.get(relative, {})
         if entry.get('stamp') != stamp:
-            env = UnityPy.load(str(path))
-            dimensions = {}
-            for name, pointer in env.container.items():
-                resource = resource_name(name, 'textures')
-                if not resource or not resource.startswith(('role_full/', 'role_comic/')):
-                    continue
-                obj = pointer.deref()
-                if obj.type.name == 'Texture2D':
-                    data = obj.parse_as_object()
-                    dimensions.setdefault(resource, [data.m_Width, data.m_Height])
+            dimensions = _known_portrait_dimensions(path, relative)
+            if dimensions is None:
+                dimensions = {}
+                env = UnityPy.load(str(path))
+                for name, pointer in env.container.items():
+                    resource = resource_name(name, 'textures')
+                    if not resource or not resource.startswith(('role_full/', 'role_half/', 'role_head/', 'role_comic/', 'role_comic_head/', 'role_photo/')):
+                        continue
+                    obj = pointer.deref()
+                    if obj.type.name == 'Sprite':
+                        data = obj.parse_as_object()
+                        # Unity Image.SetNativeSize uses sprite pixels / pixelsPerUnit
+                        # relative to the canvas's default 100 reference pixels.
+                        ppu = float(data.m_PixelsToUnits)
+                        if ppu > 0:
+                            dimensions[resource] = [data.m_Rect.width * 100 / ppu, data.m_Rect.height * 100 / ppu]
+                    elif obj.type.name == 'Texture2D':
+                        data = obj.parse_as_object()
+                        dimensions.setdefault(resource, [data.m_Width, data.m_Height])
             entry = {'stamp': stamp, 'sizes': dimensions}
             cache[relative] = entry
             changed = True

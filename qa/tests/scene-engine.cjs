@@ -90,3 +90,5 @@ test('static face fallback follows native missing-row and empty-grade semantics'
   d.persons[4].url2=[];assert.equal(Scene.portraitSource(d,{id:4,cloth:1,face:6,grade:1}).path,'young-face');
 });
 console.log(`Scene engine: ${checks} regression groups passed.`);
+
+test('preview entry suppresses only its synthetic transition',()=>{vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../standalone/screen-effects.js'),'utf8'),sandbox);const d=json(doc);d.backgrounds[200]={id:200,url:'bg/other'};d.talks={1:{id:1,bg:100,nextTalk:[2]},2:{id:2,bg:200,screenEffect:[4006],nextTalk:[3]},3:{id:3,bg:100}};d.events={1:{id:1,talkId:[1]}};const frames=[],p=new Scene.Player({getDoc:()=>d,getContext:()=>({roots:[1]}),onRender:s=>frames.push(s)});p.select(1);assert.equal(p.scene.transition,null);p.select(2);p.play({initial:true});assert.equal(frames.at(-1).transition,null);assert.equal(frames.at(-1).screen.command[0],4006);p.pause();p.next();assert(frames.at(-1).transition);p.dispose();});

@@ -77,6 +77,10 @@ class AssetCatalog:
         self.hash_index_path = auxiliary_cache(self.settings_path.parent, 'AssetCache/pixel-hashes-v1.json')
         self.request_resources = None
 
+    def _blocked(self, path):
+        policy = getattr(self.store, 'project_preferences', None)
+        return bool(policy and policy.blocked(path))
+
     def error(self, text, status=400, code='invalid_request'):
         raise self.api.ApiError(text, status, code)
 
@@ -97,7 +101,7 @@ class AssetCatalog:
         for kind in KINDS:
             path = settings.get('folders', {}).get(kind, '')
             path = path if isinstance(path, str) else ''
-            exists = bool(path) and Path(path).is_dir() and not link(Path(path))
+            exists = bool(path) and not self._blocked(path) and Path(path).is_dir() and not link(Path(path))
             result[kind] = {'path': path, 'exists': exists,
                             'message': '打开素材目录时自动检索此文件夹和子文件夹。' if exists else '文件夹已移动或不可用。' if path else '尚未设置文件夹。'}
         return {'revision': hashlib.sha256(self.api.json_bytes(settings)).hexdigest(), 'folders': result}
@@ -160,6 +164,7 @@ class AssetCatalog:
 
     def _check_path(self, path, root):
         path, root = Path(path), Path(root)
+        if self._blocked(path): self.error("此素材所属订阅模组已设为不读取。", 404)
         if link(root) or not self.api.inside(path, root): self.error('素材路径已变化或超出了所选文件夹。', 403)
         try: relative = path.relative_to(root)
         except ValueError: self.error('素材路径超出了所选文件夹。', 403)
@@ -406,6 +411,7 @@ class AssetCatalog:
         result = []
         if not folder.get('path'): return result
         root = Path(folder['path'])
+        if self._blocked(root): return result
         if not root.is_dir() or link(root):
             warnings_list.append('素材文件夹已移动、不可读或已成为链接。'); return result
         persons = self._people(project, 'custom', warnings_list)
@@ -416,7 +422,7 @@ class AssetCatalog:
         def walk_error(error): warnings_list.append('部分子文件夹不可读取：' + str(error.filename or ''))
         for directory, folders, files in os.walk(root, followlinks=False, onerror=walk_error):
             base = Path(directory)
-            folders[:] = [name for name in sorted(folders) if not name.startswith('.') and not link(base / name)]
+            folders[:] = [name for name in sorted(folders) if not name.startswith('.') and not self._blocked(base / name) and not link(base / name)]
             for name in sorted(files):
                 path = base / name
                 if path.suffix.lower() not in (AUDIO if kind == 'audio' else IMAGES): continue
@@ -500,7 +506,9 @@ class AssetCatalog:
             # to every image before foreground responsiveness is measured.
             time.sleep(.01)
 
-    def _deduplicate_backgrounds(self, items):
+    def _deduplicate_backgrounds(self, items, versions=None):
+        # versions maps known _path -> fingerprint so repeated passes over the
+        # same files (entries + list filtering) fingerprint each file once.
         hashes = {}
         with self._hash_guard:
             if self.hash_index is None:
@@ -508,7 +516,10 @@ class AssetCatalog:
                 except self.api.ApiError: self.hash_index = {}
                 if not isinstance(self.hash_index, dict): self.hash_index = {}
             for path in dict.fromkeys(item['_path'] for item in items if item.get('_path')):
-                version = file_fingerprint(path)
+                if versions is not None and path in versions:
+                    version = versions[path]
+                else:
+                    version = file_fingerprint(path)
                 key = self.image_hashes.get((str(path), version))
                 saved = self.hash_index.get(str(path), {})
                 if key is None and isinstance(saved, dict) and saved.get('stamp') == list(version) and isinstance(saved.get('hash'), str): key = saved['hash']
@@ -521,7 +532,8 @@ class AssetCatalog:
                 self._hash_running = True
                 self._hash_done = 0
                 self._hash_total = len(self._hash_pending)
-                threading.Thread(target=self._hash_worker,daemon=True).start()
+                self._hash_thread = threading.Thread(target=self._hash_worker,daemon=True)
+                self._hash_thread.start()
         unique = {}
         for original in items:
             item = dict(original)
@@ -545,14 +557,18 @@ class AssetCatalog:
         result=[]
         if not folder or not folder.get('path'): return result
         root=Path(folder['path'])
+        if self._blocked(root): return []
         if not root.is_dir() or link(root): return [(str(root), None)]
         # Directory identities reveal additions/removals. Reuse their names
-        # while still checking every media file's real change fingerprint.
+        # while still checking every media file's real change fingerprint:
+        # rewriting a file's contents does not bump its directory stamp, so
+        # file versions are never trusted from the directory entry alone.
         cache = getattr(self, '_directory_watch_cache', None)
         if cache is None: self._directory_watch_cache = cache = OrderedDict()
         pending = [root]
         while pending:
             base = pending.pop()
+            if self._blocked(base): continue
             try: stamp = file_fingerprint(base)
             except OSError:
                 result.append((str(base), None)); continue
@@ -622,7 +638,14 @@ class AssetCatalog:
         folder_watch = self._folder_watch(folders['folders'][kind]) if folders else []
         if cache_key in self.cache:
             cached = self.cache[cache_key]
-            try: unchanged = cached.get('_folderWatch', []) == folder_watch and all(file_fingerprint(path) == version for path, version in cached.get('_files', []))
+            # Files already proven unchanged by the fresh folder watch above
+            # are not fingerprinted again; only mod-side files outside any
+            # watched folder still get their per-open check.
+            try:
+                watched = {row[0] for row in folder_watch} if cached.get('_folderWatch', []) == folder_watch else None
+                unchanged = watched is not None and all(
+                    str(path) in watched or file_fingerprint(path) == version
+                    for path, version in cached.get('_files', []))
             except OSError: unchanged = False
             if unchanged:
                 if '_rawItems' in cached and cached.get('_hashGeneration') != self._hash_generation:
@@ -651,14 +674,23 @@ class AssetCatalog:
             from character_media import expand
             items = expand(self, items, query['variantMode'], query.get('variantPerson', ''))
         files = {entry['_path'] for item in items for entry in [item, *item.get('_variants', [])] if entry.get('_path')}
-        file_versions = [(path, file_fingerprint(path)) for path in files]
+        # The fresh folder watch above already fingerprinted these files; reuse
+        # its versions instead of a second syscall pass over the library.
+        folder_versions = dict(folder_watch)
+        file_versions = []
+        for path in files:
+            key = str(path)
+            if key in folder_versions and folder_versions[key] is not None:
+                file_versions.append((path, folder_versions[key]))
+            else:
+                file_versions.append((path, file_fingerprint(path)))
         versions = dict(file_versions)
         for item in items:
             paths = sorted({entry['_path'] for entry in [item, *item.get('_variants', [])] if entry.get('_path')})
             item['mediaRevision'] = hashlib.sha256(json.dumps([(str(path),versions[path]) for path in paths]).encode()).hexdigest()[:24]
         if source == 'custom' and query.get('library') == '1': items = [item for item in items if item['origin'] == 'folder']
         raw_items = items; hash_generation = self._hash_generation
-        if kind == 'background' and query.get('library') != '1': items = self._deduplicate_backgrounds(items)
+        if kind == 'background' and query.get('library') != '1': items = self._deduplicate_backgrounds(items, versions)
         result = {'allMods': all_mods, 'catalogKey': cache_key, 'source': source, 'kind': kind, 'projectId': project.id, 'revision': revision,
                   'sourceProject': source_project.public() if source == 'mod' and not all_mods else None, 'sourceRevision': source_revision,
                   'items': items, 'warnings': list(dict.fromkeys(warnings_list)), '_project': project, '_files': file_versions, '_folderWatch':folder_watch}
@@ -717,8 +749,18 @@ class AssetCatalog:
             if query.get('type') and result['kind'] in {'audio','item'}:
                 items = [item for item in items if str(item.get('type')) == str(query['type']) or item.get('origin') == 'folder' and not item.get('audioTypeInferred')]
             # Filter first, then hide visually identical images without deleting files
-            # or losing a duplicate's membership in a different category.
-            if result['kind'] not in {'audio','portrait'} or query.get('variantMode') in {'portrait','expression'}: items = self._deduplicate_backgrounds(items)
+            # or losing a duplicate's membership in a different category. An
+            # unfiltered background set already deduplicated for the current
+            # hash generation stays unique, so the second pass is skipped; any
+            # filtered view or other kind keeps its exact old pass.
+            unfiltered = result['kind'] == 'background' and not str(query.get('q', '')).strip() and all(
+                query.get(key) in (None, '') for key in ('location', 'personId', 'personName', 'clothingCategory', 'audioGroup', 'type', 'socialOnly', 'affection'))
+            if result['kind'] not in {'audio','portrait'} or query.get('variantMode') in {'portrait','expression'}:
+                if unfiltered and result.get('_hashGeneration') == self._hash_generation:
+                    pass
+                else:
+                    versions = {path: version for path, version in result.get('_files', [])} or None
+                    items = self._deduplicate_backgrounds(items, versions)
             try: page, size = max(0, int(query.get('page', 0))), min(100, max(1, int(query.get('pageSize', 60))))
             except (TypeError, ValueError): self.error('素材页码无效。')
             total = len(items)

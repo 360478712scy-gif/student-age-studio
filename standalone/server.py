@@ -478,6 +478,7 @@ class StudioStore:
         self.backups = ModBackups(self, sys.modules[__name__], backup_root)
         self.conditions = ConditionLibrary(self, sys.modules[__name__])
         self._catalog_stamp = None
+        self._core_catalog_source = None
         self._catalog_cache = {}
         # Startup preparation, location polling and asset requests may all ask for
         # the catalog at once; one load at a time keeps the memory peak single.
@@ -494,6 +495,9 @@ class StudioStore:
         self._project_index_path = auxiliary_cache(self.asset_catalog.settings_path.parent, 'AssetCache/project-paths-v1.json')
         self._project_index_roots = [str(self.mods), str(self.workshop), *map(str, self.extra_mods)]
         self._project_index_saved = None
+        from project_preferences import ProjectPreferences
+        self.project_preferences = ProjectPreferences(self, sys.modules[__name__])
+        self.active_project_id = None
         self._load_project_paths()
         self.social = SocialEditor(self, sys.modules[__name__])
         self.space = SpaceEditor(self, sys.modules[__name__])
@@ -502,6 +506,8 @@ class StudioStore:
         self.talk_segments = SegmentService(self, sys.modules[__name__])
         from original_dialogue import OriginalDialogue
         self.original_dialogue = OriginalDialogue(lambda: self.game)
+        if self.project_preferences.saved.get('cleanupPending'):
+            self.project_preferences.apply(self.project_preferences.saved, self.project_preferences.ignored)
 
     def close(self):
         # Release OS handles (read-only SQLite locks the file on Windows) so
@@ -527,7 +533,7 @@ class StudioStore:
             for row in data.get('entries', [])[:10000]:
                 if not isinstance(row, dict) or not isinstance(row.get('path'), str) or type(row.get('readonly')) is not bool: continue
                 path, readonly = Path(row['path']), row['readonly']
-                if not path.is_absolute() or self._project_root(path, readonly) is None: continue
+                if not path.is_absolute() or self._project_root(path, readonly) is None or self.project_preferences.blocked(path): continue
                 if not isinstance(row.get('name'), str) or not isinstance(row.get('package'), str): continue
                 ident = ('workshop:' if readonly else 'local:') + hashlib.sha256(str(path).encode()).hexdigest()[:24]
                 self._project_paths[ident] = Project(ident, path, readonly, row['name'], row['package'])
@@ -536,7 +542,7 @@ class StudioStore:
             self._project_paths.clear(); self._project_metadata.clear()
 
     def _project_at(self, root, path, readonly):
-        if root is None or self.backups.excluded(path): return None
+        if root is None or self.project_preferences.blocked(path) or self.backups.excluded(path): return None
         if not path.is_dir() or path.name.startswith('.') or path.is_symlink() or (hasattr(path, 'is_junction') and path.is_junction()) or not inside(path, root): return None
         manifest_path = path / 'manifest.json'
         if not manifest_path.is_file() and not (path / 'Cfgs/zh-cn').is_dir(): return None
@@ -603,6 +609,8 @@ class StudioStore:
     def project(self, project_id, writable=False):
         if not isinstance(project_id, str) or not project_id.startswith(('local:', 'workshop:')):
             raise ApiError('模组编号无效，请刷新列表。', 404, 'not_found')
+        if project_id in self.project_preferences.ignored:
+            raise ApiError("此订阅模组已设为不读取，可在工坊设置中重新启用。", 404, "ignored_project")
         with self.lock:
             known = self._project_paths.get(project_id)
             if known:
@@ -718,7 +726,7 @@ class StudioStore:
                     return {}
                 return data if isinstance(data, dict) else {}
             if path.name in ('asset-map.json', 'audio-map.json'):
-                names = ('assetMap', 'bundles', 'failures') if path.name == 'asset-map.json' else ('audioMap', 'audioMetadata', 'audioBundles', 'audioFailures')
+                names = ('assetMap', 'bundles', 'bundleOutputs', 'failures') if path.name == 'asset-map.json' else ('audioMap', 'audioMetadata', 'audioBundles', 'audioFailures')
                 expected = (path.stat().st_mtime_ns, path.stat().st_size)
                 def deferred(path=path, names=names, expected=expected, read_generated=read_generated):
                     if (path.stat().st_mtime_ns, path.stat().st_size) != expected:
@@ -727,7 +735,12 @@ class StudioStore:
                     return {key: data[key] for key in names if key in data}
                 deferred_maps.append((names, deferred))
                 continue
-            data = read_generated()
+            source_stamp = (str(path), path.stat().st_mtime_ns, path.stat().st_size)
+            if self._core_catalog_source and self._core_catalog_source[0] == source_stamp:
+                data = self._core_catalog_source[1]
+            else:
+                data = read_generated()
+                self._core_catalog_source = (source_stamp, data)
             for key, value in data.items():
                 if isinstance(value, dict) and isinstance(merged.get(key), dict):
                     merged[key].update(value)
@@ -1156,8 +1169,8 @@ class StudioStore:
         kind, content = payload.get("format", "txt"), payload.get("content")
         if kind not in {"txt", "md", "json"} or not isinstance(content, str) or not content.strip():
             raise ApiError("请选择导出格式和有效的对话内容。")
-        if len(content.encode("utf-8")) > 16 * 1024 * 1024:
-            raise ApiError("导出内容超过 16 MB，请分段导出。", 413)
+        if len(content.encode("utf-8")) > 64 * 1024 * 1024:
+            raise ApiError("导出内容超过 64 MB，请缩小导出范围。", 413)
         if kind == "json":
             try:
                 json.loads(content, parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
@@ -1353,6 +1366,8 @@ class StudioStore:
             raise ApiError("对话夹记录必须是完整的对象。")
         if len(incoming) > 20000:
             raise ApiError("对话夹数量过多。", 413)
+        if not incoming:
+            return {}
 
         def preserve_unknown(old, new):
             result = copy.deepcopy(old) if isinstance(old, dict) else {}
@@ -1634,9 +1649,6 @@ class StudioStore:
             original_maps = copy.deepcopy(all_maps)
             original_talks = original_maps.get("TalkCfg.json", {})
             catalog_talks = self.catalog_rows("TalkCfg", catalog)
-            base_talk_ids = set(catalog_talks)
-            if isinstance(catalog.get("baseTalkIds"), list):
-                base_talk_ids.update(str(ident) for ident in catalog["baseTalkIds"] if valid_id(ident))
             previous_options = set(all_maps.get("OptionCfg.json", {}))
             touched = set()
             for name, filename in TABLES.items():
@@ -1810,6 +1822,9 @@ class StudioStore:
                 from external_usages import entry_values
                 external_entries_before = entry_values(premise_state.get('externalDialogueFolders', {}), all_maps)
             if redirects:
+                base_talk_ids = set(catalog_talks)
+                if isinstance(catalog.get("baseTalkIds"), list):
+                    base_talk_ids.update(str(ident) for ident in catalog["baseTalkIds"] if valid_id(ident))
                 all_maps.setdefault("TalkCfg.json", {})
                 for filename, table in all_maps.items():
                     if not isinstance(table, dict):
@@ -2163,6 +2178,7 @@ class StudioStore:
     def workshop_info(self, project_id):
         with self.lock, self.catalog_scope():
             project = self.project(project_id)
+            self.active_project_id = project.id
             catalog = self.catalog()
             files = self.cfg_files(project)
             names = {filename[:-5] for filename in files if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*Cfg\.json", filename)}
@@ -2245,18 +2261,52 @@ class StudioStore:
                                                'match': dict(enumerate(row)), 'parameters': []})
             return {"commands": commands}
 
-    def table(self, project_id, requested):
+    def command_references(self, project_id, requested, loaded=()):
+        """One consistent read for picker references, without editable-table copies."""
+        if len(requested)>128:raise ApiError("引用表过多。")
+        names=tuple(sorted({self.table_name(name) for name in requested}))
+        with self.lock, self.catalog_scope():
+            project=self.project(project_id)
+            revision=self.revision(project)
+            cache=getattr(self, '_command_reference_cache', None)
+            if cache is None:cache=self._command_reference_cache={}
+            loaded=frozenset(loaded)&{'PersonCfg','EvtCfg','OptionCfg','TalkCfg'}
+            if project.original_mode:loaded=frozenset()
+            key=(str(project.path),project.original_mode,names,tuple(sorted(loaded)))
+            cached=cache.get(key)
+            if cached and cached['revision']==revision:return cached
+            result={'revision':revision,'tables':{},'errors':{}}
+            for name in names:
+                try:
+                    if name in loaded:
+                        # The browser overlays its current draft. Still retain all original references.
+                        rows=copy.deepcopy(self.catalog_rows(name))
+                        if name=='TalkCfg':
+                            for ident in flat_deletions(read_json(project.path/'StudentAgeStudio/deleted-talks.json',{})):rows.pop(ident,None)
+                        result['tables'][name]={'rows':rows,'localIds':[]}
+                    else:result['tables'][name]=self.table(project_id,name,_reference_revision=revision)
+                except ApiError as error:result['errors'][name]=str(error)
+            if self.revision(project)!=revision:
+                raise ApiError("读取时模组发生变化，请重试。",409,"conflict")
+            # Failed reads can recover on retry; never retain them. Bound retained data.
+            cache.pop(key,None)
+            if not result['errors'] and len(json.dumps(result,ensure_ascii=False))<=4*1024*1024:
+                cache[key]=result
+                while len(cache)>4:cache.pop(next(iter(cache)))
+            return result
+
+    def table(self, project_id, requested, *, _reference_revision=None):
         with self.lock:
             project = self.project(project_id)
             name = self.table_name(requested)
-            revision = self.revision(project)
+            revision = _reference_revision if _reference_revision is not None else self.revision(project)
             local = read_json(safe_path(project.path, "Cfgs/zh-cn/" + name + ".json"), {})
             inherited = self.catalog_rows(name)
             import plugin_mode
             if name in ('MinigameCfg','MinigameActionCfg'):
                 games,stages,_=plugin_mode.references(project,sys.modules[__name__])
                 inherited={**(games if name=='MinigameCfg' else stages),**inherited}
-            if name == 'MinigameActionCfg':
+            if name == 'MinigameActionCfg' and not self.catalog_rows(name):
                 from character_rules import native_rules
                 inherited = {**native_rules(self.game).get(name, {}), **inherited}
             warnings_list = []
@@ -2273,8 +2323,13 @@ class StudioStore:
                 markers = flat_deletions(read_json(safe_path(project.path, "StudentAgeStudio/deleted-talks.json"), {}))
                 for key in markers:
                     rows.pop(key, None)
-            if revision != self.revision(project):
+            if _reference_revision is None and revision != self.revision(project):
                 raise ApiError("读取时配置发生变化，请重新载入。", 409, "conflict")
+            if _reference_revision is not None:
+                local_ids=list(rows) if project.original_mode else [key for key in local if key in rows]
+                if name == "PersonCfg":
+                    for ident in read_json(project.path/"StudentAgeStudio/goal-images.json", {}):rows.pop(ident,None)
+                return {"rows":plugin_mode.visible(project,sys.modules[__name__],name,rows),"localIds":local_ids}
             local_rows = copy.deepcopy(rows) if project.original_mode else {key: copy.deepcopy(rows[key]) for key in local if key in rows}
             if name == "PersonCfg":
                 for ident in read_json(project.path/"StudentAgeStudio/goal-images.json", {}): rows.pop(ident, None)
@@ -2744,8 +2799,9 @@ class StudioStore:
         audios = {**self.catalog_rows("AudioCfg"), **all_maps.get("AudioCfg.json", {})}
         talks = set(all_maps.get("TalkCfg.json", {})) | set(self.catalog_rows("TalkCfg"))
         talks.update(str(value) for value in self.catalog().get("baseTalkIds", []) if valid_id(value))
-        def sound(cue):
-            if not isinstance(cue, dict) or not valid_id(cue.get("audioId")) or str(cue["audioId"]) not in audios:
+        def sound(cue, allow_continue=False):
+            continuing = allow_continue and isinstance(cue, dict) and type(cue.get("audioId")) is int and cue["audioId"] == 0
+            if not continuing and (not isinstance(cue, dict) or not valid_id(cue.get("audioId")) or str(cue["audioId"]) not in audios):
                 raise ApiError("声音设置引用了不存在的音频，请重新选择。")
             volume = cue.get("volume", 1)
             if isinstance(volume, bool) or not isinstance(volume, (float, int)) or not math.isfinite(volume) or volume < 0 or volume > 1:
@@ -2761,7 +2817,7 @@ class StudioStore:
                 sound({"audioId": audio})
         occupied = set(); groups = set()
         for group in result["bgm"]:
-            sound(group)
+            sound(group, allow_continue=True)
             if not isinstance(group.get("id"), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,120}", group["id"]) or group["id"] in groups:
                 raise ApiError("背景音乐范围标识无效或重复。")
             groups.add(group["id"])
@@ -2925,6 +2981,22 @@ class StudioStore:
                 try: return int(ident), row
                 except ValueError: continue
         return None
+
+    def silent_bgm(self, payload):
+        """A normal local WAV/AudioCfg asset: no runtime plugin or global mute."""
+        import wave
+        with self.lock, self.catalog_scope():
+            project = self.project(payload.get('projectId'), writable=True)
+            before = self.asset_catalog.import_snapshot(project, 'audio')
+            stream = io.BytesIO()
+            with wave.open(stream, 'wb') as audio:
+                audio.setnchannels(1); audio.setsampwidth(2); audio.setframerate(22050)
+                audio.writeframes(bytes(22050 * 2 * 2))
+            result = self.audio_import({**payload, 'fileName': '静音.wav', 'name': '静音', 'type': 1,
+                                        'data': base64.b64encode(stream.getvalue()).decode('ascii')})
+            return {**result, 'kind': 'audio', 'imported': True, 'projectId': project.id,
+                    'previousRevision': payload.get('revision'),
+                    'importDelta': self.asset_catalog.import_delta(project, 'audio', before)}
 
     def audio_import(self, payload):
         with self.lock:
@@ -3474,6 +3546,8 @@ class StudioServer(ThreadingHTTPServer):
         self.locations = locations
         self.error_logs = ErrorLogs()
         self.location_lock = threading.RLock()
+        from project_preferences import RequestGate
+        self.project_request_gate = RequestGate()
         self.display_lock = threading.RLock()
         self.display_path = Path(os.environ.get('STUDIO_DISPLAY_SETTINGS') or settings_path().with_name('display-settings.json'))
         self.condition_presets = UserConditionPresets(self.display_path.with_name('condition-presets.json'), sys.modules[__name__])
@@ -3875,6 +3949,10 @@ class StudioHandler(BaseHTTPRequestHandler):
             if route == "/api/publish-prereq":
                 return self.send_json(self.server.publisher.prereq(
                     self.server.store, sys.modules[__name__], query.get('projectId', [''])[0]))
+            if route == "/api/project-preferences":
+                if query.get("startup", [""])[0] == "1":
+                    return self.send_json({"defaultProjectId": self.server.store.project_preferences.saved.get("defaultProjectId", "")})
+                return self.send_json(self.server.store.project_preferences.public())
             if route == "/api/projects":
                 return self.send_json([project.public() for project in self.server.store.project_list()])
             if route == "/api/condition-presets":
@@ -3919,6 +3997,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                     return self.send_json(self.server.store.talk_segments.open(query.get('projectId', [''])[0], expanded))
                 except SegmentError as error:
                     raise ApiError(str(error), 422, 'segment_unavailable') from error
+            if route == "/api/command-references":
+                return self.send_json(self.server.store.command_references(query.get("projectId", [""])[0],query.get("names", [""])[0].split(','),query.get("loaded", [""])[0].split(',')))
             if route == "/api/commands":
                 return self.send_json(self.server.store.command_catalog(query.get("projectId", [""])[0]))
             if route == "/api/workshop":
@@ -3947,10 +4027,11 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.audio_resources.get())
             if route == '/api/talk-head':
                 from headshots import head_paths, crop_head
-                store = self.server.store
-                project = store.project(query.get('projectId', [''])[0])
-                role = str(int(query.get('roleId', ['0'])[0])); grade = int(query.get('grade', ['1'])[0])
-                person = store.portrait_person(project, role)
+                with self.server.location_lock:
+                    store = self.server.store
+                    project = store.project(query.get('projectId', [''])[0])
+                    role = str(int(query.get('roleId', ['0'])[0])); grade = int(query.get('grade', ['1'])[0])
+                    person = store.portrait_person(project, role)
                 for resource in ([] if role == '0' and query.get('gender', ['1'])[0] == '2' else head_paths(person, grade)):
                     try: return self.send_file(store.asset(project.id, resource))
                     except ApiError: pass
@@ -4058,6 +4139,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                 raise ApiError("请求 JSON 无效。")
             if not isinstance(payload, dict):
                 raise ApiError("请求内容必须为对象。")
+            if route == "/api/project-preferences":
+                from project_preferences import update
+                return self.send_json(update(self.server, payload))
             if route == "/api/condition-presets":
                 return self.send_json(self.server.condition_presets.access(payload))
             if route == "/api/cache-settings":
@@ -4119,17 +4203,20 @@ class StudioHandler(BaseHTTPRequestHandler):
             if self.server.locations and not self.server.locations.active:
                 raise ApiError("请先选择《学生时代》的安装目录。",409)
             if route == "/api/portrait-dimensions":
-                self.server.store.project(payload.get("projectId"))
                 paths = payload.get("paths", [])
                 if not isinstance(paths, list) or len(paths) > 128:
                     raise ApiError("立绘尺寸请求无效。")
                 from extract_game_assets import portrait_dimensions
-                with self.server.store.lock:
-                    result = portrait_dimensions(self.server.store.game, self.server.store.catalog(), paths)
+                with self.server.location_lock:
+                    store = self.server.store
+                    with store.lock:
+                        store.project(payload.get("projectId"))
+                        game, catalog = store.game, store.catalog()
+                result = portrait_dimensions(game, catalog, paths)
                 for path in paths:
                     if path in result:continue
                     try:
-                        with Image.open(self.server.store.asset(payload.get('projectId'),path)) as source:result[path]=list(source.size)
+                        with Image.open(store.asset(payload.get('projectId'),path)) as source:result[path]=list(source.size)
                     except (ApiError,OSError,ValueError):pass
                 return self.send_json(result)
             if route == '/api/live-model':
@@ -4238,6 +4325,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(result)
             if route == "/api/json-save":
                 return self.send_json(self.server.store.json_save(payload))
+            if route == "/api/audio-silence":
+                return self.send_json(self.server.store.silent_bgm(payload), 201)
             if route == "/api/audio-import":
                 return self.send_json(self.server.store.audio_import(payload), 201)
             if route == "/api/audio-refresh":
@@ -4286,6 +4375,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         return self.server.error_logs.response(error, message, code, method + " " + route, (self.server.token,))
 
     def handle_request(self, method):
+        from project_preferences import ProjectSettingsBusy
         try:
             self.connection.settimeout(30)
             # Resolved image/audio paths remain valid during a location switch.
@@ -4293,10 +4383,14 @@ class StudioHandler(BaseHTTPRequestHandler):
             route = urllib.parse.urlsplit(self.path).path
             independent = method == 'GET' and (
                 (not route.startswith('/api/') and route not in ('/', '/index.html'))
-                or route in {'/api/assets', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui'})
-            with nullcontext() if independent else self.server.location_lock:
-                with original_mode.scope(self.headers.get("X-Studio-Original-Project")):
-                    self.dispatch(method)
+                or route in {'/api/assets', '/api/talk-head', '/api/editor-music-file', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui'})
+            independent = independent or method == 'POST' and route == '/api/portrait-dimensions'
+            with self.server.project_request_gate.access(exclusive=method == "POST" and route == "/api/project-preferences"):
+                with nullcontext() if independent else self.server.location_lock:
+                    with original_mode.scope(self.headers.get("X-Studio-Original-Project")):
+                        self.dispatch(method)
+        except ProjectSettingsBusy as exc:
+            self.send_json({"error": str(exc), "code": "busy"}, 409)
         except ApiError as exc:
             try:
                 diagnostic = exc.status >= 500 or isinstance(exc.__cause__ or exc.__context__, (OSError, json.JSONDecodeError))

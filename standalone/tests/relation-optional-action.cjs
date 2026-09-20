@@ -1,0 +1,21 @@
+const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
+const c={window:{},console,StudentAgeCharacterUI:{esc:String}};vm.createContext(c);
+vm.runInContext(fs.readFileSync(path.resolve(__dirname,'../remote-talks.js'),'utf8'),c);c.StudentAgeRemoteTalks=c.window.StudentAgeRemoteTalks;
+vm.runInContext(fs.readFileSync(path.resolve(__dirname,'../indexed-talks.js'),'utf8'),c);
+c.StudentAgeIndexedTalks=c.window.StudentAgeIndexedTalks;
+vm.runInContext(fs.readFileSync(path.resolve(__dirname,'../event-bindings.js'),'utf8'),c);
+const B=c.window.StudentAgeEventBindings,plain=v=>JSON.parse(JSON.stringify(v));
+const doc={events:{},talks:{1:{id:1,content:'旧对白',nextTalk:[],effect:[[1,1,7]]}},options:{},actions:{},interactions:{}};
+const refs={ActionCfg:{101:{id:101,name:'可选行动',effect:[[1,1,2]],future:{keep:true}},102:{id:102,type:3,name:'约会'}}};
+let next=8000000;const allocate=()=>next++,event={id:20,type:20,npc:3,talkId:[1],maxcount:1,condition:[[7,0,3,1]],effect:[[1,1,8]],future:'keep'};doc.events[20]=event;
+function apply(actionId){const state={social:{...B.socialDraft(event),kind:'relation',actionId}};B.validateSocial(doc,event,state,refs);B.applySocial(doc,event,state,refs,allocate);B.syncSocialEffects(doc);}
+apply(0);assert.equal(next,8000000);assert.deepEqual(plain(doc.actions),{});assert.deepEqual(plain(event.effect),[[1,1,8]]);assert.equal(event.studioSocial.unlockedActionId,undefined);
+apply(101);const owned=event.studioSocial.unlockedActionId;assert.ok(doc.actions[owned]);assert.ok(doc.talks[1].effect.some(e=>e[0]===40&&e[2]===owned));assert.equal(doc.actions[owned].future.keep,true);
+apply(101);assert.equal(event.studioSocial.unlockedActionId,owned);assert.equal(Object.keys(doc.actions).length,1);const bound=plain(doc);
+apply(0);assert.equal(doc.actions[owned],undefined);assert.equal(event.studioSocial.unlockedActionId,undefined);assert.equal(event.future,'keep');assert.deepEqual(plain(event.condition),[[7,0,3,1]]);assert.deepEqual(plain(doc.talks[1].effect),[[1,1,7],[1,1,8]]);assert.deepEqual(refs.ActionCfg[101].effect,[[1,1,2]]);
+apply(0);assert.equal(Object.keys(doc.actions).length,0);assert.equal(next,8000001);
+const roundtrip=plain(doc);B.syncSocialEffects(roundtrip);assert.deepEqual(plain(roundtrip),plain(doc));
+assert.throws(()=>B.validateSocial(doc,event,{social:{...B.socialDraft(event),kind:'date',actionId:0}},refs),/请选择行动/);
+assert.throws(()=>B.validateSocial(doc,event,{social:{...B.socialDraft(event),kind:'relation',actionId:999}},refs),/请选择行动/);
+if(process.env.RELATION_FIXTURE_OUTPUT)fs.writeFileSync(process.env.RELATION_FIXTURE_OUTPUT,JSON.stringify({bound,unbound:plain(doc),owned,source:refs.ActionCfg[101]}));
+console.log('PASS: optional relation, bind/rebind/unbind, terminal-effect cleanup, JSON roundtrip, unknown fields/source action preserved, dates still require actions');

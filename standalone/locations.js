@@ -40,6 +40,30 @@
       };
     }catch(error){if(section.isConnected)section.querySelector('[data-settings-folders]').textContent=error.message;}})();
   }
+  function mountProjectPreferences(body){
+    const section=document.createElement('section');section.className='location-section';section.dataset.settingsGroup='directories';
+    section.innerHTML='<h3>打开与读取模组</h3><p class="location-help" data-project-settings-status role="status">正在读取设置…</p><div data-project-settings></div>';body.prepend(section);
+    (async()=>{try{
+      let state=await api('project-preferences');if(!section.isConnected)return;
+      const root=section.querySelector('[data-project-settings]'),status=section.querySelector('[data-project-settings-status]');
+      const ignored=new Set(state.ignoredProjectIds),subscriptions=state.projects.filter(p=>p.readOnly);
+      root.innerHTML='<label class="location-path-label" for="default-project-choice">启动时默认打开</label><select id="default-project-choice" data-default-project><option value="">沿用上次打开的模组</option>'+state.projects.filter(p=>!ignored.has(p.id)).map(p=>`<option value="${esc(p.id)}">${esc(p.name)}${p.readOnly?'（订阅）':''}</option>`).join('')+'</select><h4>不读取这些订阅模组</h4><p class="location-help">勾选后不再加载其内容、素材或编号，清除编辑器生成的缓存。Steam 订阅与模组原文件保留；取消勾选可恢复读取。</p><input type="search" data-project-filter aria-label="搜索订阅模组" placeholder="搜索订阅模组"><div class="project-ignore-list">'+subscriptions.map(p=>`<label class="location-backup-setting" data-project-name="${esc(p.name.toLowerCase())}"><input type="checkbox" data-ignore-project="${esc(p.id)}" ${ignored.has(p.id)?'checked':''}><span>${esc(p.name)}</span></label>`).join('')+'</div><p data-ignore-count class="location-help"></p><button data-project-policy-apply class="primary">应用读取设置</button>';
+      const select=root.querySelector('[data-default-project]');select.value=state.defaultProjectId;if(!select.value)select.value='';
+      const checks=()=>[...root.querySelectorAll('[data-ignore-project]')],count=()=>{root.querySelector('[data-ignore-count]').textContent=`已忽略 ${checks().filter(n=>n.checked).length} / ${subscriptions.length} 个订阅模组`;};count();
+      status.textContent='默认模组立即保存，下次启动自动打开；读取设置点击应用后刷新编辑器。';
+      root.querySelector('[data-project-filter]').oninput=e=>{const value=e.target.value.trim().toLowerCase();root.querySelectorAll('[data-project-name]').forEach(n=>n.hidden=!n.dataset.projectName.includes(value));};
+      checks().forEach(n=>n.onchange=count);
+      select.onchange=async()=>{select.disabled=true;try{state=await api('project-preferences',{defaultProjectId:select.value});status.textContent='默认模组已保存，下次启动生效。';}catch(error){select.value=state.defaultProjectId;status.textContent=error.message;}finally{select.disabled=false;}};
+      root.querySelector('[data-project-policy-apply]').onclick=async()=>{
+        if(window.STUDIO_HAS_UNSAVED_CHANGES?.()||window.STUDIO_HAS_OPEN_DRAFT?.()){status.textContent='请先保存当前修改，再应用读取设置。未保存的草稿已保留。';return;}
+        if(window.STUDIO_WORKSHOP_NAV?.busy?.()||window.STUDIO_STORY_NAV?.busy?.()){status.textContent='请等待当前操作完成后再应用。';return;}
+        const chosen=checks().filter(n=>n.checked).map(n=>n.dataset.ignoreProject);
+        preparing=true;dialog.querySelectorAll('button,input,select').forEach(n=>n.disabled=true);status.textContent='正在停止相关读取并清理缓存…';
+        try{await api('project-preferences',{ignoredProjectIds:[...state.ignoredProjectIds.filter(id=>!subscriptions.some(p=>p.id===id)),...chosen]});location.reload();}
+        catch(error){preparing=false;dialog.querySelectorAll('button,input,select').forEach(n=>n.disabled=false);status.textContent=error.message;}
+      };
+    }catch(error){if(section.isConnected)section.querySelector('[data-project-settings-status]').textContent=error.message;}})();
+  }
   function render(){
     const s=current,mods=s.modsStatus||{},workshop=s.workshopStatus||{},gameInput=dialog.querySelector('[data-path]')?.value,modsInput=dialog.querySelector('[data-mods-path]')?.value;
     const backups=s.backups||{};
@@ -57,6 +81,7 @@
     const body=document.createElement('div');body.className='workshop-settings-body';
     sections.forEach((section,i)=>{section.dataset.settingsGroup=categories[i];body.append(section);});
     mountFolders(body);
+    mountProjectPreferences(body);
     const appearance=document.createElement('section');appearance.className='location-section';appearance.dataset.settingsGroup='preferences';appearance.innerHTML=`<h3>界面主题</h3><label class="location-path-label" for="studio-theme-choice">外观</label><select id="studio-theme-choice"><option value="classic">经典主题 · 深绿</option><option value="glass">晴昼 · 浅蓝</option><option value="glass-dusk">暮色 · 暖紫</option><option value="glass-moon">月夜 · 深蓝</option></select><label class="location-path-label" for="studio-glass-material">玻璃质感</label><select id="studio-glass-material"><option value="liquid">液态玻璃</option><option value="frosted">毛玻璃 · 静谧层次</option></select><p class="location-help">毛玻璃以柔和透光、细腻边缘和层叠阴影呈现质感，不随鼠标实时渲染。三种配色均可使用；切换立即生效，下次启动保留。</p>`;body.prepend(appearance);
     const materialChoice=appearance.querySelector('#studio-glass-material');materialChoice.value=window.STUDIO_GLASS_MATERIAL||'liquid';materialChoice.disabled=window.STUDIO_THEME==='classic';materialChoice.onchange=async()=>{materialChoice.disabled=true;try{await window.STUDIO_SET_GLASS_MATERIAL(materialChoice.value);message('玻璃质感已保存。');}catch(e){materialChoice.value=window.STUDIO_GLASS_MATERIAL;message(e.message);}finally{materialChoice.disabled=window.STUDIO_THEME==='classic';}};
     const themeChoice=appearance.querySelector('select');themeChoice.value=window.STUDIO_THEME||'glass';themeChoice.onchange=async()=>{themeChoice.disabled=true;try{await window.STUDIO_SET_THEME(themeChoice.value);message('主题已保存，下次启动继续使用。');}catch(e){themeChoice.value=window.STUDIO_THEME;message(e.message);}finally{themeChoice.disabled=false;materialChoice.disabled=window.STUDIO_THEME==='classic';}};

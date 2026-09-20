@@ -1,0 +1,34 @@
+[
+  {
+    "id": "tifa-theme",
+    "name": "ティファのテーマ - セブンスヘブン- (FFVII REMAKE)",
+    "artist": "SQUARE ENIX MUSIC",
+    "file": "music-tifa-theme.json",
+    "sha256": "2edefa51964a56229ade93f1dcaffd2ad886ae0fb16836b611f4c618e02377fa",
+    "bytes": 5977835
+  },
+  {
+    "id": "hoshi-no-arika",
+    "name": "星の在り処",
+    "artist": "ファルコム・サウンド・チーム・JDK",
+    "file": "music-hoshi-no-arika.json",
+    "sha256": "287912722f72c47cae69005faaa04b679796b57f4dac7ef7dcadbbaf23bf79a6",
+    "bytes": 7152463
+  },
+  {
+    "id": "gymnopedie",
+    "name": "Gymnopedie No. 1",
+    "artist": "Gymnopedie",
+    "file": "music-gymnopedie.json",
+    "sha256": "f03aba7fc8f870f7b41d2e6bc07ad508b77fee6f0dd0c66195e2f8e374e7e057",
+    "bytes": 3579021
+  },
+  {
+    "id": "on-our-way",
+    "name": "旅の途中で (FFVII REMAKE)",
+    "artist": "SQUARE ENIX MUSIC",
+    "file": "music-on-our-way.json",
+    "sha256": "bf7ef5d69d7e15e4d5bedbd950f1e8393cc6d9dd07a2ca692cfc8186c60c4aa9",
+    "bytes": 3857459
+  }
+]

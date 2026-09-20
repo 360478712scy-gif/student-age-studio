@@ -142,7 +142,7 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
   // applying this line's actions. bg=0/same background inherits; -2 retains
   // actors across a black transition. CG/comic mode bypasses this clear.
   const bg=Number(talk.bg)||0,changesScene=bg===-1||bg===-2||(bg!==prior.background&&!!doc.backgrounds?.[bg]);
-  state.transition=(changesScene||prior.talkId!=null&&Math.floor(prior.talkId/1000)!==Math.floor(talk.id/1000))?{kind:!prior.talkId||bg<=0||backgroundPath(doc,{background:bg,roles:prior.roles})===backgroundPath(doc,prior)?'wipe':'mosaic',from:prior.background}:null;
+  state.transition=(prior.talkId!=null&&(changesScene||Math.floor(prior.talkId/1000)!==Math.floor(talk.id/1000)))?{kind:!prior.talkId||bg<=0||backgroundPath(doc,{background:bg,roles:prior.roles})===backgroundPath(doc,prior)?'wipe':'mosaic',from:prior.background}:null;
   state.screen=window.StudentAgeScreenEffects?.state(prior.screen,talk,changesScene);
   if(changesScene&&bg!==-2&&!prior.cg&&!prior.nativeComic){state.roles={};state.motionStarts={};state.talkingAxis=2;}
   if(!state.speakerIds.length)state.talkingAxis=2;
@@ -458,18 +458,23 @@ class Renderer {
     listen(document,'visibilitychange',()=>{if(document.hidden)this.cancelDrag();});
     listen(container,'contextmenu',e=>this.contextMenu(e));
   }
-  image(parent,paths,className,alt,onFailure,onSuccess){
+  image(parent,paths,className,alt,onFailure,onSuccess,canInstall){
     const previous=parent.querySelector('img'),keep=!!(previous?.complete&&previous.naturalWidth>0);
     const epoch=this.assetEpoch,img=document.createElement('img'),load={img};this.imageLoads.set(parent,load);
     const current=()=>!this.disposed&&this.imageLoads.get(parent)===load;
     const failure=()=>{if(!current())return;const retained=keep&&parent.classList.contains('scene-actor-art');if(!retained)parent.replaceChildren();parent.classList.add('asset-missing');onFailure?.(retained);};
     if(!paths.length){failure();return;}
     const firstUrl=this.options.assetUrl(paths[0]);
-    if(keep&&previous.dataset.sceneAssetEpoch===String(epoch)&&previous.src===new URL(firstUrl,document.baseURI).href){parent.classList.remove('asset-missing');onSuccess?.(paths[0]);return;}
+    if(keep&&previous.dataset.sceneAssetEpoch===String(epoch)&&previous.src===new URL(firstUrl,document.baseURI).href){load.install=()=>{if(!current()||canInstall&&!canInstall(previous,paths[0]))return;load.install=null;previous.dataset.scenePath=paths[0];parent.classList.remove('asset-missing');onSuccess?.(paths[0]);};load.install();return;}
     img.dataset.sceneAssetEpoch=String(epoch);img.className=className;img.alt=alt;img.draggable=false;let index=0;
     // Keep the last decoded portrait until the replacement is ready. Late callbacks
     // from superseded face/cache requests must never clear the current image.
-    img.onload=async()=>{if(!current())return;try{await img.decode?.();}catch{if(!img.naturalWidth){img.onerror();return;}}if(!current())return;const displayed=parent.querySelector('img');if(!(displayed?.complete&&displayed.naturalWidth>0&&displayed.dataset.sceneAssetEpoch===String(epoch)&&displayed.src===img.src))parent.replaceChildren(img);img.dataset.scenePath=paths[index];parent.classList.remove('asset-missing');onSuccess?.(paths[index]);};
+    img.onload=async()=>{if(!current())return;try{await img.decode?.();}catch{if(!img.naturalWidth){img.onerror();return;}}if(!current())return;
+      img.dataset.scenePath=paths[index];
+      // A bitmap may finish before its native bounds. Keep the previous image
+      // until both are ready, then install and position in the same task.
+      load.install=()=>{if(!current()||canInstall&&!canInstall(img,paths[index]))return;load.install=null;parent.replaceChildren(img);parent.classList.remove('asset-missing');onSuccess?.(paths[index]);};load.install();
+    };
     img.onerror=()=>{if(!current())return;if(++index<paths.length)img.src=this.options.assetUrl(paths[index]);else failure();};img.src=firstUrl;
   }
 
@@ -581,7 +586,7 @@ class Renderer {
     if(nodes.some(([,node])=>node.getAnimations?.({subtree:true}).some(a=>a.playState==='running')))this.queueCast();
   }
   updateActorImage(doc,role,node){
-    const art=node.querySelector('.scene-actor-art'),key=[role.id,role.grade,role.cloth,role.face,portraitCandidates(doc,role).join('|')].join('-');
+    const art=node.querySelector('.scene-actor-art'),key=[role.id,role.grade,role.cloth,role.face,Number(role.id)===0?protagonistGender(doc):0,portraitCandidates(doc,role).join('|')].join('-');
       if(node.dataset.asset!==key){node.dataset.asset=key;this.assetWarnings.delete(role.id);node.querySelector('.scene-asset-note').textContent='';
         const retry=()=>{if(this.disposed||this.actors.get(role.id)!==node||node.dataset.asset!==key)return;node.dataset.asset='';const latest=this.state?.roles[role.id];if(latest?.visible)this.updateActorImage(this.doc,latest,node);};
         const scheduleRetry=()=>{const note=node.querySelector('.scene-asset-note');note.onclick=e=>{e.stopPropagation();node.sceneRetryCount=0;retry();};if((node.sceneRetryCount||0)<3){node.sceneRetryCount=(node.sceneRetryCount||0)+1;setTimeout(retry,1000*Math.pow(3,node.sceneRetryCount-1));}};
@@ -594,8 +599,16 @@ class Renderer {
           node.sceneRetryCount=0;node.querySelector('.scene-asset-note').onclick=null;
           const person=doc.persons?.[role.id],face=doc.faces?.[role.id*1000+role.cloth*100+role.face],young=(role.grade===0&&person?.url?.length)||(role.grade===1&&!person?.url2?.length),exact=face&&(young?face.icon_xx:face.icon);
           if(portraitSource(doc,role).missing)setAssetNote(label(doc,role.id)+' 的所选服装或学段缺少这张表情图片，当前按游戏备用规则显示。','表情图片缺失');else if(!path.startsWith('portrait-cache/')&&path!==exact&&(role.face!==0||role.cloth!==0))setAssetNote(label(doc,role.id)+' 当前显示默认立绘；正在读取所选表情或服装。','默认立绘');else setAssetNote('','');const current=this.state?.roles[role.id];if(current)this.position(node,current,this.state.reference);this.queueCast();
+        },(img,path)=>{
+          if(this.options.portraitGeometryPending?.(path))return false;
+          const cached=portraitCacheKey(path),person=doc.persons?.[role.id];
+          const params=(cached?.grade===0?person?.l2dParm:person?.l2dParm2)?.[cached?.female?1:0];
+          if(cached&&Number(params?.[0])>0&&portraitBox(doc,role,img,path).fallback)return false;
+          // Retained artwork must keep its own grade/gender until its replacement installs.
+          img.scenePortraitRole={...role};img.scenePortraitGender=protagonistGender(doc);return true;
         });
       }
+      this.imageLoads.get(art)?.install?.();
   }
   refreshPortraits(){
     if(this.drag)return;
@@ -628,7 +641,7 @@ class Renderer {
   updateUIScale(){this.container.style.setProperty('--game-ui-scale',this.unitScale(this.state?.reference||[2560,1440]));}
   stageRect(){return (this.actorLayer||this.container).getBoundingClientRect();}
   unitScale(reference){const box=this.stageRect();return Math.min(box.width/reference[0],box.height/reference[1])||1;}
-  artBox(node,role){if(this.drag?.node===node&&this.drag.art)return this.drag.art;const img=node.querySelector('.scene-actor-art img');const box=portraitBox(this.doc,role,img,img?.dataset.scenePath||'');
+  artBox(node,role){if(this.drag?.node===node&&this.drag.art)return this.drag.art;const img=node.querySelector('.scene-actor-art img');const sourceRole=img?.scenePortraitRole||role,sourceDoc=img?.scenePortraitGender?{...this.doc,protagonistGender:img.scenePortraitGender}:this.doc;const box=portraitBox(sourceDoc,sourceRole,img,img?.dataset.scenePath||'');
     // Geometry still loading: keep the last resolved box for this actor rather than jumping to the generic size.
     if(box.fallback){const last=node.sceneLastBox;if(last&&last.id===role.id)return last.box;return box;}
     node.sceneLastBox={id:role.id,box};return box;}
@@ -677,7 +690,9 @@ class Renderer {
       const timeline=nativePositionFrames(track),frames=timeline.frames.map(p=>{const box=this.layout(node,{...role,x:p.x,y:p.y},state.reference);return {left:box.left,bottom:box.bottom,offset:timeline.duration?p.time/timeline.duration:0};});
       if(frames.length===1)frames.push({...frames[0],offset:1});
       if(retarget){const animation=node.scenePositionAnimations?.get('position');if(animation&&(animation.playState==='running'||animation.playState==='paused'))animation.effect.setKeyframes(frames);}
-      else node.scenePositionAnimations.set('position',node.animate(frames,{duration:Math.max(.001,timeline.duration)*1000,fill:'both',easing:'linear'}));
+      // layout() already stores the final pose. A forwards fill would keep an
+      // obsolete endpoint above it after late portrait metadata or a resize.
+      else node.scenePositionAnimations.set('position',node.animate(frames,{duration:Math.max(.001,timeline.duration)*1000,fill:'backwards',easing:'linear'}));
     }else{
       tween('left',left,node.style.left,motions.find(m=>m.code===3004)||entry||changeScale||flip,flip?.code===3007?.001:flip?.code===3005?.05:.4);
       tween('bottom',bottom,node.style.bottom,motions.find(m=>m.code===3008)||entry||changeScale);
@@ -749,9 +764,9 @@ class Player {
     this.loadSequence=(this.loadSequence||0)+1;this.pause();this.ended=false;this.historyStarted=false;this.scene=reconstruct(this.doc,id,{...this.options.getContext(),trace:trace||undefined});this.trace=this.scene.trace.slice();this.render(false);}
   refresh(){if(this.trace.length){this.scene=reconstruct(this.doc,this.trace[this.trace.length-1],{...this.options.getContext(),trace:this.trace});this.render(false);}}
   choices(){return this.options.getChoices?.(this.scene)??this.scene.routeChoices??[];}
-  render(animate){this.options.onRender(this.scene,{animate,playing:this.playing,ended:this.ended});}
+  render(animate,initial=false){this.options.onRender(initial?{...this.scene,transition:null}:this.scene,{animate,playing:this.playing,ended:this.ended});}
   recordStart(reason='play'){if(this.historyStarted||!this.scene?.talkId)return;this.historyStarted=true;this.options.onHistory?.({kind:'start',talkId:this.scene.talkId,reason,scene:copy(this.scene)});}
-  play(){if(!this.scene?.talkId)return;this.recordStart();this.ended=false;this.playing=true;this.resumeAfterChoice=false;this.render(true);this.schedule();}
+  play({initial=false}={}){if(!this.scene?.talkId)return;this.recordStart();this.ended=false;this.playing=true;this.resumeAfterChoice=false;this.render(true,initial);this.schedule();}
   pause(){this.playing=false;this.resumeAfterChoice=false;clearTimeout(this.timer);this.timer=null;this.options.onPlaying?.(false);}
   schedule(){clearTimeout(this.timer);if(!this.playing)return;const choices=this.choices();
     if(choices.length>1||choices.some(c=>c.conditional||c.type==='option'||c.type==='branch')){this.resumeAfterChoice=true;this.playing=false;this.options.onPlaying?.(false);this.options.onChoices?.(choices);return;}
@@ -810,6 +825,7 @@ class AudioPlayer {
   }
   musicAt(talkId,index=null){
     const cues=this.options.getCues()||{},group=index?index.get(Number(talkId)):(cues.bgm||[]).find(g=>(g.talkIds||[]).some(id=>Number(id)===Number(talkId)));
+    if(group&&Number(group.audioId)===0)return false;
     if(group){this.activeGroup=group;this.nativeBgm=null;return true;}
     const preserved=Number(cues.nativeAudio?.[talkId]),legacy=preserved?null:this.options.getLegacy?.(talkId);
     const native=preserved||(Number(legacy?.type)===1?Number(legacy.id):0);

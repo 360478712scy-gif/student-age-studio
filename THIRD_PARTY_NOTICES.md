@@ -10,3 +10,14 @@ StudentAge Studio's original editor code is licensed under GPL-3.0-only.
 - The name of the game identifies compatibility. This is an independent community editor.
 
 - certifi 提供 Mozilla 根证书集合，按其 MPL-2.0 许可分发；客户端同时保留系统信任根并校验 HTTPS 证书与主机名。
+
+## Publisher-provided editor music (2026-09-20)
+
+The publisher supplied these recordings for the editor playlist:
+
+- ティファのテーマ - セブンスヘブン- (FFVII REMAKE) — SQUARE ENIX MUSIC
+- 星の在り処 — ファルコム・サウンド・チーム・JDK
+- Gymnopedie No. 1 — Gymnopedie
+- 旅の途中で (FFVII REMAKE) — SQUARE ENIX MUSIC
+
+These recordings and their compositions remain the property of their respective rights holders and are not covered by the source code's GPL license. The `music-*.json` files contain encoded audio assets; `editor-music-builtin.json` contains their metadata and integrity hashes.

@@ -15,11 +15,14 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install 'certifi>=2026.2.25' 'Pillow==12.3.0' 'numpy>=2,<3'
       - run: python -B -m unittest discover -s standalone/tests
+      - run: node standalone/tests/relation-optional-action.cjs
       - run: node standalone/tests/scene-entry.cjs
       - run: node standalone/tests/indexed-talks.cjs
       - run: node standalone/tests/remote-talks.cjs
       - run: node standalone/tests/remote-scene.cjs
+      - run: node standalone/tests/event-list-cache.cjs
       - run: node standalone/tests/bulk-references.cjs
+      - run: node standalone/tests/all-story-export.cjs
       - run: node qa/tests/dialogue-text.cjs
       - run: node qa/tests/scene-engine.cjs
       - run: python -B tools/build_update.py --out release/student-age-studio-update.zip

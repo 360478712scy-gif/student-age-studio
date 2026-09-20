@@ -18,67 +18,67 @@
 }
 body { background:var(--sg-bg); }
 /* Common controls: visual properties only; compact form dimensions stay with each feature. */
-html body :is(button,input,select,textarea):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(button,input,select,textarea):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
 }
 
-html body :is(button):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(button):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   border-radius:var(--sg-control-radius); transition:background-color .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease;
 }
 
-html body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea,.uc-trigger):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea,.uc-trigger):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   background:var(--sg-field)!important; color:var(--sg-text)!important; border-color:var(--sg-line)!important; border-radius:var(--sg-control-radius); box-shadow:none;
 }
 
-html body :is(input,textarea):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *))::placeholder {
+html body :is(input,textarea):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *))::placeholder {
   color:var(--sg-dim); opacity:1;
 }
 
-html body :is(input[type=checkbox],input[type=radio],input[type=range]):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(input[type=checkbox],input[type=radio],input[type=range]):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   accent-color:var(--sg-gold);
 }
 
-html body :is(button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   outline:2px solid var(--sg-gold); outline-offset:3px;
 }
 
-html body :is(input[aria-invalid=true],textarea[aria-invalid=true],select[aria-invalid=true]):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(input[aria-invalid=true],textarea[aria-invalid=true],select[aria-invalid=true]):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   border-color:var(--sg-danger)!important; outline-color:var(--sg-danger);
 }
 
-html body :is(button.primary,[data-nav=save]):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(button.primary,[data-nav=save]):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   background:var(--sg-gold)!important; border-color:var(--sg-gold)!important; color:#213126!important; font-weight:620; box-shadow:0 2px 5px #0002;
 }
 
-html body :is(button.primary:hover:not(:disabled),[data-nav=save]:hover:not(:disabled)):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(button.primary:hover:not(:disabled),[data-nav=save]:hover:not(:disabled)):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   background:var(--sg-gold-hover)!important; border-color:var(--sg-gold-hover)!important; color:#213126!important;
 }
 
-html body :is(button.secondary):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(button.secondary):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   background:#263c2e; border-color:#4c6652; color:#d4e6d7;
 }
 
-html body :is(button.quiet,button.text-button,.wk-home-link):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(button.quiet,button.text-button,.wk-home-link):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   color:var(--sg-muted);
 }
 
-html body :is(button.danger-button):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(button.danger-button):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   background:var(--sg-danger-bg)!important; border-color:#98645d!important; color:#ffdad3!important;
 }
 
-html body :is(button.danger-button:hover:not(:disabled)):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(button.danger-button:hover:not(:disabled)):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   background:#603b35!important; border-color:#c18276!important;
 }
 
-html body :is(button.danger-text):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(button.danger-text):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   color:var(--sg-danger)!important;
 }
 
-html body :is(button:disabled):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(button:disabled):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   opacity:.42; cursor:default;
 }
 
-html body :is(summary):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(summary):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   cursor:pointer; color:var(--sg-muted);
 }
 
@@ -274,15 +274,15 @@ html body :is(.ap-folder,.ap-preview,.warehouse-selected-tags,.condition-preset-
   border-color:var(--sg-line); border-radius:12px;
 }
 
-html body :is(.wk-source-tabs,.wk-preview-controls,.character-filters,.character-tabs,.character-picker,.events-filters,.ap-sources,.ap-category-filters,.social-source-tabs,.social-view-tabs,.reuse-tabs,.condition-browser-catalog nav,.condition-comparison,.warehouse-tag-options,.warehouse-selected-tags,.segmented,.messages-branches,.social-branch-nav) button:not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(.wk-source-tabs,.wk-preview-controls,.character-filters,.character-tabs,.character-picker,.events-filters,.ap-sources,.ap-category-filters,.social-source-tabs,.social-view-tabs,.reuse-tabs,.condition-browser-catalog nav,.condition-comparison,.warehouse-tag-options,.warehouse-selected-tags,.segmented,.messages-branches,.social-branch-nav) button:not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   border-radius:9px; border-color:var(--sg-line); background:#1a2c22; color:var(--sg-muted);
 }
 
-html body :is(.wk-source-tabs,.wk-preview-controls,.character-filters,.character-tabs,.character-picker,.events-filters,.ap-sources,.ap-category-filters,.social-source-tabs,.social-view-tabs,.reuse-tabs,.condition-browser-catalog nav,.condition-comparison,.warehouse-tag-options,.warehouse-selected-tags,.segmented,.messages-branches,.social-branch-nav) button:is(.active,[aria-pressed=true],[aria-checked=true]):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(.wk-source-tabs,.wk-preview-controls,.character-filters,.character-tabs,.character-picker,.events-filters,.ap-sources,.ap-category-filters,.social-source-tabs,.social-view-tabs,.reuse-tabs,.condition-browser-catalog nav,.condition-comparison,.warehouse-tag-options,.warehouse-selected-tags,.segmented,.messages-branches,.social-branch-nav) button:is(.active,[aria-pressed=true],[aria-checked=true]):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   background:var(--sg-selected); border-color:var(--sg-selected-line); color:#f0d9a4;
 }
 
-html body :is(.wk-source-tabs,.wk-preview-controls,.character-filters,.character-tabs,.character-picker,.events-filters,.ap-sources,.ap-category-filters,.social-source-tabs,.social-view-tabs,.reuse-tabs,.condition-browser-catalog nav,.condition-comparison,.warehouse-tag-options,.warehouse-selected-tags,.segmented,.messages-branches,.social-branch-nav) button:hover:not(:disabled):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
+html body :is(.wk-source-tabs,.wk-preview-controls,.character-filters,.character-tabs,.character-picker,.events-filters,.ap-sources,.ap-category-filters,.social-source-tabs,.social-view-tabs,.reuse-tabs,.condition-browser-catalog nav,.condition-comparison,.warehouse-tag-options,.warehouse-selected-tags,.segmented,.messages-branches,.social-branch-nav) button:hover:not(:disabled):not(:where(#studio-onboarding, #studio-onboarding *, .story-scene, .story-scene *, #story-history, #story-history *, #story-preview-controls, #story-preview-controls *, .goal-native-canvas, .goal-native-canvas *, .message-native-phone, .message-native-phone *, .social-feed-card, .social-feed-card *, #space-preview, #space-preview *)) {
   background:#2b4331; border-color:#7b8964; color:var(--sg-text);
 }
 

@@ -1,12 +1,30 @@
-"""Personal editor player. No music is copied into a mod or release."""
+"""Editor music, with bundled tracks and a separate personal library; never written into Mods."""
 import base64
 import hashlib
+import json
+from functools import lru_cache
 import threading
 from pathlib import Path
 from storage_paths import user_data_root
 _lock=threading.RLock()
 TITLE='遠い空へ'
 SOURCE='https://cnt.kingrecords.co.jp/high-resolution/anime/3233.html'
+
+@lru_cache(maxsize=1)
+def builtin_tracks():
+    path=Path(__file__).with_name('editor-music-builtin.json')
+    return json.loads(path.read_text('utf-8')) if path.is_file() else []
+
+def builtin_media(api, row):
+    target=folder()/'Builtin'/(row['sha256']+'.m4a')
+    with _lock:
+        if target.is_file() and target.stat().st_size==row['bytes']:return target
+        data=json.loads(Path(__file__).with_name(row['file']).read_text('utf-8'))
+        raw=base64.b64decode(data['audio'],validate=True)
+        if len(raw)!=row['bytes'] or hashlib.sha256(raw).hexdigest()!=row['sha256']:
+            raise api.ApiError('内置音乐校验失败，请重新安装更新。',422)
+        target.parent.mkdir(parents=True,exist_ok=True);api.atomic_write(target,raw)
+        return target
 
 def folder():return user_data_root()/'EditorMusic'
 def settings(api):
@@ -43,7 +61,8 @@ def access(store,api,payload=None):
                 if key=='volume' and (type(v) not in (float,int) or not 0<=v<=1):raise api.ApiError('音量无效。')
                 pref[key]=v
             folder().mkdir(parents=True,exist_ok=True);api.atomic_write(folder()/'player.json',api.json_bytes(pref))
-        tracks=[{'id':'tooi-sora','name':TITLE,'artist':'市川淳 · 缘之空','source':SOURCE,'local':bool(pref.get('track') and (folder()/pref['track']).is_file())}]
+        tracks=[{'id':r['id'],'name':r['name'],'artist':r['artist'],'local':True,'bundled':True} for r in builtin_tracks()]
+        if not tracks or (pref.get('track') and (folder()/pref['track']).is_file()):tracks.append({'id':'tooi-sora','name':TITLE,'artist':'市川淳 · 缘之空','source':SOURCE,'local':bool(pref.get('track') and (folder()/pref['track']).is_file())})
         if pref.get('odoriko') and (folder()/pref['odoriko']).is_file():tracks.append({'id':'odoriko','name':'踊り子','artist':'VAUNDY','local':True})
         for row in pref.get('library',[]):
             if isinstance(row,dict) and row.get('file') and api.safe_path(folder(),row['file']).is_file():
@@ -53,6 +72,8 @@ def access(store,api,payload=None):
                 tracks.append({'id':str(ident),'name':row.get('name') or row['url'],'artist':'原版空间 BGM','assetPath':row['url']})
         return {'tracks':tracks,'preferences':{k:pref[k] for k in ('mode','collapsed','volume')}}
 def media(api,track_id="tooi-sora"):
+    row=next((r for r in builtin_tracks() if r['id']==track_id),None)
+    if row:return builtin_media(api,row)
     pref=settings(api)
     if track_id in ('tooi-sora','odoriko'):name=pref.get('track' if track_id=='tooi-sora' else 'odoriko','')
     else:name=next((r.get('file','') for r in pref.get('library',[]) if isinstance(r,dict) and r.get('id')==track_id),'')
