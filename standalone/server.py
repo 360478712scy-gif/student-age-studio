@@ -2790,8 +2790,9 @@ class StudioStore:
         audios = {**self.catalog_rows("AudioCfg"), **all_maps.get("AudioCfg.json", {})}
         talks = set(all_maps.get("TalkCfg.json", {})) | set(self.catalog_rows("TalkCfg"))
         talks.update(str(value) for value in self.catalog().get("baseTalkIds", []) if valid_id(value))
-        def sound(cue):
-            if not isinstance(cue, dict) or not valid_id(cue.get("audioId")) or str(cue["audioId"]) not in audios:
+        def sound(cue, allow_continue=False):
+            continuing = allow_continue and isinstance(cue, dict) and type(cue.get("audioId")) is int and cue["audioId"] == 0
+            if not continuing and (not isinstance(cue, dict) or not valid_id(cue.get("audioId")) or str(cue["audioId"]) not in audios):
                 raise ApiError("声音设置引用了不存在的音频，请重新选择。")
             volume = cue.get("volume", 1)
             if isinstance(volume, bool) or not isinstance(volume, (float, int)) or not math.isfinite(volume) or volume < 0 or volume > 1:
@@ -2807,7 +2808,7 @@ class StudioStore:
                 sound({"audioId": audio})
         occupied = set(); groups = set()
         for group in result["bgm"]:
-            sound(group)
+            sound(group, allow_continue=True)
             if not isinstance(group.get("id"), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,120}", group["id"]) or group["id"] in groups:
                 raise ApiError("背景音乐范围标识无效或重复。")
             groups.add(group["id"])
@@ -2971,6 +2972,22 @@ class StudioStore:
                 try: return int(ident), row
                 except ValueError: continue
         return None
+
+    def silent_bgm(self, payload):
+        """A normal local WAV/AudioCfg asset: no runtime plugin or global mute."""
+        import wave
+        with self.lock, self.catalog_scope():
+            project = self.project(payload.get('projectId'), writable=True)
+            before = self.asset_catalog.import_snapshot(project, 'audio')
+            stream = io.BytesIO()
+            with wave.open(stream, 'wb') as audio:
+                audio.setnchannels(1); audio.setsampwidth(2); audio.setframerate(22050)
+                audio.writeframes(bytes(22050 * 2 * 2))
+            result = self.audio_import({**payload, 'fileName': '静音.wav', 'name': '静音', 'type': 1,
+                                        'data': base64.b64encode(stream.getvalue()).decode('ascii')})
+            return {**result, 'kind': 'audio', 'imported': True, 'projectId': project.id,
+                    'previousRevision': payload.get('revision'),
+                    'importDelta': self.asset_catalog.import_delta(project, 'audio', before)}
 
     def audio_import(self, payload):
         with self.lock:
@@ -4264,6 +4281,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(result)
             if route == "/api/json-save":
                 return self.send_json(self.server.store.json_save(payload))
+            if route == "/api/audio-silence":
+                return self.send_json(self.server.store.silent_bgm(payload), 201)
             if route == "/api/audio-import":
                 return self.send_json(self.server.store.audio_import(payload), 201)
             if route == "/api/audio-refresh":

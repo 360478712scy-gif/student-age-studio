@@ -1,5 +1,6 @@
 """Keep native TalkCfg.audio authoritative across editor round trips."""
 import copy
+from collections import deque
 
 
 def reconcile(cues, talks):
@@ -45,16 +46,43 @@ def export(cues, previous, talks, original, audios, events=None, options=None):
             if str(target) in predecessors:predecessors[str(target)].add(key)
     roots = {str(i) for row in (events or {}).values() for i in row.get('talkId') or []}
     if events is None:roots.update(str(g['talkIds'][0]) for g in cues['bgm'] if g['talkIds'])
+    # Compute the music arriving through continuation lines as well as directly
+    # adjacent ranges. A 0 or a gap between two ranges of the same track must not
+    # turn the next range into a restart. Ambiguous joins keep an entry command.
+    planned = {}
+    for key, row in talks.items():
+        if key in music: value = music[key]
+        elif key in native: value = native[key]
+        elif cues['sfx'].get(key): value = cues['sfx'][key][0]['audioId']
+        elif key in previous.get('nativeSnapshot', {}) and row.get('audio', 0) == previous['nativeSnapshot'][key]: value = 0
+        else: value = row.get('audio', 0)
+        planned[key] = value
+    outgoing, dependents, waiting = {}, {}, {}
+    for key, value in planned.items():
+        parents = predecessors[key]
+        if value:
+            outgoing[key] = value if key in music or key in native or audios.get(str(value), {}).get('type') == 1 else None
+        elif key in roots or not parents:
+            outgoing[key] = None
+        else:
+            waiting[key] = len(parents)
+            for parent in parents: dependents.setdefault(parent, []).append(key)
+    queue = deque(outgoing)
+    while queue:
+        parent = queue.popleft()
+        for key in dependents.get(parent, []):
+            waiting[key] -= 1
+            if waiting[key] == 0:
+                arriving = {outgoing[p] for p in predecessors[key]}
+                outgoing[key] = next(iter(arriving)) if len(arriving) == 1 else None
+                queue.append(key)
     snapshot = {}
     for key in managed | set(previous.get('nativeSnapshot', {})):
         if key not in talks: continue
-        if key in music:
-            parents = predecessors.get(key, set())
-            value = 0 if key not in roots and parents and all(music.get(parent) == music[key] for parent in parents) else music[key]
-        elif key in native: value = native[key]
-        elif cues['sfx'].get(key): value = cues['sfx'][key][0]['audioId']
-        elif talks[key].get('audio', 0) == previous.get('nativeSnapshot', {}).get(key): value = 0
-        else: value = talks[key].get('audio', 0)
+        value = planned[key]
+        if key in music and value:
+            parents = predecessors[key]
+            if key not in roots and parents and all(outgoing.get(parent) == value for parent in parents): value = 0
         talks[key]['audio'] = value
         snapshot[key] = value
     cues['nativeSnapshot'] = snapshot

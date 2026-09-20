@@ -823,6 +823,7 @@ class AudioPlayer {
   }
   musicAt(talkId,index=null){
     const cues=this.options.getCues()||{},group=index?index.get(Number(talkId)):(cues.bgm||[]).find(g=>(g.talkIds||[]).some(id=>Number(id)===Number(talkId)));
+    if(group&&Number(group.audioId)===0)return false;
     if(group){this.activeGroup=group;this.nativeBgm=null;return true;}
     const preserved=Number(cues.nativeAudio?.[talkId]),legacy=preserved?null:this.options.getLegacy?.(talkId);
     const native=preserved||(Number(legacy?.type)===1?Number(legacy.id):0);

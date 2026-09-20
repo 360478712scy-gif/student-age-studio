@@ -1201,7 +1201,7 @@ function applyExpression() {
 }
 
 let largeScene=null,scenePlayer=null,sceneMode='edit',sceneSyncing=false,stageAudio=null;
-let linePlayback=null,storyPreview=null;
+let linePlayback=null,storyPreview=null,storyPreviewOpenSequence=0;
 function stopLinePlayback(redraw=true){
  window.StudentAgeAudioFocus?.set('story-line',false);
  if(!linePlayback)return;clearTimeout(linePlayback.frame);clearTimeout(linePlayback.timer);linePlayback=null;
@@ -1235,6 +1235,13 @@ function previewRoutes(scene){
  return routes.filter(route=>!route.gender||route.gender===protagonistGender()).map(route=>route.genderOnly?{...route,conditional:false,label:route.label.replace(/ · [男女]主角/g,'')}:route).map(route=>route.type==='branch'?{...route,label:'分支'+route.branchId}:route.type==='alternate'&&route.label.startsWith('所有分支')?{...route,label:'不进入分支，继续'}:route.conditional&&route.optionId===undefined&&!route.eventId?{...route,label:'分支'+(++index)}:route);
 }
 function openStoryPreview(){
+ const rows=S.doc?.talks,selected=S.selected,project=S.project?.id,event=S.event;
+ if(rows&&Remote.info(rows)&&!Remote.ready(rows,selected)){
+  const sequence=++storyPreviewOpenSequence;
+  return Remote.ensure(rows,[selected],{pin:true}).then(()=>{
+   if(sequence===storyPreviewOpenSequence&&S.doc?.talks===rows&&S.project?.id===project&&S.event===event&&S.selected===selected&&!storyPreview)return openStoryPreview();
+  }).catch(fail);
+ }
  if(largeScene){largeScene.paperClosed=null;largeScene.paperSignature=null;}
  if(!talk()){toast('先选择一个有对话的事件。','note');return;}if(storyPreview)return;
  stopLinePlayback(false);ensureScene();scenePlayer.pause();stageAudio.stop();closeContextMenu();
@@ -1286,6 +1293,7 @@ storyExitDialog.querySelector('[data-preview-confirm-exit]').onclick=()=>{storyE
 storyExitDialog.addEventListener('cancel',event=>{event.preventDefault();keepStoryPreview();});
 function requestStoryExit(){if(!storyPreview||storyExitDialog.open)return;if(scenePlayer?.ended){closeStoryPreview();return;}if($('#story-history').open){closeStoryHistory();return;}storyPreview.exiting=true;scenePlayer?.schedule();storyExitDialog.showModal();storyExitDialog.querySelector('[data-preview-keep]').focus();}
 function closeStoryPreview(){
+ storyPreviewOpenSequence++;
  window.StudentAgeAudioFocus?.set('story-preview',false);
  if(!storyPreview)return;if(storyExitDialog.open)storyExitDialog.close();closeStoryHistory(false);const prior=storyPreview;storyPreview=null;scenePlayer?.pause();stageAudio?.stop();largeScene?.container.getAnimations?.({subtree:true}).forEach(a=>a.cancel());
  for(const {node,marker} of prior.portals||[]){marker.replaceWith(node);}
@@ -1507,26 +1515,52 @@ async function loadAudioCatalog() {
 }
 function bgmDraft() {
   const cues=audioData(),stamp=JSON.stringify(cues),group=cues.bgm.find(g=>ids(g.talkIds).includes(S.selected));
-  if(!S.bgmDraft||S.bgmDraft.talk!==S.selected||S.bgmDraft.stamp!==stamp){const groupIds=new Set(ids(group?.talkIds)),members=group?S.order.filter(id=>groupIds.has(id)):visibleIds().slice(Math.max(0,visibleIds().indexOf(S.selected)));S.bgmDraft={talk:S.selected,stamp,groupId:group?.id||null,track:group?.audioId||0,start:members[0]||S.selected,end:members[members.length-1]||S.selected,loop:group?.loop??true,volume:group?.volume??1,ids:members};}
+  if(!S.bgmDraft||S.bgmDraft.talk!==S.selected||S.bgmDraft.stamp!==stamp){const groupIds=new Set(ids(group?.talkIds)),members=group?visibleIds().filter(id=>groupIds.has(id)):[];S.bgmDraft={talk:S.selected,stamp,groupId:group?.id||null,track:group?Number(group.audioId):null,start:members[0]??null,end:members.at(-1)??null,loop:group?.loop??true,volume:group?.volume??1,ids:members};}
   return S.bgmDraft;
 }
 function audioOptions(type,selected=0) {
-  let result='<option value="0">'+(type===1?'使用原版默认音乐':'选择音效，即刻加入本句')+'</option>';
+  let result='<option value="0">'+(type===1?'0 · 延续之前的 BGM':'选择音效，即刻加入本句')+'</option>';
   for(const row of S.audios.filter(a=>Number(a.type)===type))result+=`<option value="${row.id}" ${Number(selected)===Number(row.id)?'selected':''}>${h(assetName(row,'audio'))}${row.available===false?'（尚未读取）':''}</option>`;
   return result;
 }
 function renderAudioContents() {
-  if(!talk())return '';const cues=audioData(),sfx=cues.sfx[S.selected]||[],draft=bgmDraft(),legacy=S.audios.find(a=>Number(a.id)===Number(talk().audio)),nativeBgm=Number(cues.nativeAudio?.[S.selected])||(Number(legacy?.type)===1?Number(legacy.id):0);
+  if(!talk())return '';const cues=audioData(),sfx=cues.sfx[S.selected]||[],draft=bgmDraft(),legacy=S.audios.find(a=>Number(a.id)===Number(talk().audio)),nativeBgm=Number(cues.nativeAudio?.[S.selected])||(Number(legacy?.type)===1?Number(legacy.id):0),rangeIds=visibleIds(),chosenIds=new Set(draft.ids||[]);
   let html=`<div class="section-title"><h3>音效与 BGM</h3><button class="text-button" data-action="stop-audio">停止试听</button></div><div class="audio-caption">本句音效</div><div class="audio-pick-row"><button class="primary" data-action="import-audio" data-type="2">＋ 添加音效</button></div>`;
   for(const [index,cue] of sfx.entries())html+=`<div class="audio-cue-row"><span>${h(audioName(cue.audioId))}</span><button data-action="preview-audio" data-id="${cue.audioId}">试听</button><label>音量<input type="range" min="0" max="1" step="0.05" value="${cue.volume??1}" data-sfx-volume="${index}" aria-label="${h(audioName(cue.audioId))} 音量"></label><button class="danger-text" data-action="remove-sfx" data-index="${index}">移除</button></div>`;
   if(nativeBgm)html+=`<div class="audio-caption">原句背景音乐</div><div class="audio-cue-row"><span>${h(audioName(nativeBgm))}</span><button data-action="preview-audio" data-id="${nativeBgm}">试听</button><button class="danger-text" data-action="remove-native-bgm">移除</button></div><p class="helper">从本句开始延续播放。设置范围音乐后会改用范围规则。</p>`;
-  html+=`<div class="audio-caption">范围背景音乐</div><div class="audio-range"><label><span>起始对话</span><select id="bgm-range-start">${talkOptions(draft.start,null,false,visibleIds())}</select></label><label><span>结束对话</span><select id="bgm-range-end">${talkOptions(draft.end,null,false,visibleIds())}</select></label></div><div class="audio-pick-row"><button class="primary" data-action="import-audio" data-type="1">♫ ${draft.track?h(audioName(draft.track)):"选择 BGM"}</button></div><div class="audio-range"><label><span>播放方式</span><select id="bgm-loop"><option value="loop" ${draft.loop?'selected':''}>循环播放</option><option value="once" ${draft.loop?'':'selected'}>只播放一次</option></select></label><label><span>音量</span><input id="bgm-volume" type="range" min="0" max="1" step="0.05" value="${draft.volume}"></label></div><div class="row"><button data-action="preview-audio" data-id="${draft.track}" ${draft.track?'':'disabled'}>试听背景音乐</button>${draft.groupId?'<button class="danger-text" data-action="remove-bgm">移除此范围音乐</button>':''}</div><p class="helper">选择即应用。可按起止句选范围，也可勾选不连续对话；从起始句默认应用到本事件末尾，后续句沿用音乐，直到设置另一首。</p>`;
-  html+=`<details id="bgm-specific" class="audio-specific" ${S.bgmExpanded?'open':''}><summary>自选对话（${(draft.ids||[]).length} 句，可不连续）</summary><div class="audio-talk-list">${S.bgmExpanded?renderBgmChoices(draft):''}</div></details>`;
+  html+=`<div class="audio-caption">范围背景音乐</div><div class="audio-range"><label><span>开始 ID（后三位）</span><input id="bgm-range-start" inputmode="numeric" placeholder="例如 001" value="${h(draft.startText??bgmRangeLabel(draft.start))}" aria-label="BGM 开始对话 ID"></label><label><span>结束 ID（后三位）</span><input id="bgm-range-end" inputmode="numeric" placeholder="例如 030" value="${h(draft.endText??bgmRangeLabel(draft.end))}" aria-label="BGM 结束对话 ID"></label></div><div class="audio-pick-row"><button class="primary" data-action="import-audio" data-type="1">♫ ${draft.track?h(audioName(draft.track)):draft.track===0?"0 · 延续之前的 BGM":"选择 BGM"}</button><div class="row"><button data-action="bgm-continue" title="保持之前的音乐或静音">0 · 延续</button><button data-action="bgm-silence">静音</button></div></div><div class="audio-range"><label><span>播放方式</span><select id="bgm-loop"><option value="loop" ${draft.loop?'selected':''}>循环播放</option><option value="once" ${draft.loop?'':'selected'}>只播放一次</option></select></label><label><span>音量</span><input id="bgm-volume" type="range" min="0" max="1" step="0.05" value="${draft.volume}"></label></div><div class="row"><button data-action="preview-audio" data-id="${draft.track}" ${draft.track?'':'disabled'}>试听背景音乐</button>${draft.groupId?'<button class="danger-text" data-action="remove-bgm">移除此范围音乐</button>':''}</div><p class="helper">先选对话，再选 BGM；支持 ID 后三位或完整 ID，包含起止句。0 表示延续上一首，不会重播，也不会在范围结束时自动停止。</p>`;
+  html+=`<details id="bgm-specific" class="audio-specific" ${S.bgmExpanded?'open':''}><summary>自选对话（${(draft.ids||[]).length} 句，可不连续）</summary><div class="row"><button data-action="bgm-toggle-all">${rangeIds.length&&rangeIds.every(id=>chosenIds.has(id))?"全部取消":"全选"}</button></div><div class="audio-talk-list">${S.bgmExpanded?renderBgmChoices(draft):''}</div></details>`;
   if(audioNeedsPlugin())html+='<p class="helper audio-plugin-notice" role="status">'+h(AUDIO_PLUGIN_NOTICE)+'</p>';
   if(S.audioLoading)html+='<p class="helper">正在读取声音列表…</p>';
   if(S.audios.some(a=>a.available===false))html+='<button class="text-button" data-action="refresh-audio">读取尚未缓存的原版声音</button>';
   if(Number(talk().audio)>0)html+='<p class="helper">背景音乐与音效按原版声音类型保存。</p>';
   return html;
+}
+function bgmRangeLabel(id){
+  if(id==null)return '';const list=visibleIds(),suffix=Number(id)%1000;
+  return list.filter(value=>value%1000===suffix).length===1?String(suffix).padStart(3,'0'):String(id);
+}
+function refreshBgmEditor(){const section=$('#audio-section');if(section)section.innerHTML=renderAudioContents();}
+function setBgmRange(field,value,editing=false){
+  const text=String(value).trim(),draft=bgmDraft(),list=visibleIds();
+  draft[field+'Text']=text;draft[field]=null;draft.rangeInvalid=true;
+  const invalid=message=>{if(!editing)toast(message,'note');};
+  if(!text){draft[field]=null;draft.ids=[];return;}
+  if(!/^\d{1,10}$/.test(text)){invalid('请输入对话 ID 后三位或完整 ID。');return;}
+  const matches=list.filter(id=>text.length<=3?id%1000===Number(text):id===Number(text));
+  if(matches.length!==1){invalid(matches.length?'有多句对话的后三位相同，请输入完整 ID。':'当前对话列表中没有这个 ID。');return;}
+  draft[field]=matches[0];
+  if(draft.start==null||draft.end==null)return;
+  const a=list.indexOf(draft.start),b=list.indexOf(draft.end);
+  if(a<0||b<0||a>b){invalid('结束对话必须在开始对话之后。');return;}
+  // Input state survives async catalogue/body refreshes before blur fires.
+  draft.ids=list.slice(a,b+1);draft.rangeInvalid=false;
+  if(editing)return;if(draft.track!==null)applyBgmDraft();else refreshBgmEditor();
+}
+function toggleBgmAll(){
+  const draft=bgmDraft(),list=visibleIds(),chosen=new Set(draft.ids||[]),all=list.length&&list.every(id=>chosen.has(id));
+  delete draft.startText;delete draft.endText;draft.rangeInvalid=false;draft.ids=all?[]:list;draft.start=draft.ids[0]??null;draft.end=draft.ids.at(-1)??null;
+  if(draft.track!==null||draft.groupId)applyBgmDraft();else refreshBgmEditor();
 }
 function renderBgmChoices(draft=bgmDraft()){const selected=new Set(draft.ids||[]);return (S.project?.readOnly?(draft.ids||[]).slice(0,100):visibleIds()).map(id=>`<label><input type="checkbox" data-bgm-talk="${id}" ${selected.has(id)?'checked':''}><span>${StudentAgeRecordLabels.html(id,talkLabel(id))}</span></label>`).join('');}
 function renderAudio(){return '<section id="audio-section" class="audio-section">'+renderAudioContents()+'</section>';}
@@ -1536,8 +1570,8 @@ function audioNeedsPlugin(talkIds=[S.selected]){
  return talkIds.some(id=>{
   const group=cues.bgm.find(g=>ids(g.talkIds).includes(Number(id))),effects=cues.sfx[id]||[],legacy=S.audios.find(a=>Number(a.id)===Number(S.doc?.talks[id]?.audio));
   const effectIds=new Set(effects.map(c=>Number(c.audioId)));if(Number(legacy?.type)===2)effectIds.add(Number(legacy.id));
-  const music=group||Number(cues.nativeAudio?.[id])||Number(legacy?.type)===1;
-  return effectIds.size>1||effectIds.size>0&&!!music||effects.some(c=>(c.volume??1)!==1)||group&&(group.loop===false||(group.volume??1)!==1);
+  const music=(group&&Number(group.audioId)>0)||Number(cues.nativeAudio?.[id])||Number(legacy?.type)===1;
+  return effectIds.size>1||effectIds.size>0&&!!music||effects.some(c=>(c.volume??1)!==1)||group&&Number(group.audioId)>0&&(group.loop===false||(group.volume??1)!==1);
  });
 }
 function warnAudioPlugin(talkIds){if(audioNeedsPlugin(talkIds))toast('这些声音设置需要游戏插件；当前版本未附带，仅预览支持。','note');}
@@ -1553,13 +1587,21 @@ function preserveLegacyAudio(talkId,replacingBgm) {
   if(replacingBgm&&cues.nativeAudio)delete cues.nativeAudio[talkId];
 }
 function applyBgmDraft() {
-  const draft={...bgmDraft()},list=visibleIds(),a=list.indexOf(Number(draft.start)),b=list.indexOf(Number(draft.end));
-  if(a<0||b<0)return;
-  const members=draft.ids||list.slice(Math.min(a,b),Math.max(a,b)+1),covered=new Set(members),groupId=draft.groupId||'bgm-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7);
-  mutate('设置范围背景音乐',()=>{const cues=S.doc.audioCues;cues.bgm=cues.bgm.filter(g=>g.id!==draft.groupId).map(g=>({...g,talkIds:ids(g.talkIds).filter(id=>!covered.has(id))})).filter(g=>g.talkIds.length);
-    if(Number(draft.track)>0&&members.length)cues.bgm.push({id:groupId,audioId:Number(draft.track),talkIds:members,loop:!!draft.loop,volume:Number(draft.volume)});
-    for(const id of members)if(S.doc.talks[id]){preserveLegacyAudio(id,true);S.doc.talks[id].audio=Number(draft.track)||0;}
-    S.bgmDraft={...draft,groupId:Number(draft.track)>0&&members.length?groupId:null,ids:members,stamp:JSON.stringify(cues)};
+  const draft={...bgmDraft()},allowed=new Set(visibleIds()),members=(draft.ids||[]).filter(id=>allowed.has(id));
+  if(draft.track===null)return;
+  if(draft.rangeInvalid){toast('请填写有效的开始和结束 ID，或重新勾选对话。','note');return;}
+  if(!members.length&&!draft.groupId){refreshBgmEditor();toast('请先选择需要设置 BGM 的对话。','note');return;}
+  const covered=new Set(members),previousGroup=audioData().bgm.find(g=>g.id===draft.groupId),shared=ids(previousGroup?.talkIds).some(id=>!allowed.has(id)),groupId=(!shared&&draft.groupId)||'bgm-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7);
+  mutate('设置范围背景音乐',()=>{
+    const cues=S.doc.audioCues,previous=cues.bgm.find(g=>g.id===draft.groupId);
+    // Clear directives left by the old range, including edits not saved yet.
+    for(const id of ids(previous?.talkIds))if(allowed.has(id)&&!covered.has(id)&&S.doc.talks[id]&&Number(S.doc.talks[id].audio)===Number(previous.audioId))S.doc.talks[id].audio=0;
+    cues.bgm=cues.bgm.map(g=>({...g,talkIds:ids(g.talkIds).filter(id=>g.id===draft.groupId?!allowed.has(id):!covered.has(id))})).filter(g=>g.talkIds.length);
+    if(members.length)cues.bgm.push({id:groupId,audioId:Number(draft.track),talkIds:members,loop:!!draft.loop,volume:Number(draft.volume)});
+    // The native exporter writes only entry/change boundaries. Do not leave a
+    // replay directive on every line in the live draft or a shortened range.
+    for(const id of members)if(S.doc.talks[id]){preserveLegacyAudio(id,true);S.doc.talks[id].audio=0;}
+    S.bgmDraft={...draft,groupId:members.length?groupId:null,ids:members,stamp:JSON.stringify(cues)};
   });
   warnAudioPlugin(members);
 }
@@ -1569,6 +1611,21 @@ async function previewAudio(id) {
   try{await player.play();}catch(_){toast('声音未能播放，请检查素材。','note');}
 }
 function stopAudition(){const player=$('#audio-audition');player.pause();player.hidden=true;}
+let silentBgmPending=false;
+async function setSilentBgm(){
+  if(!editable()||silentBgmPending)return;
+  const projectId=S.project.id,selected=S.selected,event=S.event,draft=clone(bgmDraft());
+  if(draft.rangeInvalid||!draft.ids?.length){toast('请先选择需要静音的对话。','note');return;}
+  silentBgmPending=true;
+  try{
+    const result=await api('/api/audio-silence',{projectId,revision:S.revision});
+    if(S.project?.id!==projectId)return;
+    mergeImportedAssets(result);await loadAudioCatalog();
+    if(S.project?.id!==projectId||S.selected!==selected||S.event!==event)return;
+    if(JSON.stringify(bgmDraft())!==JSON.stringify(draft)){toast('静音素材已准备好，请按新的范围再次选择静音。','note');return;}
+    S.bgmDraft={...draft,track:Number(result.id),loop:true,volume:1,stamp:JSON.stringify(audioData())};applyBgmDraft();
+  }finally{silentBgmPending=false;}
+}
 async function importAudioFile(file,type) {
   if(!file||!editable())return;if(file.size>48*1024*1024)throw new Error('声音文件不能超过 48 MB。');
   const projectId=S.project.id,selected=S.selected;if(S.dirty&&!await window.STUDIO_NAV.prepareLeave({allowDiscard:false}))return;
@@ -1723,6 +1780,9 @@ const actions={
   'preview-audio':b=>previewAudio(Number(b.dataset.id)),'stop-audio':stopAudition,'refresh-audio':refreshAudio,
   'import-audio':b=>openAssetPicker('audio',{intent:'audio',audioType:Number(b.dataset.type)}),
   'remove-sfx':b=>mutate('移除本句音效',()=>{const cues=S.doc.audioCues.sfx[S.selected]||[];cues.splice(Number(b.dataset.index),1);if(!cues.length)delete S.doc.audioCues.sfx[S.selected];}),
+  'bgm-toggle-all':toggleBgmAll,
+  'bgm-continue':()=>{bgmDraft().track=0;applyBgmDraft();},
+  'bgm-silence':setSilentBgm,
   'remove-bgm':()=>{const id=bgmDraft().groupId;mutate('移除范围背景音乐',()=>{const group=S.doc.audioCues.bgm.find(g=>g.id===id);for(const talkId of ids(group?.talkIds)){preserveLegacyAudio(talkId,true);if(S.doc.talks[talkId])S.doc.talks[talkId].audio=0;}S.doc.audioCues.bgm=S.doc.audioCues.bgm.filter(g=>g.id!==id);});},
   'remove-native-bgm':()=>mutate('移除原句背景音乐',()=>{preserveLegacyAudio(S.selected,true);talk().audio=0;}),
   'help':()=>window.STUDIO_NAV?.help()
@@ -1756,6 +1816,7 @@ document.addEventListener('drop',e=>{if(talkDrag===null)return;e.preventDefault(
 document.addEventListener('dragend',()=>{talkDrag=null;clearTalkDrop();document.querySelectorAll('.talk-dragging').forEach(n=>n.classList.remove('talk-dragging'));});
 document.addEventListener('input',event=>{
   const e=event.target;
+  if(e.id==='bgm-range-start'||e.id==='bgm-range-end'){setBgmRange(e.id==='bgm-range-start'?'start':'end',e.value,true);return;}
   if(e.dataset.sfxVolume!==undefined){if(!editable())return;history('调整音效音量','sfx-volume:'+S.selected+':'+e.dataset.sfxVolume);S.doc.audioCues.sfx[S.selected][Number(e.dataset.sfxVolume)].volume=Number(e.value);updateDirty();return;}
   if(e.id==='talk-search'){S.search=e.value;S.listStart=0;S.listAnchor=S.selected;renderList();return;}
   if(e.dataset.edit&&e.tagName!=='SELECT'&&talk()){
@@ -1779,12 +1840,12 @@ document.addEventListener('change',event=>{
   }S.coalesce=null;
   if(e.dataset.folderFailure){try{setFolderFailure(e.dataset.folderFailure,e.value);}catch(error){fail(error);renderList();}return;}
   if(e.dataset.folderContinuation){try{setFolderContinuation(e.dataset.folderContinuation,e.value);}catch(error){fail(error);renderList();}return;}
-  if(e.dataset.bgmTalk!==undefined){const draft=bgmDraft(),member=Number(e.dataset.bgmTalk),members=new Set(draft.ids||[]);if(e.checked)members.add(member);else members.delete(member);draft.ids=visibleIds().filter(id=>members.has(id));if(draft.ids.length){draft.start=draft.ids[0];draft.end=draft.ids[draft.ids.length-1];}if(draft.track||draft.groupId)applyBgmDraft();return;}
+  if(e.dataset.bgmTalk!==undefined){const draft=bgmDraft();delete draft.startText;delete draft.endText;draft.rangeInvalid=false;const member=Number(e.dataset.bgmTalk),members=new Set(draft.ids||[]);if(e.checked)members.add(member);else members.delete(member);draft.ids=visibleIds().filter(id=>members.has(id));if(draft.ids.length){draft.start=draft.ids[0];draft.end=draft.ids[draft.ids.length-1];}else{draft.start=null;draft.end=null;}if(draft.track!==null||draft.groupId)applyBgmDraft();else refreshBgmEditor();return;}
   if(e.dataset.sfxVolume!==undefined){warnAudioPlugin();const section=$('#audio-section');if(section)section.innerHTML=renderAudioContents();return;}
   if(e.id==='sfx-add'){if(Number(e.value)>0)addSfx(e.value);return;}
   if(['bgm-track','bgm-loop','bgm-volume','bgm-range-start','bgm-range-end'].includes(e.id)){
-    const draft=bgmDraft();if(e.id==='bgm-track')draft.track=Number(e.value);else if(e.id==='bgm-loop')draft.loop=e.value==='loop';else if(e.id==='bgm-volume')draft.volume=Number(e.value);else {draft[e.id==='bgm-range-start'?'start':'end']=Number(e.value);draft.ids=null;}
-    if(draft.track||draft.groupId)applyBgmDraft();return;
+    const draft=bgmDraft();if(e.id==='bgm-track')draft.track=Number(e.value);else if(e.id==='bgm-loop')draft.loop=e.value==='loop';else if(e.id==='bgm-volume')draft.volume=Number(e.value);else {setBgmRange(e.id==='bgm-range-start'?'start':'end',e.value);return;}
+    if(draft.track!==null||draft.groupId)applyBgmDraft();return;
   }
   if(e.id==='audio-file'){const file=e.files[0];e.value='';importAudioFile(file,S.audioImportType||2).catch(fail);return;}
   if(e.id==='project-select'){const id=e.value;e.value=S.project?.id||'';if(id&&String(id)!==String(S.project?.id))unsaved(()=>selectProjectHome(id)).catch(fail);return;}
