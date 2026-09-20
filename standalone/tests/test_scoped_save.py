@@ -113,7 +113,9 @@ class ScopedSaveTests(unittest.TestCase):
     descriptor=self.store.talk_segments.open(self.project.id);token=descriptor['segmentedTalks']['generation'];old=descriptor['revision']
     if name=='editor-state':(self.project.path/'StudentAgeStudio').mkdir(exist_ok=True);(self.project.path/'StudentAgeStudio/editor-state.json').write_bytes(b.json_bytes({'order':[2,1]}))
     else:self.write(name,{'1':{'id':1,'content':'外部改动','name':'新名字'}})
-    with self.assertRaises(b.ApiError):self.store.talk_segments.get(self.project.id,token)
+    # The immutable draft stays readable, but must not adopt an external revision.
+    self.assertEqual(self.store.talk_segments.get(self.project.id,token).page(['1'])['revision'],old)
+    self.assertFalse(self.store.talk_segments.refresh_revision(self.project.id,token,old)['unchangedStory'])
     self.store.talk_segments.saved(self.project,token,self.store.revision(self.project))
     self.assertFalse(self.store.talk_segments.refresh_revision(self.project.id,token,old)['unchangedStory'])
  def test_unrelated_refresh_rejects_wrong_revision_and_damaged_cache(self):
