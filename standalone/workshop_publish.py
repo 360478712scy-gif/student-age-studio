@@ -5,10 +5,13 @@ Workshop entry -> fill title/description/visibility/tags/metadata/content/
 preview -> submit -> poll progress -> persist the published id to a sidecar.
 
 Only ``local:`` projects may publish. Valve's ``steam_api`` is never shipped:
-see :mod:`steam_bridge`. The future frontend wizard drives this through
+see :mod:`steam_bridge`. The publishing dialog drives this through
 ``POST /api/publish`` (202), ``GET /api/publish-status`` and
 ``POST /api/publish-cancel``.
 """
+import io
+import hashlib
+import base64
 import json
 import os
 import secrets
@@ -49,7 +52,7 @@ WORKSHOP_TAGS = {'剧情', '其他'}
 # Audios, Textures, manifest.json, deleted-talks.json, …) uploads verbatim
 # like the game's own publisher. Our sidecar must never leave the machine.
 STAGING_SKIP_DIRS = {'Backups'}
-STAGING_SKIP_FILES = {'.save.lock', 'workshop.json'}
+STAGING_SKIP_FILES = {'.save.lock', 'workshop.json', 'workshop-pending.json', 'workshop-binding-backup.json'}
 
 
 class PublishError(Exception):
@@ -74,11 +77,46 @@ def _check_cancelled(job):
 
 
 def read_sidecar(project):
+    path = project.path / SIDECAR
     try:
-        data = json.loads((project.path / SIDECAR).read_text(encoding='utf-8'))
-    except (OSError, ValueError):
+        data = json.loads(path.read_text(encoding='utf-8'))
+        if not isinstance(data, dict):
+            raise ValueError('not an object')
+        ident = int(data.get('publishedFileId') or 0)
+        if ident < 0 or ident >= 2 ** 64:
+            raise ValueError('invalid item id')
+        return data
+    except FileNotFoundError:
         return {}
-    return data if isinstance(data, dict) else {}
+    except (OSError, ValueError, TypeError) as error:
+        raise PublishError('本地工坊绑定损坏或无法读取，请先修复，不能自动创建新条目。', 409, 'publish_binding_invalid') from error
+
+
+def publish_files(project):
+    from mod_copy import excluded_entry
+    for base, directories, names in os.walk(project.path, followlinks=False):
+        base = Path(base)
+        directories[:] = sorted(name for name in directories
+            if not (base / name).is_symlink() and name not in STAGING_SKIP_DIRS
+            and not excluded_entry(base / name, project.path))
+        for name in sorted(names):
+            path = base / name
+            if path.is_symlink() or name in STAGING_SKIP_FILES or name.lower().endswith(('.tmp', '.log', '.lock')) or excluded_entry(path, project.path):
+                continue
+            yield path
+
+
+def snapshot(project):
+    result = {}
+    for path in publish_files(project):
+        before = path.stat()
+        with path.open('rb') as stream:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        after = path.stat()
+        if (before.st_size, before.st_mtime_ns, before.st_ino) != (after.st_size, after.st_mtime_ns, after.st_ino):
+            raise PublishError('发布素材正在被修改，请等待保存完成后重试。', 409, 'conflict')
+        result[path.relative_to(project.path).as_posix()] = (after.st_size, digest)
+    return result
 
 
 def stage_mod(api, project, destination):
@@ -93,7 +131,7 @@ def stage_mod(api, project, destination):
                           and not excluded_entry(base / name, project.path)]
         for name in names:
             source = base / name
-            if source.is_symlink() or name in STAGING_SKIP_FILES or name.endswith(('.tmp', '.log')):
+            if source.is_symlink() or name in STAGING_SKIP_FILES or name.lower().endswith(('.tmp', '.log', '.lock')):
                 skipped.append(str(source.relative_to(project.path)))
                 continue
             if excluded_entry(source, project.path):
@@ -122,7 +160,7 @@ def prepare_preview(api, source_file, staged_dir):
     if len(raw) > PREVIEW_MAX:
         raise PublishError('封面图片超过 1 MB，请压缩后再试。', 413, 'publish_preview_too_large')
     try:
-        with Image.open(Path(source_file)) as image:
+        with Image.open(io.BytesIO(raw)) as image:
             image.load()
             picture = image.convert('RGB')
     except Exception:
@@ -146,7 +184,7 @@ def normalize_payload(api, project, manifest, payload):
         raise PublishError('发布参数必须是对象。')
     title = payload.get('title', manifest.get('title', ''))
     description = payload.get('description', manifest.get('description', ''))
-    visibility = payload.get('visibility', manifest.get('visible', VISIBILITY_PRIVATE))
+    visibility = payload.get('visibility', VISIBILITY_PRIVATE)
     tags = payload.get('tags', manifest.get('tags', []))
     change_note = payload.get('changeNote', CHANGE_NOTE_DEFAULT)
     if not isinstance(title, str) or not title.strip():
@@ -222,6 +260,9 @@ class PublishJob:
         self.item_url = ''
         self.created_at = _utcnow()
         self.cancelled = threading.Event()
+        self.submitted = False
+        self.binding_pending = False
+        self.fields = {}
 
     def say(self, message):
         self.log.append(message)
@@ -232,53 +273,58 @@ class PublishJob:
                 'phase': self.phase, 'percent': self.percent,
                 'processedBytes': self.processed_bytes, 'totalBytes': self.total_bytes,
                 'log': list(self.log), 'warnings': list(self.warnings),
-                'createdAt': self.created_at}
+                'createdAt': self.created_at, 'submitted': self.submitted,
+                'bindingPending': self.binding_pending}
         if self.published_file_id:
-            body['publishedFileId'] = self.published_file_id
+            body['publishedFileId'] = str(self.published_file_id)
             body['itemUrl'] = ITEM_URL.format(id=self.published_file_id)
         if self.error:
             body['error'] = self.error
-        if self.state == 'cancelled':
+        if self.cancelled.is_set():
             body['note'] = '已停止轮询；若提交已发出，服务端仍可能收录，请用物品链接确认。'
         return body
 
 
 class Publisher:
-    """Owns publish jobs and the single Steam session. Construct cheaply and
-    share on the server object; pass ``bridge_factory`` in tests."""
+    """One worker owns the process-global native session until its callback settles."""
+    TERMINAL = {'done', 'error', 'cancelled', 'unconfirmed'}
 
     def __init__(self, bridge_factory=None):
         self._lock = threading.RLock()
         self._jobs = {}
         self._bridge = None
         self._bridge_factory = bridge_factory or SteamBridge
-
-    # ---- job registry ----
+        self._worker = None
+        self._closing = False
+        self._blocked = False
 
     def _register(self, job):
+        self._jobs[job.id] = job
+        for ident, previous in list(self._jobs.items()):
+            if len(self._jobs) <= 32:
+                break
+            if previous.state in self.TERMINAL and not previous.binding_pending and ident != job.id:
+                self._jobs.pop(ident)
+
+    def busy(self):
         with self._lock:
-            self._jobs[job.id] = job
-            while len(self._jobs) > 32:
-                self._jobs.pop(next(iter(self._jobs)))
+            return bool(self._worker and self._worker.is_alive())
 
     def status(self, job_id):
         with self._lock:
             job = self._jobs.get(job_id)
-            if job is None:
-                return None
-            return job.public()
+            return job.public() if job else None
 
     def cancel(self, job_id):
         with self._lock:
             job = self._jobs.get(job_id)
-        if job is None:
-            return None
-        job.cancelled.set()
-        if job.state not in ('done', 'error'):
-            job.state = 'cancelled'
-            job.phase = '已取消'
-            job.say('用户取消：停止轮询。')
-        return job.public()
+            if job is None:
+                return None
+            if job.state not in self.TERMINAL:
+                job.cancelled.set()
+                job.state = 'cancelling'
+                job.phase = '等待 Steam 确认，已提交的内容无法撤回' if job.submitted else '正在停止发布'
+            return job.public()
 
     def _bridge_instance(self, game=None):
         with self._lock:
@@ -288,261 +334,279 @@ class Publisher:
 
     def close(self):
         with self._lock:
-            bridge, self._bridge = self._bridge, None
-        if bridge is not None:
-            try:
-                bridge.shutdown()
-            except Exception:
-                pass
+            self._closing = True
+            for job in self._jobs.values():
+                if job.state not in self.TERMINAL:
+                    job.cancelled.set()
+            worker = self._worker
+        if worker and worker is not threading.current_thread():
+            worker.join(timeout=3)
+        # A still-running worker owns shutdown; never unload underneath native calls.
+        if not worker or not worker.is_alive():
+            with self._lock:
+                if self._bridge is not None:
+                    self._bridge.shutdown()
+                    self._bridge = None
 
-    # ---- preflight (no side effects beyond a Steam session) ----
-
-    def prereq(self, store, api, project_id):
+    def prereq(self, store, api, project_id, payload=None):
+        payload = payload or {}
         project = store.project(project_id, writable=True)
-        manifest = api.read_json(project.path / 'manifest.json', {})
-        if not isinstance(manifest, dict):
-            manifest = {}
-        warnings = []
-        try:
-            normalize_payload(api, project, manifest, {})
-        except PublishError as error:
-            manifest_check = {'ok': False, 'reason': error.message}
-        else:
-            manifest_check = {'ok': True}
-        preview = project.path / 'preview.jpg'
-        try:
-            preview_ok = preview.is_file() and preview.stat().st_size <= PREVIEW_MAX
-        except OSError:
-            preview_ok = False
-        try:
-            bridge = self._bridge_instance(getattr(store, 'game', None))
-            info = bridge.ensure_running(getattr(store, 'game', None))
-            steam = {'available': True, 'appId': info.get('appId', APP_ID)}
-        except SteamBridgeError as error:
-            steam = {'available': False, 'reason': error.message, 'code': error.code}
-        except PublishError as error:
-            steam = {'available': False, 'reason': error.message, 'code': error.code}
-        binding = read_sidecar(project)
-        try:
-            talk_files = sum(1 for _ in (project.path / 'Cfgs/zh-cn').glob('*.json'))
-        except OSError:
-            talk_files = 0
-        if not talk_files:
-            warnings.append('Cfgs/zh-cn 为空，上传后游戏中可能没有内容。')
-        return {'ready': bool(steam['available'] and manifest_check['ok'] and preview_ok),
-                'steam': steam, 'manifest': manifest_check,
-                'preview': {'ok': preview_ok} if preview_ok else {
-                    'ok': False, 'reason': '缺少 preview.jpg（≤1MB），请先准备封面。'},
-                'binding': {'publishedFileId': int(binding.get('publishedFileId') or 0)},
-                'warnings': warnings}
-
-    # ---- publish entry ----
+        with store.lock:
+            manifest = api.read_json(project.path / 'manifest.json', {})
+            if not isinstance(manifest, dict):
+                manifest = {}
+            revision = store.revision(project)
+            try:
+                fields = normalize_payload(api, project, manifest, payload)
+                manifest_check = {'ok': True}
+            except PublishError as error:
+                fields = None
+                manifest_check = {'ok': False, 'reason': error.message}
+            try:
+                preview = resolve_preview(api, project, manifest, payload)
+                with tempfile.TemporaryDirectory(prefix='studio-cover-check-') as folder:
+                    prepare_preview(api, preview, folder)
+                preview_check = {'ok': True}
+            except (PublishError, OSError) as error:
+                preview_check = {'ok': False, 'reason': str(error)}
+            binding = {}
+            try:
+                binding = read_sidecar(project)
+                binding_check = {'ok': True, 'publishedFileId': str(binding.get('publishedFileId') or (manifest.get('metadata') or {}).get('id') or 0)}
+            except PublishError as error:
+                binding_check = {'ok': False, 'reason': str(error), 'publishedFileId': '0'}
+            pending_path = project.path / 'StudentAgeStudio/workshop-pending.json'
+            if pending_path.exists():
+                binding_check['ok'] = False
+                binding_check['reason'] = '上次创建条目的结果尚未确认，请先在 Steam 工坊核实，避免重复创建。'
+        with self._lock:
+            active = self._worker is not None and self._worker.is_alive()
+            if self._closing or self._blocked:
+                steam = {'available': False, 'reason': '上次操作尚未确认或编辑器正在关闭，请核实工坊后重启。', 'code': 'publish_unavailable'}
+            elif active:
+                steam = {'available': False, 'reason': '已有发布任务进行中，请等待结束。', 'code': 'publish_busy'}
+            else:
+                try:
+                    info = self._bridge_instance().ensure_running(getattr(store, 'game', None))
+                    steam = {'available': True, 'appId': info.get('appId', APP_ID)}
+                except SteamBridgeError as error:
+                    steam = {'available': False, 'reason': error.message, 'code': error.code}
+            current_job = next((job.public() for job in reversed(list(self._jobs.values())) if job.project_id == project.id and (job.state not in self.TERMINAL or job.binding_pending)), None)
+        return {'currentJob': current_job, 'ready': steam['available'] and manifest_check['ok'] and preview_check['ok'] and binding_check['ok'],
+                'steam': steam, 'manifest': manifest_check, 'preview': preview_check, 'binding': binding_check,
+                'revision': revision, 'fields': fields, 'defaults': {'title': manifest.get('title', project.id),
+                'description': manifest.get('description', ''), 'tags': manifest.get('tags', []),
+                'visibility': binding.get('visibility', VISIBILITY_PRIVATE)}, 'warnings': []}
 
     def start(self, store, api, payload, bridge=None):
         if not isinstance(payload, dict):
             raise PublishError('发布参数必须是对象。')
+        with self._lock:
+            if self._closing or self._blocked:
+                raise PublishError('上次操作尚未确认或编辑器正在关闭，请核实后重启。', 409, 'publish_unavailable')
+            if self._worker is not None and self._worker.is_alive():
+                raise PublishError('已有发布任务进行中，请等待结束。', 409, 'publish_busy')
+            project = store.project(payload.get('projectId'), writable=True)
+            with store.lock:
+                revision = store.revision(project)
+                if not isinstance(payload.get('revision'), str) or payload['revision'] != revision:
+                    raise PublishError('模组已经变化，请保存后重新检查发布内容。', 409, 'conflict')
+                manifest = api.read_json(project.path / 'manifest.json', {})
+                if not isinstance(manifest, dict):
+                    raise PublishError('manifest.json 无效。', 422, 'publish_manifest_invalid')
+                binding = read_sidecar(project)
+                pending = project.path / 'StudentAgeStudio/workshop-pending.json'
+                if pending.exists():
+                    raise PublishError('上次创建条目结果未确认，请先核实工坊，不能重复创建。', 409, 'publish_result_unconfirmed')
+                fields = normalize_payload(api, project, manifest, payload)
+                metadata = manifest.get('metadata') if isinstance(manifest.get('metadata'), dict) else {}
+                fields['packageId'] = str(metadata.get('packageId') or project.package)
+                fields['version'] = str(metadata.get('version') or manifest.get('version') or '1.0.0')
+                try:
+                    fields['existingId'] = int(binding.get('publishedFileId') or metadata.get('id') or 0)
+                    if not 0 <= fields['existingId'] < 2 ** 64:
+                        raise ValueError()
+                except (ValueError, TypeError):
+                    raise PublishError('工坊条目编号无效，请修复绑定。', 422, 'publish_binding_invalid')
+                preview_source = resolve_preview(api, project, manifest, payload)
+            job = PublishJob(secrets.token_hex(8), project.id)
+            job.fields = fields
+            self._register(job)
+            self._worker = threading.Thread(target=self._run, args=(store, api, job, project, revision, preview_source, bridge), daemon=True, name='workshop-publish')
+            self._worker.start()
+            return job.public()
+
+    def cover(self, store, api, payload):
+        from storage_paths import cache_root
         project = store.project(payload.get('projectId'), writable=True)
-        expected = payload.get('revision')
-        revision = store.revision(project)
-        if not isinstance(expected, str) or expected != revision:
-            raise PublishError('发布前模组已经变化，请保存后重新发布。', 409, 'conflict')
-        manifest = api.read_json(project.path / 'manifest.json', {})
-        if not isinstance(manifest, dict):
-            raise PublishError('manifest.json 无效，请先修复模组信息。', 422, 'publish_manifest_invalid')
-        fields = normalize_payload(api, project, manifest, payload)
-        metadata = manifest.get('metadata') if isinstance(manifest.get('metadata'), dict) else {}
-        fields['packageId'] = str(metadata.get('packageId') or project.package)
-        preview_source = resolve_preview(api, project, manifest, payload)
-        job = PublishJob(secrets.token_hex(8), project.id)
-        self._register(job)
-        worker = threading.Thread(target=self._run, args=(store, api, job, project, revision, fields, preview_source, bridge),
-                                  daemon=True, name='workshop-publish')
-        worker.start()
-        return job.public()
+        encoded = payload.get('data')
+        if not isinstance(encoded, str) or len(encoded) > PREVIEW_MAX * 2:
+            raise PublishError('封面图片需要小于 1 MB。', 413, 'publish_preview_too_large')
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+        except ValueError:
+            raise PublishError('图片编码无效。', 422, 'publish_preview_undecodable')
+        folder = Path(cache_root()) / 'PublishPreviews' / hashlib.sha256(project.id.encode()).hexdigest()[:20]
+        folder.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=folder) as temporary:
+            source = Path(temporary) / 'input'
+            source.write_bytes(raw)
+            preview = prepare_preview(api, source, temporary)
+            body = preview.read_bytes()
+        target = folder / (hashlib.sha256(body).hexdigest() + '.jpg')
+        api.atomic_write(target, body)
+        return {'previewPath': str(target)}
 
-    # ---- worker ----
+    def bind_existing(self, store, api, payload):
+        value = payload.get('publishedFileId')
+        if not isinstance(value, str) or not value.isdigit() or not 0 < int(value) < 2 ** 64:
+            raise PublishError('请输入有效的工坊条目编号。', 422, 'publish_binding_invalid')
+        with self._lock:
+            if self.busy() or self._closing:
+                raise PublishError('请等待当前发布结束。', 409, 'publish_busy')
+            project = store.project(payload.get('projectId'), writable=True)
+            with store.lock:
+                if payload.get('revision') != store.revision(project):
+                    raise PublishError('模组已变化，请重新打开发布窗口。', 409, 'conflict')
+                target = project.path / SIDECAR
+                if target.exists():
+                    api.atomic_write(target.with_name('workshop-binding-backup.json'), target.read_bytes())
+                self._write_sidecar(api, project, int(value), {})
+                (project.path / 'StudentAgeStudio/workshop-pending.json').unlink(missing_ok=True)
+            return {'publishedFileId': value, 'revision': store.revision(project)}
 
-    def _run(self, store, api, job, project, revision, fields, preview_source, bridge):
-        started = time.monotonic()
+    def recover_binding(self, store, api, payload):
+        with self._lock:
+            job = self._jobs.get(payload.get('jobId'))
+            if not job or not job.published_file_id or job.state not in self.TERMINAL:
+                raise PublishError('没有可恢复的发布绑定。', 409, 'publish_no_recovery')
+            project = store.project(job.project_id, writable=True)
+            with store.lock:
+                self._write_sidecar(api, project, job.published_file_id, job.fields)
+                (project.path / 'StudentAgeStudio/workshop-pending.json').unlink(missing_ok=True)
+            job.binding_pending = False
+            job.warnings = [message for message in job.warnings if '本地绑定未能写入' not in message]
+            return job.public()
+
+    def _bind(self, store, api, project, job):
+        try:
+            with store.lock:
+                self._write_sidecar(api, project, job.published_file_id, job.fields)
+                (project.path / 'StudentAgeStudio/workshop-pending.json').unlink(missing_ok=True)
+            job.binding_pending = False
+        except OSError:
+            job.binding_pending = True
+            job.warnings.append('工坊条目已保留，但本地绑定未能写入。请点击“重试保存绑定”，不要重新创建。')
+
+    def _run(self, store, api, job, project, revision, preview_source, bridge):
         temporary = None
         try:
-            job.state = 'preflight'
-            job.phase = '准备上传内容'
-            job.say('revision 已确认，开始暂存。')
-            if store.revision(project) != revision:
-                raise PublishError('暂存前模组发生变化，已中止；请重新发布。', 409, 'conflict')
+            job.state, job.phase = 'preflight', '准备上传副本'
+            _check_cancelled(job)
             temporary = Path(tempfile.mkdtemp(prefix='student-age-publish-'))
             staged = temporary / 'content'
             staged.mkdir()
-            files, total, skipped = stage_mod(api, project, staged)
-            if skipped:
-                job.warnings.append('跳过 ' + str(len(skipped)) + ' 个编辑器临时文件。')
+            with store.lock:
+                if store.revision(project) != revision:
+                    raise PublishError('暂存前模组发生变化，请重新检查。', 409, 'conflict')
+                before = snapshot(project)
+                files, total, skipped = stage_mod(api, project, staged)
+                staged_project = type('Staged', (), {'path': staged})()
+                if snapshot(staged_project) != before or snapshot(project) != before or store.revision(project) != revision:
+                    raise PublishError('暂存时模组配置或素材发生变化，请重新发布。', 409, 'conflict')
+                # Decode the captured project cover, never reopen the changing original.
+                try:
+                    cover = staged / preview_source.relative_to(project.path)
+                except ValueError:
+                    cover = preview_source
+                prepare_preview(api, cover, staged)
             if total > WARNING_BYTES:
-                job.warnings.append('内容超过 900 MB，上传可能很慢或被 Steam 限制。')
-            job.say(f'已暂存 {files} 个文件。')
-            prepare_preview(api, preview_source, staged)
-            if store.revision(project) != revision:
-                raise PublishError('暂存后模组发生变化，已中止；请重新发布。', 409, 'conflict')
-            job.state = 'staging'
-            job.percent = 5
-            bridge = bridge or self._bridge_instance(getattr(store, 'game', None))
-            try:
-                bridge.ensure_running(getattr(store, 'game', None))
-            except SteamBridgeError as error:
-                raise PublishError(error.message, error.status, error.code)
-            binding = read_sidecar(project)
-            file_id = int(binding.get('publishedFileId') or 0)
-            if file_id:
-                job.say(f'复用工坊条目 {file_id}。')
-            else:
-                job.state = 'creating'
-                job.phase = '创建工坊条目'
-                job.say('创建新的工坊条目…')
-                file_id = bridge.create_item(timeout=CALLBACK_TIMEOUT)
-                _check_cancelled(job)
-                job.published_file_id = file_id
-                job.say(f'已创建条目 {file_id}，继续填写内容…')
-            try:
-                result, handle = self._submit_once(api, bridge, job, file_id, fields, staged)
-                _check_cancelled(job)
-            except PublishError as error:
-                if error.code == 'steam_item_missing':
-                    # The item was deleted on the Workshop; forget the binding
-                    # and create a fresh entry once, then submit again.
-                    job.say('原条目在工坊已不存在，重新创建…')
-                    self._write_sidecar(api, project, 0, fields)
-                    job.published_file_id = 0
-                    file_id = bridge.create_item(timeout=CALLBACK_TIMEOUT)
-                    job.published_file_id = file_id
-                    result, handle = self._submit_once(api, bridge, job, file_id, fields, staged)
-                else:
+                job.warnings.append('内容超过 900 MB，上传可能较慢。')
+            job.say(f'已准备 {files} 个文件；仅上传此副本。')
+            _check_cancelled(job)
+            bridge = bridge or self._bridge_instance()
+            bridge.ensure_running(getattr(store, 'game', None))
+            job.published_file_id = job.fields['existingId']
+            if not job.published_file_id:
+                job.state, job.phase = 'creating', '创建工坊条目'
+                # Persist intent before remote creation, so a crash cannot silently retry.
+                pending = project.path / 'StudentAgeStudio/workshop-pending.json'
+                with store.lock:
+                    pending.parent.mkdir(parents=True, exist_ok=True)
+                    api.atomic_write(pending, api.json_bytes({'jobId': job.id, 'createdAt': job.created_at}))
+                try:
+                    job.published_file_id = bridge.create_item(timeout=CALLBACK_TIMEOUT)
+                except SteamBridgeError as error:
+                    if getattr(error, 'published_file_id', 0):
+                        job.published_file_id = error.published_file_id
+                        self._bind(store, api, project, job)
+                    elif error.code == 'steam_create_failed':
+                        with store.lock:
+                            pending.unlink(missing_ok=True)
                     raise
+                self._bind(store, api, project, job)
+                if job.binding_pending:
+                    raise PublishError('条目已创建，但本地绑定写入失败；恢复绑定后再上传。', 507, 'publish_binding_failed')
+            _check_cancelled(job)
+            result = self._submit_once(bridge, job, staged)
             if result != ERESULT_OK:
-                raise PublishError('提交更新失败：' + bridge.describe_result(result) + '。',
-                                   502, 'steam_submit_failed')
-            self._poll_until_done(bridge, job, handle, started)
+                code = 'steam_item_missing' if result == ERESULT_FILE_NOT_FOUND else 'steam_submit_failed'
+                raise PublishError('Steam 未完成上传：' + bridge.describe_result(result) + '。' + ('请先核实该条目，编辑器不会自动另建。' if result == ERESULT_FILE_NOT_FOUND else ''), 502, code)
+            # SubmitItemUpdate callback is the completion authority. Status 0 afterwards is normal.
+            self._bind(store, api, project, job)
+            job.state, job.phase, job.percent = 'done', '上传完成', 100
             if job.cancelled.is_set():
-                job.state = 'cancelled'
-                job.phase = '已取消'
-                return
-            self._write_sidecar(api, project, file_id, fields)
-            job.published_file_id = file_id
-            job.state = 'done'
-            job.phase = '上传完成'
-            job.percent = 100
-            job.say('上传完成：' + ITEM_URL.format(id=file_id))
+                job.warnings.append('停止请求前内容已提交，Steam 已确认上传成功。')
+            job.say('上传完成：' + ITEM_URL.format(id=job.published_file_id))
         except _Cancelled:
-            job.state = 'cancelled'
-            job.phase = '已取消'
-            job.say('用户取消：停止轮询。')
-        except PublishError as error:
-            if job.state != 'cancelled':
-                job.state = 'error'
-                job.phase = '失败'
-                job.error = {'message': error.message, 'code': error.code}
-                job.say('失败：' + error.message)
-        except SteamBridgeError as error:
-            if job.state != 'cancelled':
-                job.state = 'error'
-                job.phase = '失败'
-                job.error = {'message': error.message, 'code': error.code}
-                job.say('失败：' + error.message)
+            job.state, job.phase = 'cancelled', '已停止，尚未提交上传'
+        except (PublishError, SteamBridgeError) as error:
+            unknown = error.code in ('steam_create_timeout', 'steam_submit_timeout', 'steam_result_unconfirmed')
+            job.state, job.phase = ('unconfirmed', '等待核实工坊结果') if unknown else ('error', '发布未完成')
+            job.error = {'message': error.message, 'code': error.code}
+            if unknown:
+                self._blocked = True
         except Exception as error:
-            if job.state != 'cancelled':
-                job.state = 'error'
-                job.phase = '失败'
-                job.error = {'message': f'上传出现未预期的错误：{error}', 'code': 'internal_error'}
-                job.say(job.error['message'])
+            job.state, job.phase = 'error', '发布未完成'
+            job.error = {'message': '发布失败：' + str(error), 'code': 'internal_error'}
         finally:
-            if temporary is not None:
+            if temporary is not None and job.state != 'unconfirmed':
                 shutil.rmtree(temporary, ignore_errors=True)
+            if self._closing and bridge is not None:
+                bridge.shutdown()
+                with self._lock:
+                    if self._bridge is bridge:
+                        self._bridge = None
 
-    def _submit_once(self, api, bridge, job, file_id, fields, staged):
-        job.state = 'updating'
-        job.phase = '填写条目内容并提交'
-        job.percent = 8
-        try:
-            handle = bridge.start_update(file_id)
-        except SteamBridgeError as error:
-            raise PublishError(error.message, error.status, error.code)
+    def _submit_once(self, bridge, job, staged):
+        job.state, job.phase, job.percent = 'updating', '准备提交', 8
+        handle = bridge.start_update(job.published_file_id)
+        fields = job.fields
         setters = [('标题', bridge.set_title, fields['title']),
                    ('简介', bridge.set_description, fields['description']),
                    ('可见性', bridge.set_visibility, fields['visibility']),
                    ('标签', bridge.set_tags, fields['tags']),
-                   ('元数据', bridge.set_metadata, self._metadata_json(api, file_id, fields)),
+                   ('元数据', bridge.set_metadata, json.dumps({'id': job.published_file_id, 'version': fields['version'], 'packageId': fields['packageId']}, ensure_ascii=False)),
                    ('内容目录', bridge.set_content, str(staged)),
                    ('封面', bridge.set_preview, str(staged / 'preview.jpg'))]
         for label, setter, value in setters:
-            try:
-                ok = setter(handle, value)
-            except SteamBridgeError as error:
-                raise PublishError(error.message, error.status, error.code)
-            if not ok:
-                raise PublishError(f'Steam 拒绝了{label}设置。', 502, 'steam_set_failed')
-        job.say('已提交，等待 Steam 处理…')
-        try:
-            result = bridge.submit_update(handle, fields['changeNote'], timeout=CALLBACK_TIMEOUT)
-        except SteamBridgeError as error:
-            raise PublishError(error.message, error.status, error.code)
-        if result == ERESULT_FILE_NOT_FOUND:
-            raise PublishError('工坊上找不到该条目（可能已被删除），将重新创建。',
-                               502, 'steam_item_missing')
-        return result, handle
-
-    @staticmethod
-    def _metadata_json(api, file_id, fields):
-        return json.dumps({'id': int(file_id), 'version': '1.0.0', 'packageId': fields.get('packageId', '')},
-                          ensure_ascii=False, separators=(',', ':'))
-
-    def _poll_until_done(self, bridge, job, handle, started):
-        last_change = time.monotonic()
-        last_processed = -1
-        while True:
-            if job.cancelled.is_set():
-                return
-            if time.monotonic() - started > JOB_TIMEOUT:
-                raise PublishError('上传超过 30 分钟仍未完成，已中止；请用物品链接确认状态。',
-                                   504, 'publish_timeout')
-            try:
-                progress = bridge.update_progress(handle)
-            except SteamBridgeError as error:
-                raise PublishError(error.message, error.status, error.code)
-            total = progress['totalBytes']
-            processed = progress['processedBytes']
-            job.processed_bytes = processed
-            job.total_bytes = total
-            status = progress['status']
-            if status in (3, 4):
-                job.phase = '正在上传' + ('封面' if status == 4 else '内容')
-                job.percent = min(99, 8 + int(88 * processed / total)) if total else 10
-            elif status == 5:
-                job.phase = '提交收尾'
-                job.percent = 99
-            elif status in (1, 2):
-                job.phase = '准备中'
-                job.percent = 6
-            else:
-                job.phase = '等待 Steam'
-            if processed != last_processed:
-                last_processed = processed
-                last_change = time.monotonic()
-            elif time.monotonic() - last_change > STALL_TIMEOUT:
-                raise PublishError('上传 10 分钟没有进展，已中止；请用物品链接确认状态。',
-                                   504, 'publish_stalled')
-            if total and processed >= total and status == 5:
-                return
-            if total and processed >= total:
-                # Bytes are there; give the commit a grace window.
-                time.sleep(2)
-                continue
-            time.sleep(1.5)
+            _check_cancelled(job)
+            if not setter(handle, value):
+                raise PublishError('Steam 拒绝了' + label + '设置。', 502, 'steam_set_failed')
+        _check_cancelled(job)
+        job.state, job.phase, job.submitted = 'uploading', '正在上传', True
+        def progress(value):
+            job.processed_bytes = value['processedBytes']
+            job.total_bytes = value['totalBytes']
+            job.percent = min(99, 8 + int(90 * job.processed_bytes / job.total_bytes)) if job.total_bytes else 8
+            if not job.cancelled.is_set():
+                job.phase = '提交收尾' if value['status'] == 5 else '正在上传'
+        return bridge.submit_update(handle, fields['changeNote'], timeout=JOB_TIMEOUT, progress=progress)
 
     @staticmethod
     def _write_sidecar(api, project, file_id, fields):
-        body = {'publishedFileId': int(file_id),
-                'itemUrl': ITEM_URL.format(id=file_id) if file_id else '',
-                'lastPublishedAt': _utcnow(), 'lastChangeNote': fields.get('changeNote', ''),
-                'appId': APP_ID}
+        body = {'publishedFileId': int(file_id), 'itemUrl': ITEM_URL.format(id=file_id),
+                'visibility': fields.get('visibility', VISIBILITY_PRIVATE), 'lastPublishedAt': _utcnow(), 'lastChangeNote': fields.get('changeNote', ''), 'appId': APP_ID}
         target = project.path / SIDECAR
         target.parent.mkdir(parents=True, exist_ok=True)
         api.atomic_write(target, api.json_bytes(body))

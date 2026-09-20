@@ -22,7 +22,7 @@ APP_ID = 1991040
 BRIDGE_NAME = 'SteamworksPy64.dll'
 
 # EWorkshopFileType (Valve public values).
-FILE_TYPE_COMMUNITY = 0x01
+FILE_TYPE_COMMUNITY = 0
 
 # ERemoteStoragePublishedFileVisibility (Valve public values).
 VISIBILITY_PUBLIC = 0
@@ -61,14 +61,43 @@ class CreateItemResult(ctypes.Structure):
 
 class SubmitItemUpdateResult(ctypes.Structure):
     _fields_ = [('result', c_int),
-                ('userNeedsToAcceptWorkshopLegalAgreement', c_bool)]
+                ('userNeedsToAcceptWorkshopLegalAgreement', c_bool),
+                ('publishedFileId', c_uint64)]
+
+
+BRIDGE_SHA256 = '2a5b09e8a0f76a083bac50e79462fdf9086edcc7346fef8561644fcaf2420d4b'
+
+
+def packaged_bridge():
+    import base64
+    import hashlib
+    import json
+    from storage_paths import cache_root
+    # The caller checks Windows before extracting any native file.
+    try:
+        resource = json.loads((Path(__file__).parent / 'steamworks-runtime.json').read_text('utf-8'))
+        raw = base64.b64decode(resource['data'], validate=True)
+        if hashlib.sha256(raw).hexdigest() != BRIDGE_SHA256:
+            raise ValueError('hash mismatch')
+        directory = Path(cache_root()) / 'SteamBridge' / BRIDGE_SHA256
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / BRIDGE_NAME
+        if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != BRIDGE_SHA256:
+            import tempfile
+            fd, name = tempfile.mkstemp(dir=directory, suffix='.tmp')
+            try:
+                with os.fdopen(fd, 'wb') as stream:
+                    stream.write(raw)
+                os.replace(name, target)
+            finally:
+                Path(name).unlink(missing_ok=True)
+        return target
+    except (OSError, ValueError, KeyError) as error:
+        raise SteamBridgeError('Steam 桥接组件缺失或损坏，请重新检查更新。', 503, 'steam_bridge_missing') from error
 
 
 def bridge_candidates():
     """Ordered locations of our own MIT bridge DLL (never Valve's)."""
-    override = os.environ.get('STUDIO_STEAMWORKS_BRIDGE')
-    if override:
-        yield Path(override)
     here = Path(__file__).resolve().parent
     yield here / 'vendor-steamworks' / BRIDGE_NAME
     if getattr(sys, 'frozen', False):
@@ -87,9 +116,6 @@ def find_official_dll(game=None):
             seen.append(Path(root) / 'steam_api64.dll')
     except Exception:
         pass
-    for directory in os.environ.get('PATH', '').split(os.pathsep):
-        if directory.strip():
-            seen.append(Path(directory.strip()) / 'steam_api64.dll')
     for path in seen:
         try:
             if path.is_file():
@@ -127,10 +153,6 @@ class SteamBridge:
         self.app_id = int(app_id)
         self.bridge_path = Path(bridge_path) if bridge_path else next(
             (p for p in bridge_candidates() if p.is_file()), None)
-        if self.bridge_path is None:
-            raise SteamBridgeError(
-                '编辑器缺少 Steam 桥接组件（vendor-steamworks/SteamworksPy64.dll），'
-                '请下载包含该组件的完整客户端后再发布。', 503, 'steam_bridge_missing')
         self.official_dll = Path(official_dll) if official_dll else None
         self._factory = cdll_factory or ctypes.CDLL
         self._lib = None
@@ -146,13 +168,16 @@ class SteamBridge:
         self._update_event = threading.Event()
         self._update_result = None
         self._initialized = False
+        self._dll_directory = None
+        self._official_lib = None
+        self._uncertain = False
 
     # ---- low-level library handling ----
 
     def _declare(self):
         lib = self._lib
         string = c_char_p
-        lib.SteamInit.restype = c_bool
+        lib.SteamInit.restype = c_int
         lib.SteamInit.argtypes = []
         lib.SteamShutdown.restype = None
         lib.SteamShutdown.argtypes = []
@@ -216,11 +241,15 @@ class SteamBridge:
         :class:`SteamBridgeError` with a user-facing message otherwise.
         """
         with self._lock:
+            if self._uncertain:
+                raise SteamBridgeError('上次 Steam 操作尚未确认，请先检查工坊条目并重新启动编辑器。', 409, 'steam_result_unconfirmed')
             if self._initialized:
                 return {'appId': self.app_id, 'officialDll': str(self.official_dll)}
             if os.name != 'nt' or sys.maxsize <= 2 ** 32:
                 raise SteamBridgeError('创意工坊上传目前仅支持 Windows 64 位，请在 Windows 客户端中发布。',
                                        503, 'steam_unsupported_platform')
+            if self.bridge_path is None:
+                self.bridge_path = packaged_bridge()
             if self.official_dll is None:
                 found = find_official_dll(game)
                 if found is None:
@@ -228,14 +257,19 @@ class SteamBridge:
                         '未找到 Steam 运行环境：在游戏目录或 Steam 客户端中没有 steam_api64.dll。'
                         '请确认游戏是通过 Steam 安装的。', 503, 'steam_api_missing')
                 self.official_dll = found
+            if self._factory is ctypes.CDLL:
+                import hashlib
+                if hashlib.sha256(self.bridge_path.read_bytes()).hexdigest() != BRIDGE_SHA256:
+                    raise SteamBridgeError('Steam 桥接组件校验失败，请重新检查更新。', 503, 'steam_bridge_invalid')
             previous_mode = _suppress_dialogs()
             try:
                 try:
-                    os.add_dll_directory(str(self.official_dll.parent))
+                    self._dll_directory = os.add_dll_directory(str(self.official_dll.parent))
                 except (AttributeError, OSError):
                     pass
                 try:
-                    self._lib = self._factory(str(self.bridge_path))
+                    self._official_lib = self._factory(str(self.official_dll.resolve()))
+                    self._lib = self._factory(str(self.bridge_path.resolve()))
                 except OSError as error:
                     raise SteamBridgeError(
                         f'无法加载 Steam 桥接组件：{error}。请重新安装完整客户端。',
@@ -250,10 +284,12 @@ class SteamBridge:
                         os.environ.pop('SteamAppId', None)
                     else:
                         os.environ['SteamAppId'] = old_appid
-                if not initialized:
+                self._initialized = True
+                if initialized != 0:
                     raise SteamBridgeError(
                         'Steam 初始化失败。请先启动并登录 Steam 客户端（需要拥有《学生时代》），'
                         '然后重试。', 503, 'steam_init_failed')
+                self._initialized = True
                 try:
                     running = self._lib.IsSteamRunning()
                 except (OSError, ValueError, ctypes.ArgumentError):
@@ -264,19 +300,27 @@ class SteamBridge:
                 self._register_callbacks()
                 self._initialized = True
                 return {'appId': self.app_id, 'officialDll': str(self.official_dll)}
+            except Exception:
+                self.shutdown()
+                raise
             finally:
                 _restore_dialogs(previous_mode)
 
     def shutdown(self):
+        # Native callbacks must finish before releasing either library/search handle.
+        self.stop_pump()
         with self._lock:
-            self.stop_pump()
+            if self._pump_thread is not None and self._pump_thread.is_alive():
+                return False
             if self._initialized and self._lib is not None:
-                try:
-                    self._lib.SteamShutdown()
-                except (OSError, ValueError, ctypes.ArgumentError):
-                    pass
+                self._lib.SteamShutdown()
             self._initialized = False
             self._lib = None
+            self._official_lib = None
+            if self._dll_directory is not None:
+                self._dll_directory.close()
+                self._dll_directory = None
+        return True
 
     # ---- callback pump (only while a job is active) ----
 
@@ -301,9 +345,11 @@ class SteamBridge:
         thread = None
         with self._lock:
             self._pump_stop.set()
-            thread, self._pump_thread = self._pump_thread, None
+            thread = self._pump_thread
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=5)
+        if thread is None or not thread.is_alive():
+            self._pump_thread = None
 
     # ---- UGC operations (require ensure_running first) ----
 
@@ -319,13 +365,17 @@ class SteamBridge:
         self.start_pump()
         self._lib.Workshop_CreateItem(c_uint32(self.app_id), c_uint32(FILE_TYPE_COMMUNITY))
         if not self._create_event.wait(timeout):
+            self._uncertain = True
             raise SteamBridgeError('创建工坊条目超时（Steam 无响应），请稍后重试。', 504, 'steam_create_timeout')
+        self.stop_pump()
         result, file_id, needs_agreement = self._create_result
         if needs_agreement:
-            raise SteamBridgeError(
+            error = SteamBridgeError(
                 '需要先同意 Steam 创意工坊法律协议：'
                 'https://steamcommunity.com/sharedfiles/workshopagreement',
                 403, 'steam_legal_agreement')
+            error.published_file_id = int(file_id)
+            raise error
         if result != ERESULT_OK or not file_id:
             raise SteamBridgeError(
                 '创建工坊条目失败：' + self.describe_result(result) + '。', 502, 'steam_create_failed')
@@ -365,14 +415,24 @@ class SteamBridge:
     def set_preview(self, handle, image_path):
         return bool(self._lib.Workshop_SetItemPreview(c_uint64(handle), self._encode(image_path)))
 
-    def submit_update(self, handle, change_note, timeout=120):
+    def submit_update(self, handle, change_note, timeout=1800, progress=None):
         self._require()
         self._update_event.clear()
         self._update_result = None
         self.start_pump()
         self._lib.Workshop_SubmitItemUpdate(c_uint64(handle), self._encode(change_note))
-        if not self._update_event.wait(timeout):
-            raise SteamBridgeError('提交更新超时（Steam 无响应），请稍后在工坊页面确认。', 504, 'steam_submit_timeout')
+        deadline = time.monotonic() + timeout
+        last_bytes, last_change = -1, time.monotonic()
+        while not self._update_event.wait(.2):
+            current = self.update_progress(handle)
+            if progress:
+                progress(current)
+            if current['processedBytes'] != last_bytes:
+                last_bytes, last_change = current['processedBytes'], time.monotonic()
+            if time.monotonic() >= deadline or time.monotonic() - last_change > 600:
+                self._uncertain = True
+                raise SteamBridgeError('Steam 尚未确认上传结果，请通过条目链接确认后重启编辑器。', 504, 'steam_submit_timeout')
+        self.stop_pump()
         result, needs_agreement = self._update_result
         if needs_agreement:
             raise SteamBridgeError(

@@ -3727,6 +3727,10 @@ class StudioServer(ThreadingHTTPServer):
             raise ApiError("请等待素材读取完成后再切换目录。", 409)
 
     def use_location(self, row, migrate_cache=True):
+        if self.publisher.busy():
+            raise ApiError('请等待创意工坊发布结束后再切换游戏目录。', 409)
+        self.publisher.close()
+        self.publisher = workshop_publish.Publisher()
         if hasattr(self, "media_warmup"): self.media_warmup.close()
         try: self.store.close()
         except Exception: pass
@@ -3941,6 +3945,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.location_state())
             if route == "/api/backups":
                 return self.send_json(self.server.store.backups.status(query.get('projectId', [None])[0]))
+            if route == "/api/publish-preview":
+                project = self.server.store.project(query.get('projectId', [''])[0], writable=True)
+                path = workshop_publish.resolve_preview(sys.modules[__name__], project, {}, {'previewPath': query.get('path', ['preview.jpg'])[0]})
+                return self.send_file(path)
             if route == "/api/publish-status":
                 result = self.server.publisher.status(query.get('jobId', [''])[0])
                 if result is None:
@@ -4115,7 +4123,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 page = page.replace("</head>", bootstrap + "</head>", 1) if "</head>" in page else bootstrap + page
                 policy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval' 'nonce-" + nonce + "'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
                 return self.send_data(page.encode(), "text/html; charset=utf-8", extra={"Content-Security-Policy": policy})
-            if route in ("/plugin-mode.js", "/plugin-mode.css", "/editor-music.js", "/editor-music.css", "/character-images.js", "/external-dialogues.js", "/external-uses.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/indexed-talks.js", "/remote-talks.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/frosted-glass.css", "/home-feedback.css", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/dialogue-selection.js", "/dialogue-selection.css", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-ui.css", "/locations.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
+            if route in ("/plugin-mode.js", "/plugin-mode.css", "/editor-music.js", "/editor-music.css", "/character-images.js", "/external-dialogues.js", "/external-uses.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/indexed-talks.js", "/remote-talks.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/frosted-glass.css", "/home-feedback.css", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/dialogue-selection.js", "/dialogue-selection.css", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-ui.css", "/locations.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/workshop-publish-ui.js", "/workshop-publish.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
                 file = self.server.web_root / route.lstrip("/")
                 if file.is_file():
                     data = file.read_bytes()
@@ -4248,6 +4256,14 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.store.renumber_rows(payload))
             if route == "/api/backup":
                 return self.send_json(self.server.store.backups.create(payload), 201)
+            if route == "/api/publish-prereq":
+                return self.send_json(self.server.publisher.prereq(self.server.store, sys.modules[__name__], payload.get('projectId'), payload))
+            if route == "/api/publish-preview":
+                return self.send_json(self.server.publisher.cover(self.server.store, sys.modules[__name__], payload))
+            if route == "/api/publish-recover":
+                return self.send_json(self.server.publisher.recover_binding(self.server.store, sys.modules[__name__], payload))
+            if route == "/api/publish-bind":
+                return self.send_json(self.server.publisher.bind_existing(self.server.store, sys.modules[__name__], payload))
             if route == "/api/publish":
                 try:
                     return self.send_json(self.server.publisher.start(
@@ -4391,7 +4407,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                         self.dispatch(method)
         except ProjectSettingsBusy as exc:
             self.send_json({"error": str(exc), "code": "busy"}, 409)
-        except ApiError as exc:
+        except (ApiError, workshop_publish.PublishError) as exc:
             try:
                 diagnostic = exc.status >= 500 or isinstance(exc.__cause__ or exc.__context__, (OSError, json.JSONDecodeError))
                 data = self.error_response(exc, exc.message, exc.code, method) if diagnostic else {"error": exc.message, "code": exc.code}

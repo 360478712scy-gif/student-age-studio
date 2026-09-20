@@ -12,6 +12,7 @@ $stage=Join-Path $root 'source'
 if(Test-Path "$stage\standalone"){Remove-Item "$stage\standalone" -Recurse -Force}
 New-Item -ItemType Directory -Force "$stage\standalone" | Out-Null
 Get-ChildItem "$source\standalone" -File | Where-Object {$_.Extension -in '.py','.js','.json','.html','.css','.png','.svg'} | Copy-Item -Destination "$stage\standalone" -Force
+if(Test-Path "$source\standalone\vendor-steamworks"){Copy-Item "$source\standalone\vendor-steamworks" "$stage\standalone\vendor-steamworks" -Recurse -Force}
 if(Test-Path "$stage\standalone\ui-assets"){Remove-Item "$stage\standalone\ui-assets" -Recurse -Force}
 Copy-Item "$source\standalone\ui-assets" "$stage\standalone\ui-assets" -Recurse -Force
 Copy-Item "$source\desktop\windows\main.py" "$stage\main.py" -Force

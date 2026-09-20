@@ -23,7 +23,7 @@ contents = app/'Contents';resources=contents/'Resources';engine=resources/'stand
 (contents/'MacOS').mkdir(parents=True);engine.mkdir(parents=True)
 subprocess.run(['swiftc','-target','arm64-apple-macos14.0',str(root/'desktop/StudioApp.swift'),'-o',str(contents/'MacOS/StudentAgeStudio'),'-framework','AppKit','-framework','WebKit'],check=True)
 for source in (root/'standalone').iterdir():
-    if source.is_file() and source.suffix in ('.py','.js','.json','.html','.css','.png','.svg'):
+    if source.name != 'steamworks-runtime.json' and source.is_file() and source.suffix in ('.py','.js','.json','.html','.css','.png','.svg'):
         shutil.copy2(source,engine/source.name)
 for notice in ('LICENSE','THIRD_PARTY_NOTICES.md'):shutil.copy2(root/notice,resources/notice)
 ignore=shutil.ignore_patterns('__pycache__','*.pyc','.DS_Store')

@@ -1,0 +1,44 @@
+#workshop-publish{width:min(920px,calc(100vw - 40px));max-width:none;max-height:calc(100dvh - 40px);padding:0;border-radius:22px;overflow:auto;color:var(--f-ink,#deeaed);background:var(--f-sheet,#16232b);border:1px solid var(--f-line,#476273)}
+#workshop-publish::backdrop{background:#090d1b99;backdrop-filter:blur(6px)}
+#workshop-publish [hidden]{display:none!important}
+#workshop-publish .publish-header{display:flex;justify-content:space-between;align-items:flex-start;padding:28px 30px 22px;border-bottom:1px solid var(--f-line,#35454c)}
+#workshop-publish .publish-eyebrow{font-size:10px;letter-spacing:.18em;opacity:.65;font-weight:700}
+#workshop-publish h2{font-size:25px;margin:7px 0 5px;line-height:1.4}
+#workshop-publish .publish-header p{margin:0;font-size:13px;opacity:.7}
+#workshop-publish .publish-close{padding:0;width:34px;height:34px;min-height:0;font-size:23px;line-height:1}
+#workshop-publish fieldset{padding:0;margin:0;border:0;min-width:0}
+#workshop-publish .publish-body{display:grid;grid-template-columns:250px minmax(0,1fr);gap:30px;padding:26px 30px}
+#workshop-publish label{font-size:13px;font-weight:600;display:block;margin-bottom:8px}
+#workshop-publish .publish-cover{height:200px;border-radius:14px;background:var(--f-field,#0e1a23);border:1px dashed var(--f-line,#4e6673);overflow:hidden;position:relative;cursor:pointer;display:grid;place-items:center;margin-bottom:12px}
+#workshop-publish .publish-cover>span{font-size:27px;text-align:center;opacity:.65}
+#workshop-publish .publish-cover small{display:block;font-size:13px;margin-top:7px}
+#workshop-publish .publish-cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+#workshop-publish .publish-cover-column>button{width:100%}
+#workshop-publish .publish-hint{font-size:12px;line-height:1.8;opacity:.65;margin:10px 0}
+#workshop-publish .publish-destination{margin-top:28px;padding-top:19px;border-top:1px solid var(--f-line,#35454c)}
+#workshop-publish [data-publish-steam]{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+#workshop-publish [data-publish-steam]::before{content:"";width:7px;height:7px;background:#bf954f;border-radius:50%}
+#workshop-publish [data-publish-steam][data-ok=true]::before{background:#64ae84}
+#workshop-publish .publish-destination p{font-size:12px;line-height:1.7;opacity:.65;overflow-wrap:anywhere}
+#workshop-publish input:not([type=checkbox]):not([type=file]),#workshop-publish textarea,#workshop-publish select{width:100%;min-width:0;padding:10px 12px;font-size:14px;line-height:1.55}
+#workshop-publish textarea{resize:vertical;min-height:62px;max-height:180px}
+#workshop-publish .publish-fields>input,#workshop-publish .publish-fields>textarea{margin-bottom:17px}
+#workshop-publish .publish-options{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:17px}
+#workshop-publish .publish-tags{display:flex;gap:18px;align-items:center;min-height:43px}
+#workshop-publish .publish-tags label{display:flex;gap:7px;align-items:center;margin:0;font-weight:400}
+#workshop-publish .publish-tags input{margin:0;width:16px;height:16px}
+#workshop-publish details{font-size:12px;opacity:.85}#workshop-publish summary{cursor:pointer}
+#workshop-publish .publish-binding-row{display:flex;align-items:center;gap:8px}#workshop-publish .publish-binding-row button{flex-shrink:0}
+#workshop-publish .publish-status,#workshop-publish .publish-progress{margin:0 30px 20px;padding:14px 16px;border:1px solid var(--f-line,#35454c);border-radius:12px;font-size:13px;line-height:1.6;background:var(--f-field,#14212c)}
+#workshop-publish .is-error{border-left:3px solid #c18d65}
+#workshop-publish .publish-progress>div{display:flex;justify-content:space-between;gap:16px;align-items:center}#workshop-publish h3{font-size:15px;margin:0}
+#workshop-publish progress{width:100%;height:7px;display:block;margin:13px 0;accent-color:var(--f-accent,#76a3bf)}
+#workshop-publish .publish-progress p{margin:8px 0;font-size:12px;opacity:.8}
+#workshop-publish .publish-footer{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:19px 30px;border-top:1px solid var(--f-line,#35454c)}
+#workshop-publish .publish-footer>div{display:flex;gap:8px;align-items:center}#workshop-publish .publish-footer>a{font-size:12px;opacity:.65}
+#workshop-publish a{color:inherit;text-decoration:underline;text-underline-offset:3px}
+#workshop-publish button{white-space:nowrap}
+@media(max-width:680px){#workshop-publish .publish-body{grid-template-columns:1fr;gap:20px;padding:20px}#workshop-publish .publish-cover-column{display:grid;grid-template-columns:160px 1fr;gap:8px 18px}#workshop-publish .publish-cover-column>label:first-child{grid-column:1/-1}#workshop-publish .publish-cover{grid-row:2/5;height:125px;margin:0}#workshop-publish .publish-cover-column>button{align-self:start}#workshop-publish .publish-destination{margin:0;padding:0;border:0}#workshop-publish .publish-hint{margin:0}#workshop-publish .publish-header,#workshop-publish .publish-footer{padding:18px 20px}#workshop-publish .publish-footer{flex-wrap:wrap}#workshop-publish .publish-status,#workshop-publish .publish-progress{margin-left:20px;margin-right:20px}}
+
+/* Keep the form legible over the homepage in every material. */
+html[data-glass-material="frosted"]:not([data-theme="classic"]) body #workshop-publish{background:linear-gradient(135deg,var(--f-highlight),transparent 52%),linear-gradient(var(--f-sheet),var(--f-sheet)),var(--f-base)!important}

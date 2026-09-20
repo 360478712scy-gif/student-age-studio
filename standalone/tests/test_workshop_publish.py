@@ -1,7 +1,7 @@
 """Workshop publishing backend: validation, staging, state machine.
 
 Everything runs against an injected fake Steam bridge (no client, no DLL);
-only publisher/bridge *logic* is exercised. Frontend files are untouched.
+only publisher/bridge logic is exercised; no real uploads.
 """
 import io
 import json
@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import server as b
 import workshop_publish as pub
 from workshop_publish import PublishError, Publisher
-from steam_bridge import SteamBridge
+from steam_bridge import SteamBridge, SteamBridgeError
 
 
 class FakeBridge:
@@ -70,8 +70,10 @@ class FakeBridge:
     def set_preview(self, handle, value):
         return self._set('preview', handle, value)
 
-    def submit_update(self, handle, note, timeout=120):
+    def submit_update(self, handle, note, timeout=120, progress=None):
         self.calls.append(('submit', handle, note))
+        while progress and self.progress_script:
+            progress(self.update_progress(handle))
         return self.submit_results.pop(0) if self.submit_results else 1
 
     def update_progress(self, handle):
@@ -113,6 +115,7 @@ class PublishHarness(unittest.TestCase):
         make_cover(self.project.path / 'preview.jpg')
         self.api = b
         self.publisher = Publisher()
+        self.addCleanup(self.publisher.close)
 
     def payload(self, **overrides):
         body = {'projectId': self.ident, 'revision': self.store.revision(self.project),
@@ -125,12 +128,16 @@ class PublishHarness(unittest.TestCase):
         deadline = time.time() + 60
         while True:
             state = self.publisher.status(job_id)['state']
-            if state in ('done', 'error', 'cancelled'):
+            if state in ('done', 'error', 'cancelled', 'unconfirmed'):
                 return self.publisher.status(job_id)
             self.assertLess(time.time(), deadline, 'job stalled in state ' + state)
             time.sleep(0.05)
 
     # ---- validation ----
+
+    def test_first_publish_defaults_private_regardless_of_game_manifest_enum(self):
+        fields = pub.normalize_payload(self.api, self.project, {'title': 'test', 'visible': 0}, {'changeNote': 'test'})
+        self.assertEqual(fields['visibility'], 2)
 
     def test_title_required_and_bounded(self):
         manifest = b.read_json(self.project.path / 'manifest.json', {})
@@ -224,7 +231,7 @@ class PublishHarness(unittest.TestCase):
         fake = FakeBridge(submit_results=[1], progress_script=[(3, 0, 100), (3, 60, 100), (5, 100, 100)])
         result = self.run_job(fake, self.payload())
         self.assertEqual(result['state'], 'done')
-        self.assertEqual(result['publishedFileId'], 7654321)
+        self.assertEqual(result['publishedFileId'], '7654321')
         self.assertTrue(result['itemUrl'].endswith('id=7654321'))
         self.assertEqual(result['percent'], 100)
         kinds = [call[0] for call in fake.calls]
@@ -240,19 +247,19 @@ class PublishHarness(unittest.TestCase):
         fake = FakeBridge(submit_results=[1])
         result = self.run_job(fake, self.payload())
         self.assertEqual(result['state'], 'done')
-        self.assertEqual(result['publishedFileId'], 555)
+        self.assertEqual(result['publishedFileId'], '555')
         kinds = [call[0] for call in fake.calls]
         self.assertNotIn('create', kinds)
         starts = [call[1] for call in fake.calls if call[0] == 'start_update']
         self.assertEqual(starts, [555])
 
-    def test_deleted_item_recreated_once(self):
+    def test_deleted_item_never_automatically_recreated(self):
         pub.Publisher._write_sidecar(self.api, self.project, 555, {'changeNote': 'old'})
-        fake = FakeBridge(submit_results=[9, 1], create_ids=[777])
+        fake = FakeBridge(submit_results=[9])
         result = self.run_job(fake, self.payload())
-        self.assertEqual(result['state'], 'done')
-        self.assertEqual(result['publishedFileId'], 777)
-        self.assertEqual(pub.read_sidecar(self.project)['publishedFileId'], 777)
+        self.assertEqual(result['error']['code'], 'steam_item_missing')
+        self.assertEqual(fake.created, 0)
+        self.assertEqual(pub.read_sidecar(self.project)['publishedFileId'], 555)
 
     def test_submit_failure_reports_steam_message(self):
         fake = FakeBridge(submit_results=[3])
@@ -260,14 +267,16 @@ class PublishHarness(unittest.TestCase):
         self.assertEqual(result['state'], 'error')
         self.assertEqual(result['error']['code'], 'steam_submit_failed')
         self.assertIn('网络', result['error']['message'])
-        self.assertEqual(pub.read_sidecar(self.project), {})
+        self.assertEqual(pub.read_sidecar(self.project)['publishedFileId'], 7654321)
 
-    def test_stall_and_timeout(self):
-        with patch.object(pub, 'STALL_TIMEOUT', 0):
-            fake = FakeBridge(submit_results=[1], progress_script=[(3, 10, 100)] * 3)
-            result = self.run_job(fake, self.payload())
-        self.assertEqual(result['state'], 'error')
-        self.assertEqual(result['error']['code'], 'publish_stalled')
+    def test_timeout_blocks_second_create(self):
+        class TimeoutBridge(FakeBridge):
+            def create_item(self, timeout=120):
+                raise SteamBridgeError('timeout', code='steam_create_timeout')
+        result = self.run_job(TimeoutBridge(), self.payload())
+        self.assertEqual(result['state'], 'unconfirmed')
+        with self.assertRaises(PublishError):
+            self.publisher.start(self.store, self.api, self.payload(), bridge=FakeBridge())
 
     def test_cancel_marks_job_with_note(self):
         gate = threading.Event()
@@ -284,11 +293,16 @@ class PublishHarness(unittest.TestCase):
         job_id = self.publisher.start(self.store, self.api, self.payload(), bridge=fake)['jobId']
         self.assertTrue(started.wait(timeout=30))
         cancelled = self.publisher.cancel(job_id)
-        self.assertEqual(cancelled['state'], 'cancelled')
+        self.assertEqual(cancelled['state'], 'cancelling')
+        with self.assertRaises(PublishError) as caught:
+            self.publisher.start(self.store, self.api, self.payload(), bridge=fake)
+        self.assertEqual(caught.exception.code, 'publish_busy')
+        report = self.publisher.prereq(self.store, self.api, self.ident)
+        self.assertEqual(report['currentJob']['jobId'], job_id)
         self.assertIn('note', cancelled)
         gate.set()
         deadline = time.time() + 30
-        while self.publisher.status(job_id)['state'] not in ('done', 'error', 'cancelled'):
+        while self.publisher.status(job_id)['state'] not in ('done', 'error', 'cancelled', 'unconfirmed'):
             self.assertLess(time.time(), deadline)
             time.sleep(0.05)
         # The blocked Steam call finished first; the worker must not resurrect it.
@@ -302,16 +316,128 @@ class PublishHarness(unittest.TestCase):
         # registry contract is presence + a known state.
         state = self.publisher.status(fresh['jobId'])['state']
         self.assertIn(state, ('queued', 'preflight', 'staging', 'creating', 'updating',
-                              'uploading', 'done', 'error', 'cancelled'))
+                              'uploading', 'done', 'error', 'cancelled', 'cancelling'))
         self.publisher.cancel(fresh['jobId'])
 
     def test_prereq_reports_checklist(self):
-        report = self.publisher.prereq(self.store, self.api, self.ident)
+        with patch.object(self.publisher, '_bridge_instance', side_effect=SteamBridgeError('offline')):
+            report = self.publisher.prereq(self.store, self.api, self.ident)
         self.assertFalse(report['ready'])
         self.assertFalse(report['steam']['available'])
         self.assertTrue(report['manifest']['ok'])
         self.assertTrue(report['preview']['ok'])
-        self.assertEqual(report['binding']['publishedFileId'], 0)
+        self.assertEqual(report['binding']['publishedFileId'], '0')
+
+    def test_asset_change_during_staging_rejected(self):
+        asset = self.project.path / 'asset.png'
+        asset.write_bytes(b'old')
+        original = pub.stage_mod
+        def changed(*args):
+            result = original(*args)
+            asset.write_bytes(b'new')
+            return result
+        fake = FakeBridge()
+        with patch.object(pub, 'stage_mod', changed):
+            result = self.run_job(fake, self.payload())
+        self.assertEqual(result['error']['code'], 'conflict')
+        self.assertEqual(fake.created, 0)
+
+    def test_success_binding_failure_recovers_without_reupload(self):
+        original = self.publisher._write_sidecar
+        count = 0
+        def fail_second(*args):
+            nonlocal count
+            count += 1
+            if count == 2:
+                raise OSError('disk full')
+            return original(*args)
+        fake = FakeBridge()
+        with patch.object(self.publisher, '_write_sidecar', fail_second):
+            result = self.run_job(fake, self.payload())
+        self.assertEqual(result['state'], 'done')
+        self.assertTrue(result['bindingPending'])
+        recovered = self.publisher.recover_binding(self.store, self.api, {'jobId': result['jobId']})
+        self.assertFalse(recovered['bindingPending'])
+        self.assertEqual(fake.created, 1)
+        self.assertEqual(sum(call[0] == 'submit' for call in fake.calls), 1)
+
+    def test_corrupt_binding_blocks_create_and_can_rebind(self):
+        target = self.project.path / pub.SIDECAR
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('{broken')
+        with self.assertRaises(PublishError):
+            self.publisher.start(self.store, self.api, self.payload(), bridge=FakeBridge())
+        self.publisher.bind_existing(self.store, self.api, self.payload(publishedFileId='18446744073709551614'))
+        self.assertEqual(pub.read_sidecar(self.project)['publishedFileId'], 18446744073709551614)
+        self.assertEqual(target.with_name('workshop-binding-backup.json').read_text(), '{broken')
+
+    def test_definitive_create_failure_allows_retry(self):
+        class FailedBridge(FakeBridge):
+            def create_item(self, timeout=120):
+                raise SteamBridgeError('denied', code='steam_create_failed')
+        self.assertEqual(self.run_job(FailedBridge(), self.payload())['state'], 'error')
+        self.assertEqual(self.run_job(FakeBridge(), self.payload())['state'], 'done')
+
+    def test_custom_cover_prereq(self):
+        import base64
+        raw = (self.project.path / 'preview.jpg').read_bytes()
+        cover = self.publisher.cover(self.store, self.api, self.payload(data=base64.b64encode(raw).decode()))
+        (self.project.path / 'preview.jpg').unlink()
+        self.assertTrue(self.publisher.prereq(self.store, self.api, self.ident, self.payload(**cover))['preview']['ok'])
+
+    def test_packaged_bridge_integrity_and_callback_layout(self):
+        import ctypes, hashlib
+        import steam_bridge as sb
+        raw = sb.packaged_bridge().read_bytes()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), sb.BRIDGE_SHA256)
+        self.assertEqual(ctypes.sizeof(sb.SubmitItemUpdateResult), 16)
+        self.assertEqual(sb.SubmitItemUpdateResult.publishedFileId.offset, 8)
+        self.assertEqual(sb.FILE_TYPE_COMMUNITY, 0)
+
+    def test_close_never_unloads_under_worker(self):
+        gate, started = threading.Event(), threading.Event()
+        class Waiting(FakeBridge):
+            def create_item(inner, timeout=120):
+                started.set()
+                gate.wait(10)
+                return 87654
+        fake = Waiting()
+        self.publisher._bridge = fake
+        self.publisher.start(self.store, self.api, self.payload())
+        self.assertTrue(started.wait(5))
+        self.publisher.close()
+        self.assertNotIn(('shutdown',), fake.calls)
+        gate.set()
+        self.publisher._worker.join(5)
+        self.assertIn(('shutdown',), fake.calls)
+        self.assertFalse(self.publisher.busy())
+
+    def test_staging_holds_save_lock(self):
+        original = pub.stage_mod
+        acquired = []
+        def locked(*args):
+            def other_writer():
+                locked = self.store.lock.acquire(blocking=False)
+                acquired.append(locked)
+                if locked:
+                    self.store.lock.release()
+            thread = threading.Thread(target=other_writer)
+            thread.start(); thread.join()
+            return original(*args)
+        with patch.object(pub, 'stage_mod', locked):
+            self.assertEqual(self.run_job(FakeBridge(), self.payload())['state'], 'done')
+        self.assertEqual(acquired, [False])
+
+    def test_submit_callback_finishes_without_waiting_for_invalid_progress(self):
+        bridge = SteamBridge(bridge_path='unused.dll')
+        bridge._initialized = True
+        def submit(*args):
+            bridge._update_result = (1, False)
+            bridge._update_event.set()
+        bridge._lib = SimpleNamespace(Workshop_SubmitItemUpdate=submit)
+        with patch.object(bridge, 'start_pump'), patch.object(bridge, 'stop_pump'), patch.object(bridge, 'update_progress') as progress:
+            self.assertEqual(bridge.submit_update(1, 'note', timeout=.1), 1)
+        progress.assert_not_called()
 
     # ---- bridge binding surface ----
 
