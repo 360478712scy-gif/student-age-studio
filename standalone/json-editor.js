@@ -6,7 +6,7 @@
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const injected=window.STUDIO_TOKEN,fragment=location.hash.slice(1);
 const token=injected&&injected!=='__STUDIO_TOKEN__'?injected:(fragment.startsWith('token=')?fragment.slice(6):fragment);
-async function api(path,body){const response=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-Studio-Token':token},body:body?JSON.stringify(body):undefined});const data=await response.json().catch(()=>({}));if(!response.ok){const error=new Error(data.error||'请求失败');error.code=data.code;throw error;}return data;}
+async function api(path,body){const response=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-Studio-Token':token},body:body?JSON.stringify(body):undefined});const data=await response.json().catch(()=>({}));if(data.code==='save_warnings'&&window.STUDIO_SAVE_REVIEW)return STUDIO_SAVE_REVIEW.retry(data,path,body,api);if(!response.ok){const error=new Error(data.error||'请求失败');error.code=data.code;throw error;}return data;}
 const LINE=20,LIVE_LIMIT=2*1024*1024,HINTS={space:'KZoneProfileCfg.json',messages:'PhoneMsgCfg.json',social:'KZoneContentCfg.json',characters:'PersonCfg.json',audio:'AudioCfg.json',goals:'IntentCfg.json',manifest:'manifest.json','idle-chats':'InteractCfg.json'};
 let corner=null,bug=null,dialog=null,state=null,lastFile='',timer=null;
 // Long lines always wrap visually; the text keeps its real line breaks.

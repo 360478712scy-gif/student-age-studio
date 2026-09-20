@@ -299,3 +299,7 @@ html[data-theme^="glass"] body ::-webkit-scrollbar-thumb{background:var(--glass-
 html[data-theme^="glass"] body ::-webkit-scrollbar-thumb:hover{background:var(--glass-scroll-thumb-hover,rgba(58,78,108,.48))!important}
 html[data-theme="glass-dusk"],html[data-theme="glass-moon"]{--glass-scroll-thumb:rgba(255,255,255,.22);--glass-scroll-thumb-hover:rgba(255,255,255,.4)}
 html[data-theme^="glass"] body *{scrollbar-width:thin;scrollbar-color:var(--glass-scroll-thumb,rgba(58,78,108,.28)) transparent}
+
+/* Reserve space for publishing immediately after the feature selector. */
+html body #studio-toolbar .studio-context-group{grid-template-columns:minmax(80px,1fr) minmax(80px,1fr) auto 32px;min-width:290px;flex:0 1 580px}
+@media(max-width:1180px){html body #studio-toolbar .studio-context-group{grid-template-columns:minmax(65px,1fr) minmax(65px,1fr) auto 28px;min-width:245px}}

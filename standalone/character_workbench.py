@@ -25,7 +25,7 @@ def save(store, payload, api):
     with store.lock:
         project=store.project(payload.get('projectId'),writable=True)
         revision=store.revision(project)
-        if payload.get('revision')!=revision: raise api.ApiError('人物配置已被其他窗口修改，请重新打开。',409,'conflict')
+        save_review.revision(payload, revision, api.ApiError, '人物配置已被其他窗口修改，请重新打开。')
         supplied=payload.get('tables')
         if not isinstance(supplied,dict) or set(supplied)!=set(TABLES): raise api.ApiError('人物资料不完整，请重新打开人物编辑。')
         old={n:store.preserve_editing_rows(project,n,store.editing_rows(project,n)) for n in TABLES}
@@ -45,11 +45,11 @@ def save(store, payload, api):
         removed=set(old['PersonCfg'])-set(rows['PersonCfg'])-set(base['PersonCfg'])
         for table in ('PersonGrowCfg','KZoneProfileCfg'):
             for key in set(rows[table])-set(old[table]):
-                if key not in people: raise api.ApiError('成长与空间设置必须关联当前人物。')
+                if key not in people: save_review.warn(api.ApiError, '成长与空间设置必须关联当前人物。')
         for key in set(rows['ModFaceCfg'])-set(old['ModFaceCfg']):
-            if str(int(key)//1000) not in people: raise api.ApiError('自定义表情必须关联当前人物。')
+            if str(int(key)//1000) not in people: save_review.warn(api.ApiError, '自定义表情必须关联当前人物。')
         for key in set(rows['KZoneAvatarCfg'])-set(old['KZoneAvatarCfg'])-set(base['KZoneAvatarCfg']):
-            if not 1<=int(key)<=2147483647: raise api.ApiError('头像编号超出可用范围。')
+            if not 1<=int(key)<=2147483647: save_review.warn(api.ApiError, '头像编号超出可用范围。')
         with save_review.checking(api.ApiError, '人物生日与性别'):
             for key,row in rows['PersonCfg'].items():
                 before={**base['PersonCfg'],**old['PersonCfg']}.get(key,{})
@@ -68,23 +68,24 @@ def save(store, payload, api):
         avatar_removed=set(old['KZoneAvatarCfg'])-set(rows['KZoneAvatarCfg'])-set(base['KZoneAvatarCfg'])
         if avatar_removed and unreadable: raise api.ApiError('有关联配置无法读取，暂时不能删除头像；原文件已保留。')
         refs+=store.deletion_references(project,'KZoneAvatarCfg',avatar_removed,rows['KZoneAvatarCfg'],proposed)
-        if refs: raise api.ApiError('无法删除仍被使用的内容：'+'；'.join(refs),409,'referenced')
+        if refs: save_review.warn(api.ApiError, '以下内容仍被引用，保存删除后相关功能可能失效：'+'；'.join(refs),409,'referenced')
         outfit_path='StudentAgeStudio/character-outfits.json'
         old_outfits=api.read_json(api.safe_path(project.path,outfit_path),{})
         outfits=copy.deepcopy(payload.get('outfits',old_outfits))
         if not isinstance(outfits,dict): raise api.ApiError('服装配置无效。')
         for key in list(outfits):
             if key in removed: del outfits[key];continue
-            if key not in rows['PersonCfg'] or not isinstance(outfits[key],dict): raise api.ApiError('服装必须关联模组内的人物。')
+            if not isinstance(outfits[key],dict): raise api.ApiError('服装配置必须是对象。')
+            if key not in rows['PersonCfg']: save_review.warn(api.ApiError, '服装必须关联模组内的人物。')
             used=set()
             for slot,outfit in outfits[key].items():
                 if slot not in map(str,range(10)) or not isinstance(outfit,dict): raise api.ApiError('每个角色最多支持默认服装和九套其他服装。')
                 if not isinstance(outfit.get('name'),str) or len(outfit['name'])>120: raise api.ApiError('请填写有效的服装名称。')
                 places=outfit.get('backgrounds',[])
                 if not isinstance(places,list) or any(type(n)!=int or n<=0 for n in places): raise api.ApiError('服装地点无效。')
-                if used.intersection(places): raise api.ApiError('一个地点只能指定一套服装。')
+                if used.intersection(places): save_review.warn(api.ApiError, '一个地点指定了多套服装，游戏可能只采用其中一套。')
                 used.update(places);outfit['backgrounds']=list(dict.fromkeys(places))
-                if int(slot)>0 and str(int(key)*1000+int(slot)*100) not in rows['ModFaceCfg']: raise api.ApiError('请为新增服装选择立绘。')
+                if int(slot)>0 and str(int(key)*1000+int(slot)*100) not in rows['ModFaceCfg']: save_review.warn(api.ApiError, '新增服装尚未选择立绘。')
         # nicknames[0]/[1] mean normal/lover names. Empty and duplicate slots
         # are meaningful; never split, compact or deduplicate the user's array.
         changes={'Cfgs/zh-cn/'+n+'.json':api.json_bytes(v) for n,v in rows.items() if v!=old[n]}

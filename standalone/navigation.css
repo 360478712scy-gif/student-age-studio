@@ -89,3 +89,7 @@ body.story-fullscreen #studio-corner-tools,
 body.story-fullscreen #studio-cache-progress,
 body.story-fullscreen #studio-cache-details{display:none!important}
 html body.json-drawer-open #studio-corner-tools:popover-open{right:calc(var(--json-drawer-width) + 12px)}
+
+/* Reserve space for publishing immediately after the feature selector. */
+html[data-theme] body #studio-toolbar .studio-context-group{grid-template-columns:minmax(80px,1fr) minmax(80px,1fr) auto 32px;min-width:290px;flex:0 1 580px}
+@media(max-width:1180px){html[data-theme] body #studio-toolbar .studio-context-group{grid-template-columns:minmax(65px,1fr) minmax(65px,1fr) auto 28px;min-width:245px}}

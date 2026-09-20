@@ -1912,13 +1912,9 @@ window.STUDIO_OPEN_EVENTS=()=>{if(!S.project)return false;window.STUDIO_PAUSE_PR
 window.STUDIO_CREATE_EVENT=createEvent;
 window.STUDIO_OVERRIDE_ORIGINAL_EVENT=async id=>{
  if(!editable())throw Error('请先打开可编辑的本地模组。');const projectId=S.project.id;
- const data=await api('/api/table?'+new URLSearchParams({projectId,name:'EvtCfg'}));
+ if(!await save())return false;
  if(S.project?.id!==projectId)throw Error('模组已切换，请重新选择。');
- const original=data.referenceRows?.[id];if(!original)throw Error('原版事件未找到。');
- // The copy is marked so it is kept even before the user changes anything (an identical row would otherwise be dropped as "no change").
- if(!S.doc.events[id])mutate('覆盖原版事件',()=>{S.doc.events[id]={...clone(original),studioOverride:true};});
- // The override keeps the original dialogue entry; saving and reopening pulls those lines in so the event is editable at once.
- if(!await save())throw Error('覆盖已加入，但保存未完成；保存后重新打开即可看到原版对话。');
+ await api('/api/restore-original-event',{projectId,revision:S.revision,eventId:id});
  await loadProject(projectId,true);
  window.STUDIO_EVENTS?.refresh();return true;
 };

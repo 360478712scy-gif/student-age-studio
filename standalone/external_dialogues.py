@@ -1,4 +1,5 @@
 """Event-less TalkCfg editing and editor-only folders, without synthetic events."""
+import save_review
 import copy
 META='externalDialogueFolders'
 
@@ -11,8 +12,9 @@ def folders(value,talks,api):
         if not isinstance(name,str) or not name.strip() or len(name)>120 or not isinstance(ids,list):raise api.ApiError('请填写对话夹名称。')
         kept=[]
         for ident in ids:
-            if type(ident)!=int or str(ident) not in talks:raise api.ApiError('对话夹包含不存在或事件所属的对话。')
-            if ident in used:raise api.ApiError('一条对话只能归属一个对话夹。')
+            if type(ident)!=int:raise api.ApiError('对话编号必须是整数。')
+            if str(ident) not in talks:save_review.warn(api.ApiError, '对话夹包含不存在或事件所属的对话。')
+            if ident in used:save_review.warn(api.ApiError, '一条对话只能归属一个对话夹。')
             used.add(ident);kept.append(ident)
         result[key]={**copy.deepcopy(row),'name':name.strip(),'talkIds':kept}
     return result
@@ -41,9 +43,9 @@ def load(store,project_id,api,metadata=False):
 def save(store,payload,api):
     with store.lock,store.catalog_scope():
         project=store.project(payload.get('projectId'),writable=True);current=load(store,project.id,api)
-        if current['revision']!=payload.get('revision'):raise api.ApiError('对话已经被其他窗口修改，请重新打开。',409,'conflict')
+        save_review.revision(payload, current['revision'], api.ApiError, '对话已经被其他窗口修改，请重新打开。')
         incoming=api.validate_map(payload.get('talks',{}),'TalkCfg.json')
-        if any(current['doc'].get('talkOwners',{}).get(k) and k not in current['talks'] for k in incoming):raise api.ApiError('事件所属对话请在剧情编辑中修改。',409)
+        if any(current['doc'].get('talkOwners',{}).get(k) and k not in current['talks'] for k in incoming):save_review.warn(api.ApiError, '事件所属对话请在剧情编辑中修改。',409)
         groups=folders(payload.get('folders',{}),incoming,api)
         removed=set(current['talks'])-set(incoming)
         talks={k:v for k,v in current['doc']['talks'].items() if k not in removed};talks.update(incoming)

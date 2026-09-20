@@ -27,7 +27,7 @@ def load(store, project_id, token, api):
 def save(store,payload,api):
     with store.lock,store.catalog_scope():
         project=store.project(payload.get('projectId'),writable=True);revision=store.revision(project)
-        if payload.get('revision')!=revision:raise api.ApiError('短信配置已变化，请重新读取。',409,'conflict')
+        save_review.revision(payload, revision, api.ApiError, '短信配置已变化，请重新读取。')
         path='Cfgs/zh-cn/'+TABLE+'.json';old=store.preserve_editing_rows(project,TABLE,store.editing_rows(project,TABLE))
         rows=store.preserve_editing_rows(project,TABLE,api.validate_map(payload.get('rows'),TABLE));base=store.catalog_rows(TABLE)
         all_rows={**base,**rows};previous={**base,**old};store.validate_fields(TABLE,rows,previous)

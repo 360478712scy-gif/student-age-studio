@@ -1,4 +1,5 @@
 """Native objectives and user-provided head images, saved in one transaction."""
+import save_review
 import base64
 import copy
 from pathlib import Path
@@ -20,7 +21,7 @@ def save(store, payload, api):
     with store.lock, store.catalog_scope():
         project = store.project(payload.get('projectId'), writable=True)
         revision = store.revision(project)
-        if payload.get('revision') != revision:raise api.ApiError('目标配置已变化，请重新载入。',409,'conflict')
+        save_review.revision(payload, revision, api.ApiError, '目标配置已变化，请重新载入。')
         goal_path = 'Cfgs/zh-cn/IntentCfg.json'
         old = store.preserve_editing_rows(project,'IntentCfg',store.editing_rows(project,'IntentCfg'))
         base = store.catalog_rows('IntentCfg')
@@ -61,18 +62,18 @@ def save(store, payload, api):
             previous = {**base, **old}.get(key,{})
             if row == previous:continue
             if not isinstance(row.get('name',''),str):raise api.ApiError('目标标题必须是文字。')
-            if row.get('finishType',0) not in (0,1,2):raise api.ApiError('请从三种移除规则中选择一项。')
-            if str(row.get('npc',0)) not in all_people:raise api.ApiError('请选择有效的目标图像。')
+            if row.get('finishType',0) not in (0,1,2):save_review.warn(api.ApiError, '请从三种移除规则中选择一项。')
+            if str(row.get('npc',0)) not in all_people:save_review.warn(api.ApiError, '请选择有效的目标图像。')
             for field in ('round','targetRound'):
-                if type(row.get(field,0)) is not int or row.get(field,0)<0:raise api.ApiError('目标回合数应为非负整数。')
+                if type(row.get(field,0)) is not int or row.get(field,0)<0:save_review.warn(api.ApiError, '目标回合数应为非负整数。')
             before = row.get('before',0)
-            if before and (str(before) == key or str(before) not in {**base,**rows}):raise api.ApiError('请选择存在且不同于自己的前置目标。')
-            if row.get('weight',0)<0:raise api.ApiError('同组随机权重不能小于零。')
+            if before and (str(before) == key or str(before) not in {**base,**rows}):save_review.warn(api.ApiError, '请选择存在且不同于自己的前置目标。')
+            if row.get('weight',0)<0:save_review.warn(api.ApiError, '同组随机权重不能小于零。')
         proposed = {filename:api.read_json(path,{}) for filename,path in store.cfg_table_files(project).items()}
         proposed['IntentCfg.json'] = rows;proposed['PersonCfg.json'] = people
         removed = set(old) - set(rows) - set(base)
         refs = store.deletion_references(project,'IntentCfg',removed,{**base,**rows},proposed)
-        if refs:raise api.ApiError('目标仍被以下内容引用：'+'；'.join(refs),409,'referenced')
+        if refs:save_review.warn(api.ApiError, '目标仍被以下内容引用：'+'；'.join(refs),409,'referenced')
         # Only reclaim helpers we created, whose image and non-social identity
         # still match metadata, and which no proposed native record references.
         for key, image in list(images.items()):

@@ -286,8 +286,7 @@ class SocialEditor:
             project = self.store.project(payload.get('projectId'))
             if project.readonly: raise self.b.ApiError('订阅模组只能预览，请先复制为本地模组再编辑。', 403)
             revision = self.store.revision(project)
-            if payload.get('revision') != revision:
-                raise self.b.ApiError('模组已被其他窗口修改，已保留当前草稿；请重新载入后保存。', 409, 'conflict')
+            save_review.revision(payload, revision, self.b.ApiError, '模组已被其他窗口修改，已保留当前草稿；请重新载入后保存。')
             previous_posts, previous_comments = [self.store.preserve_editing_rows(project,n,self.local(project,n)) for n in (POST,COMMENT)]
             posts = self.merged_incoming(payload.get('posts'), previous_posts, POST)
             comments = self.merged_incoming(payload.get('comments'), previous_comments, COMMENT)
@@ -300,7 +299,7 @@ class SocialEditor:
                 self.validate(project, posts, comments, previous_posts, previous_comments, editor)
             removed = set(previous_posts) - set(posts) - set(self.store.catalog_rows(POST))
             references = self.deletion_references(project, removed, posts, comments)
-            if references: raise self.b.ApiError('这些内容仍引用此动态，请先修改后再删除：' + '；'.join(references), 409, 'referenced')
+            if references: save_review.warn(self.b.ApiError, '以下内容仍引用此动态，保存删除后相关功能可能失效：' + '；'.join(references), 409, 'referenced')
             changes = {'Cfgs/zh-cn/' + POST + '.json': self.b.json_bytes(posts),
                        'Cfgs/zh-cn/' + COMMENT + '.json': self.b.json_bytes(comments), STATE: self.b.json_bytes(editor)}
             backup = self.store.commit(project, changes, revision)

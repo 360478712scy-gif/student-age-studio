@@ -1,4 +1,5 @@
 """Native InteractCfg dialogue workbench; no synthetic events."""
+import save_review
 import copy
 from event_ownership import interaction_talks
 
@@ -36,7 +37,7 @@ def save(store,payload,api):
     with store.lock,store.catalog_scope():
         project=store.project(payload.get('projectId'),writable=True)
         current=store.load(project.id)
-        if current['revision']!=payload.get('revision'):raise api.ApiError('模组已变化，请重新读取闲聊。',409,'conflict')
+        save_review.revision(payload, current['revision'], api.ApiError, '模组已变化，请重新读取闲聊。')
         incoming=api.validate_map(payload.get('rows',{}),'InteractCfg.json')
         talks=api.validate_map(payload.get('talks',{}),'TalkCfg.json')
         # Only submitted changed records are merged. Unedited records/files stay untouched.

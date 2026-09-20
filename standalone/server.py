@@ -941,6 +941,32 @@ class StudioStore:
                 raise ApiError("读取时模组发生了变化，请重新打开。", 409, "conflict")
             return result
 
+    def restore_original_event(self, payload):
+        """Explicit re-import revives only this original graph's deletion overrides."""
+        with self.lock:
+            project = self.project(payload.get('projectId'), writable=True)
+            if payload.get('revision') != self.revision(project):
+                raise ApiError('模组已变化，请保存后重新导入。', 409, 'conflict')
+            ident = str(payload.get('eventId'))
+            event = self.catalog_rows('EvtCfg').get(ident)
+            if event is None:
+                raise ApiError('原版事件未找到。', 404)
+            if not self.original_dialogue.available():
+                raise ApiError('原版对话数据库尚未就绪，请先读取游戏资源。', 409)
+            talks, options = self.original_dialogue.reachable(event.get('talkId', []), event.get('options', []), set(), set())
+            markers = flat_deletions(read_json(project.path / 'StudentAgeStudio/deleted-talks.json', {}))
+            local_talks = read_json(project.path / 'Cfgs/zh-cn/TalkCfg.json', {})
+            local_options = read_json(project.path / 'Cfgs/zh-cn/OptionCfg.json', {})
+            events = read_json(project.path / 'Cfgs/zh-cn/EvtCfg.json', {})
+            events.setdefault(ident, {**copy.deepcopy(event), 'studioOverride': True})
+            if not events[ident].get('talkId'):
+                events[ident]['talkId'] = copy.deepcopy(event.get('talkId', []))
+            # Existing edits win. Only deletion-generated rows are replaced by originals.
+            restored = {key: row for key, row in talks.items() if key in markers or key not in local_talks or local_talks[key] == inert_talk(key, [])}
+            return self.save({'projectId': project.id, 'revision': payload['revision'], 'events': events,
+                              'talkPatch': {'version': 1, 'upsert': restored, 'deleted': []},
+                              'options': {**options, **local_options}})
+
     def attach_original_dialogue(self, project, result, original_events=()):
         """Pull the original dialogue lines that this document's events reach.
 
@@ -1602,8 +1628,12 @@ class StudioStore:
             save_warnings = []
             project = self.project(payload.get("projectId"), writable=True)
             expected = payload.get("revision")
-            if not isinstance(expected, str) or not hmac.compare_digest(expected, self.revision(project)):
-                raise ApiError("模组已变化或缺少版本信息，请重新载入后再保存。", 409, "conflict")
+            save_review.revision(payload, self.revision(project), ApiError, "模组已被其他窗口或游戏修改。")
+            if expected != payload['revision'] and 'talkGeneration' in payload:
+                generation = self.talk_segments.generations.get(payload['talkGeneration'])
+                if generation and generation.identity['path'] == str(project.path.resolve()) and generation.identity['originalMode'] == project.original_mode:
+                    self.talk_segments.saved(project, payload['talkGeneration'], payload['revision'], story_saved=True)
+            expected = payload['revision']
             if 'talkGeneration' in payload:
                 self.talk_segments.get(project.id, payload['talkGeneration'])
                 if 'talks' in payload:
@@ -1758,17 +1788,19 @@ class StudioStore:
             if not isinstance(deleted, list): deleted = []
             if any(not valid_id(ident) for ident in deleted):
                 save_warnings.append("待删除对话编号中有无效项，已忽略。"); deleted = [ident for ident in deleted if valid_id(ident)]
-            # The full talks map authorizes deletion of rows omitted from it as well.
-            # ...but only for explicitly declared deletions: silently dropping rows
-            # the editor never sent (truncated payload, partial page) must abort.
+            # Omitted rows are not implicit deletions. After acknowledgement, merge them
+            # from disk; only explicit deletions and existing tombstones stay removed.
             removed = set(str(ident) for ident in deleted) | cascade_deleted
             if "talks" in payload:
-                undeclared = set(original_talks) - set(payload["talks"]) - removed
+                prior_markers = flat_deletions(read_json(project.path / "StudentAgeStudio/deleted-talks.json", {}))
+                undeclared = set(original_talks) - set(payload["talks"]) - removed - set(prior_markers)
                 if undeclared:
                     sample = ", ".join(sorted(undeclared)[:5])
-                    raise ApiError("对话表缺失 " + str(len(undeclared)) + " 行（例如 " + sample +
-                                   "），既不在删除列表也不在本次提交中；为避免误删已中止保存，请重新载入后重试。", 409, "conflict")
-                removed.update(set(original_talks) - set(payload["talks"]))
+                    save_review.warn(ApiError, "对话表未提交 " + str(len(undeclared)) + " 行（例如 " + sample +
+                                     "）。继续保存会保留磁盘上的这些对话，只写入已提交的修改。", status=409, code='conflict')
+                    payload['talks'] = {**{key: original_talks[key] for key in undeclared}, **payload['talks']}
+                    all_maps.setdefault('TalkCfg.json', {}).update({key: original_talks[key] for key in undeclared})
+                removed.update(set(original_talks) - set(payload["talks"]) - set(prior_markers))
                 if payload.get("_fullCatalogTable") == "TalkCfg" or isinstance(catalog.get("talks"), dict):
                     removed.update(set(catalog_talks) - set(payload["talks"]))
             if unreadable and (removed or ('options' in payload and previous_options - set(payload['options']))):
@@ -2590,8 +2622,7 @@ class StudioStore:
             project = self.project(payload.get("projectId"), writable=True)
             name = self.table_name(payload.get("name"))
             revision = self.revision(project)
-            if payload.get("revision") != revision:
-                raise ApiError("配置已被其他窗口或游戏修改，请重新载入。", 409, "conflict")
+            save_review.revision(payload, revision, ApiError, '配置已被其他窗口或游戏修改，请重新载入。')
             old = read_json(safe_path(project.path, "Cfgs/zh-cn/" + name + ".json"), {})
             inherited = self.catalog_rows(name)
             incoming = validate_map(payload.get("rows"), name, allow_zero="0" in old or "0" in inherited)
@@ -2606,7 +2637,7 @@ class StudioStore:
                 owners = doc.get("talkOwners", {})
                 for ident in set(old) | set(incoming):
                     if owners.get(ident) and incoming.get(ident) != old.get(ident):
-                        raise ApiError("事件所属对话请在剧情编辑中修改。", 409)
+                        save_review.warn(ApiError, "事件所属对话请在剧情编辑中修改。", 409)
                 removed = set(old) - set(incoming)
                 try: references = self.deletion_references(project, name, removed, {**inherited, **incoming}) if removed else []
                 except ApiError: references = []
@@ -2621,11 +2652,11 @@ class StudioStore:
                 if name in {"PersonGrowCfg", "KZoneProfileCfg"} and created_ids:
                     people = {**self.catalog_rows("PersonCfg"), **read_json(safe_path(project.path, "Cfgs/zh-cn/PersonCfg.json"), {})}
                     if any(key not in people for key in created_ids):
-                        raise ApiError("成长设置和企鹅个人档需要关联已有的人物，请先选择人物。")
+                        save_review.warn(ApiError, "成长设置和企鹅个人档需要关联已有的人物，请先选择人物。")
                 if name == "KZoneCommentCfg" and created_ids:
                     posts = {**self.catalog_rows("KZoneContentCfg"), **read_json(safe_path(project.path, "Cfgs/zh-cn/KZoneContentCfg.json"), {})}
                     if any(str(int(key) // 100) not in posts or int(key) % 100 == 0 for key in created_ids):
-                        raise ApiError("企鹅评论编号需要关联所属动态，请先选择动态再添加评论。")
+                        save_review.warn(ApiError, "企鹅评论编号需要关联所属动态，请先选择动态再添加评论。")
                 if name in {"TalkCfg", "OptionCfg"}:
                     raise ApiError("请通过剧情编辑管理对话和选项，以保留剧情连接。")
                 # Omitted vanilla records were never part of the editing list. Removing a local
@@ -2635,7 +2666,7 @@ class StudioStore:
                 proposed = {**inherited, **incoming}
                 references = [] if name == "KZoneCommentCfg" else self.deletion_references(project, name, removed, proposed)
                 if references:
-                    raise ApiError("无法删除仍被引用的内容，请先调整以下位置：" + "；".join(references), 409, "referenced")
+                    save_review.warn(ApiError, "以下位置仍引用被删除的内容，保存后这些关联可能失效：" + "；".join(references), 409, "referenced")
                 revised = {key: {**old.get(key, {}), **copy.deepcopy(row)} for key, row in incoming.items()}
                 changes = {"Cfgs/zh-cn/" + name + ".json": json_bytes(revised)}
                 changes.update(linked_changes)
@@ -2680,8 +2711,7 @@ class StudioStore:
         with self.lock, self.catalog_scope():
             project = self.project(payload.get("projectId"), writable=True)
             revision = self.revision(project)
-            if payload.get("revision") != revision:
-                raise ApiError("模组已变化，请重新载入仓库。", 409, "conflict")
+            save_review.revision(payload, revision, ApiError, '模组已变化，请重新载入仓库。')
             incoming = payload.get("tables")
             if not isinstance(incoming, dict) or set(incoming) != {"ItemCfg", "BookCfg", "ShopCfg"}:
                 raise ApiError("仓库配置不完整。")
@@ -2731,7 +2761,7 @@ class StudioStore:
                 removed = set(original.get(filename, {})) - set(maps[filename]) - set(inherited)
                 refs = self.deletion_references(project, name, removed, {**inherited, **maps[filename]}, maps)
                 if refs:
-                    raise ApiError("无法删除仍被引用的物品：" + "；".join(refs), 409, "referenced")
+                    save_review.warn(ApiError, "以下内容仍引用被删除的物品，保存后相关功能可能失效：" + "；".join(refs), 409, "referenced")
                 if maps[filename] != original.get(filename, {}):
                     changes["Cfgs/zh-cn/" + filename] = json_bytes(maps[filename])
             for filename, rows in maps.items():
@@ -2740,7 +2770,7 @@ class StudioStore:
             products = {**self.catalog_rows("ItemCfg"), **maps["ItemCfg.json"], **self.catalog_rows("BookCfg"), **maps["BookCfg.json"]}
             for key, row in maps["ShopCfg.json"].items():
                 if key not in products and row != original.get("ShopCfg.json", {}).get(key):
-                    raise ApiError("商品需要选择已有物品或书籍。")
+                    save_review.warn(ApiError, "商品需要选择已有物品或书籍。")
             backup = self.commit(project, changes, revision) if changes else None
             return {"ok": True, "revision": self.revision(project), "backup": backup,
                     "tables": {n: self.editing_rows(project,n) for n in incoming}}
@@ -2754,8 +2784,7 @@ class StudioStore:
         with self.lock:
             project = self.project(payload.get("projectId"), writable=True)
             revision = self.revision(project)
-            if payload.get("revision") != revision:
-                raise ApiError("模组说明已发生变化，请重新载入。", 409, "conflict")
+            save_review.revision(payload, revision, ApiError, '模组说明已发生变化，请重新载入。')
             original = read_json(safe_path(project.path, "manifest.json"), {})
             incoming = payload.get("manifest")
             if not isinstance(incoming, dict):
@@ -2770,13 +2799,15 @@ class StudioStore:
             revised = merge(original, incoming)
             old_meta = original.get("metadata") or {}
             metadata = revised.get("metadata") or {}
-            if not isinstance(metadata, dict) or metadata.get("packageId", project.package) != old_meta.get("packageId", project.package):
-                raise ApiError("不能直接修改包标识，否则已有素材路径会失效；请使用制作副本。")
+            if not isinstance(metadata, dict):
+                raise ApiError("发布信息必须为对象。")
+            if metadata.get("packageId", project.package) != old_meta.get("packageId", project.package):
+                save_review.warn(ApiError, "修改包标识可能让已有素材路径失效。")
             if metadata.get("id", 0) != old_meta.get("id", 0):
-                raise ApiError("工坊发布编号由游戏管理，不能在本地说明中修改。")
+                save_review.warn(ApiError, "修改工坊发布编号可能让后续更新关联到其他作品。")
             revised["title"] = display_name(revised.get("title"), project.name)
             if revised.get("description") is not None and (not isinstance(revised["description"], str) or len(revised["description"]) > 20000):
-                raise ApiError("模组说明最多 20000 个字符。")
+                save_review.warn(ApiError, "模组说明最多 20000 个字符。")
             for field in ("tags", "dependencies"):
                 if revised.get(field) is not None and not isinstance(revised[field], list):
                     raise ApiError(field + " 必须是列表。")
@@ -2800,12 +2831,13 @@ class StudioStore:
         talks = set(all_maps.get("TalkCfg.json", {})) | set(self.catalog_rows("TalkCfg"))
         talks.update(str(value) for value in self.catalog().get("baseTalkIds", []) if valid_id(value))
         def sound(cue, allow_continue=False):
+            if not isinstance(cue, dict): raise ApiError('声音设置必须是对象。')
             continuing = allow_continue and isinstance(cue, dict) and type(cue.get("audioId")) is int and cue["audioId"] == 0
             if not continuing and (not isinstance(cue, dict) or not valid_id(cue.get("audioId")) or str(cue["audioId"]) not in audios):
-                raise ApiError("声音设置引用了不存在的音频，请重新选择。")
+                save_review.warn(ApiError, "声音设置引用了不存在的音频，请重新选择。")
             volume = cue.get("volume", 1)
             if isinstance(volume, bool) or not isinstance(volume, (float, int)) or not math.isfinite(volume) or volume < 0 or volume > 1:
-                raise ApiError("音量需要在 0 到 1 之间。")
+                save_review.warn(ApiError, "音量需要在 0 到 1 之间。")
         for ident, cues in result["sfx"].items():
             if not valid_id(ident) or str(ident) not in talks or not isinstance(cues, list) or len(cues) > 16:
                 raise ApiError("句子音效引用无效或同一句音效过多。")
@@ -2880,6 +2912,7 @@ class StudioStore:
     def json_save(self, payload):
         with self.lock:
             project = self.project(payload.get("projectId"), writable=True)
+            save_review.revision(payload, self.revision(project), ApiError, "文件已被其他窗口修改；JSON 原文保存会完整替换这个文件。")
             relative = str(payload.get("path") or "").replace("\\", "/")
             path = safe_path(project.path, relative)
             create = bool(payload.get("create")) and not path.exists() and bool(re.fullmatch(r"Cfgs/zh-cn/[A-Za-z][A-Za-z0-9_]*Cfg\.json", relative))
@@ -4250,6 +4283,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                         return self.send_json(result)
                 except SegmentError as error:
                     raise ApiError(str(error), 422, 'segment_unavailable') from error
+            if route == "/api/restore-original-event":
+                return self.send_json(save_review.perform(self.server.store.restore_original_event, payload, ApiError))
             if route == "/api/save":
                 return self.send_json(save_review.perform(self.server.store.save, payload, ApiError))
             if route == "/api/story/renumber":
@@ -4300,7 +4335,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.store.record_ids.undo(payload))
             if route == "/api/idle-chats-save":
                 import idle_chats
-                return self.send_json(idle_chats.save(self.server.store, payload, sys.modules[__name__]))
+                return self.send_json(save_review.perform(lambda value: idle_chats.save(self.server.store, value, sys.modules[__name__]), payload, ApiError))
             if route == "/api/messages-save":
                 import messages
                 return self.send_json(save_review.perform(lambda value: messages.save(self.server.store, value, sys.modules[__name__]), payload, ApiError))
@@ -4324,7 +4359,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             if route == "/api/table-save":
                 return self.send_json(save_review.perform(self.server.store.table_save, payload, ApiError))
             if route == "/api/manifest":
-                return self.send_json(self.server.store.manifest_save(payload))
+                return self.send_json(save_review.perform(self.server.store.manifest_save, payload, ApiError))
             if route in ('/api/config-check','/api/config-repair'):
                 import config_doctor
                 operation = config_doctor.check if route == '/api/config-check' else config_doctor.repair
@@ -4340,7 +4375,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                     result["value"] = json.loads(compatible_json(result.get("text", text)), strict=False)
                 return self.send_json(result)
             if route == "/api/json-save":
-                return self.send_json(self.server.store.json_save(payload))
+                return self.send_json(save_review.perform(self.server.store.json_save, payload, ApiError))
             if route == "/api/audio-silence":
                 return self.send_json(self.server.store.silent_bgm(payload), 201)
             if route == "/api/audio-import":

@@ -57,7 +57,7 @@ class SpaceEditor:
         with self.store.lock:
             p = self.store.project(payload.get('projectId'), writable=True)
             revision = self.store.revision(p)
-            if payload.get('revision') != revision: raise self.b.ApiError('模组已被其他窗口修改，请保留草稿后重新载入。',409,'conflict')
+            save_review.revision(payload, revision, self.b.ApiError, '模组已被其他窗口修改，请保留草稿后重新载入。')
             old_layouts = self.b.read_json(p.path/'StudentAgeStudio/space-layouts.json',{})
             if not isinstance(old_layouts,dict): raise self.b.ApiError('空间位置配置损坏，请保留文件后修复。')
             layouts = copy.deepcopy(payload.get('layouts',old_layouts))
