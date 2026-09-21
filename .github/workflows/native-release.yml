@@ -135,7 +135,7 @@ jobs:
 
           ## 本版更新
 
-          {Path('docs/releases/v131112.md').read_text(encoding='utf-8')}
+          {Path('docs/releases/v1313.md').read_text(encoding='utf-8')}
 
           ## 应用内更新
 
