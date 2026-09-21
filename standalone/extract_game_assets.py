@@ -139,10 +139,12 @@ def portrait_dimensions(game, catalog, paths):
 
 
 def _known_portrait_dimensions(path, relative):
-    """Reuse measured sprite units only for the exact shipped game resource bytes."""
+    """Reuse measured runtime dimensions only for the exact game resource bytes."""
     try:
         import hashlib
         seed = json.loads(Path(__file__).with_name('native-portrait-dimensions.json').read_text(encoding='utf-8'))
+        if seed.get('version') != 2:
+            return None
         entry = seed.get('bundles', {}).get(relative)
         if not entry or path.stat().st_size != entry['size']:
             return None
@@ -153,6 +155,27 @@ def _known_portrait_dimensions(path, relative):
     except (OSError, ValueError, KeyError, TypeError):
         pass
     return None
+
+
+def _portrait_resource_dimensions(env):
+    # UISprite.SetTextureUrl -> ResInfo.GetSpriteAsync loads Texture2D and
+    # Sprite.Create uses its default 100 PPU. The imported Sprite's PPU is NOT
+    # used on this path. Atlas-only resources retain their Sprite dimensions.
+    textures, sprites = {}, {}
+    for name, pointer in env.container.items():
+        resource = resource_name(name, 'textures')
+        if not resource or not resource.startswith(('role_full/', 'role_half/', 'role_head/', 'role_comic/', 'role_comic_head/', 'role_photo/')):
+            continue
+        obj = pointer.deref()
+        if obj.type.name == 'Texture2D':
+            data = obj.parse_as_object()
+            textures[resource] = [data.m_Width, data.m_Height]
+        elif obj.type.name == 'Sprite':
+            data = obj.parse_as_object()
+            ppu = float(data.m_PixelsToUnits)
+            if ppu > 0:
+                sprites[resource] = [data.m_Rect.width * 100 / ppu, data.m_Rect.height * 100 / ppu]
+    return {**sprites, **textures}
 
 
 def _portrait_dimensions(game, catalog, paths):
@@ -169,7 +192,7 @@ def _portrait_dimensions(game, catalog, paths):
     if not wanted:
         return {}
     home = game_cache(game)
-    manifest = home / 'portrait-dimensions-v4.json'
+    manifest = home / 'portrait-dimensions-v5.json'
     try:
         cache = json.loads(manifest.read_text(encoding='utf-8'))
     except (OSError, ValueError):
@@ -187,10 +210,12 @@ def _portrait_dimensions(game, catalog, paths):
     sizes = {}
     changed = False
     for relative in catalog.get('bundles', {}):
-        if 'textures_assets_' not in relative.lower() or 'role' not in Path(relative).name.lower():
+        if 'textures_assets_' not in relative.lower():
             continue
         outputs = catalog.get('bundleOutputs', {}).get(relative)
         if isinstance(outputs, list) and not wanted_exports.intersection(outputs):
+            continue
+        if not isinstance(outputs, list) and 'role' not in Path(relative).name.lower() and not Path(relative).name.lower().startswith('dlc_textures_assets_'):
             continue
         path = game / relative
         if not path.is_file():
@@ -200,23 +225,8 @@ def _portrait_dimensions(game, catalog, paths):
         if entry.get('stamp') != stamp:
             dimensions = _known_portrait_dimensions(path, relative)
             if dimensions is None:
-                dimensions = {}
                 env = UnityPy.load(str(path))
-                for name, pointer in env.container.items():
-                    resource = resource_name(name, 'textures')
-                    if not resource or not resource.startswith(('role_full/', 'role_half/', 'role_head/', 'role_comic/', 'role_comic_head/', 'role_photo/')):
-                        continue
-                    obj = pointer.deref()
-                    if obj.type.name == 'Sprite':
-                        data = obj.parse_as_object()
-                        # Unity Image.SetNativeSize uses sprite pixels / pixelsPerUnit
-                        # relative to the canvas's default 100 reference pixels.
-                        ppu = float(data.m_PixelsToUnits)
-                        if ppu > 0:
-                            dimensions[resource] = [data.m_Rect.width * 100 / ppu, data.m_Rect.height * 100 / ppu]
-                    elif obj.type.name == 'Texture2D':
-                        data = obj.parse_as_object()
-                        dimensions.setdefault(resource, [data.m_Width, data.m_Height])
+                dimensions = _portrait_resource_dimensions(env)
             entry = {'stamp': stamp, 'sizes': dimensions}
             cache[relative] = entry
             changed = True

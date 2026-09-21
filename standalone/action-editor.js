@@ -15,7 +15,7 @@ function open(options){
  document.body.append(dialog);dialog.showModal();
  const token=encodeURIComponent(new URL(options.assetUrl(''),location.href).searchParams.get('token')||'');
  const talkUi=options.talkUi||{manifest:'/api/talk-ui?token='+token,resource:name=>'/api/talk-ui?resource='+encodeURIComponent(name)+'&token='+token};
- const q=s=>dialog.querySelector(s),stage=q('#action-preview'),renderer=new StudentAgeScene.Renderer(stage,{assetUrl:options.assetUrl,talkUi}),audio=options.createAudio?.();
+ const q=s=>dialog.querySelector(s),stage=q('#action-preview'),renderer=new StudentAgeScene.Renderer(stage,{assetUrl:options.assetUrl,talkUi,portraitModelPending:options.portraitModelPending}),audio=options.createAudio?.();
  let code=3001,preset=null,selected=null,draft=[],timer=null,frame=null,closed=false,playing=false;
  const atlas=(()=>{try{return '/api/social-emojis?token='+encodeURIComponent(new URL(options.assetUrl(''),location.href).searchParams.get('token')||'');}catch{return '';}})();
  const context=()=>options.context(),existing=()=>selected===null?null:context()?.row.roles?.[selected],role=()=>Number(existing()?.[0]??initial.role),args=()=>existing()?.slice(2)||draft;

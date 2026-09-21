@@ -601,6 +601,10 @@ class Renderer {
           if(portraitSource(doc,role).missing)setAssetNote(label(doc,role.id)+' 的所选服装或学段缺少这张表情图片，当前按游戏备用规则显示。','表情图片缺失');else if(!path.startsWith('portrait-cache/')&&path!==exact&&(role.face!==0||role.cloth!==0))setAssetNote(label(doc,role.id)+' 当前显示默认立绘；正在读取所选表情或服装。','默认立绘');else setAssetNote('','');const current=this.state?.roles[role.id];if(current)this.position(node,current,this.state.reference);this.queueCast();
         },(img,path)=>{
           if(this.options.portraitGeometryPending?.(path))return false;
+          // The fallback illustration and the Live2D frame have different native
+          // geometry. Do not briefly display the illustration while the model
+          // is still loading, then visibly resize it when the model arrives.
+          if(!portraitCacheKey(path)&&! /^(Mods|Textures|StudentAgeStudio)[\\/]/i.test(path)&&this.options.portraitModelPending?.(role))return false;
           const cached=portraitCacheKey(path),person=doc.persons?.[role.id];
           const params=(cached?.grade===0?person?.l2dParm:person?.l2dParm2)?.[cached?.female?1:0];
           if(cached&&Number(params?.[0])>0&&portraitBox(doc,role,img,path).fallback)return false;

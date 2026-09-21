@@ -1306,7 +1306,7 @@ function openActionEditor(){
   return {faces:StudentAgeExpressions.choices({person,faces:S.doc.faces,roleId:id,grade:S.grade,cloth,metadata:portraitAvailability.get(portraitMetadataKey(id,S.grade,cloth))}),clothes:[...new Set([0,cloth,...models.map((v,i)=>v?i:0),...images.map((v,i)=>v?i:0)])].sort((a,b)=>a-b)};};
  const valid=()=>S.project.id===project&&S.selected===selected;
  const changed=()=>{const state=currentStage();S.face=state.roles[role]?.face??0;S.cloth=state.roles[role]?.cloth??0;prepareOriginalExpressions();prepareSceneExpressions(state);};
- StudentAgeActionEditor.open({assetUrl,appearance,blocked:phoneEvent()?[...phoneFixedActions]:[],context:()=>valid()?{doc:S.doc,grade:S.grade,before:currentStage(true),after:currentStage(),row:talk(),role,name:personName(role),...appearance(role)}:null,
+ StudentAgeActionEditor.open({assetUrl,portraitModelPending:scenePortraitModelPending,appearance,blocked:phoneEvent()?[...phoneFixedActions]:[],context:()=>valid()?{doc:S.doc,grade:S.grade,before:currentStage(true),after:currentStage(),row:talk(),role,name:personName(role),...appearance(role)}:null,
  createAudio:()=>new StudentAgeScene.AudioPlayer({getCues:()=>S.doc?.audioCues,getUrl:audioUrl,getLegacy:id=>S.audios.find(a=>Number(a.id)===Number(S.doc?.talks[id]?.audio)),onWarning:m=>toast(m,'note')}),
  add:(code,args)=>{if(!valid()||(phoneEvent()&&phoneFixedActions.has(Number(code))))return null;const accepted=mutate('添加人物动作',()=>{
   const group=[1001,1002,1003].includes(code)?[1001,1002,1003]:[2001,2002].includes(code)?[2001,2002]:[];
@@ -1467,7 +1467,7 @@ function scenePlayerRender(state,flags) {
 }
 function ensureScene() {
   if(!stageAudio)stageAudio=new StudentAgeScene.AudioPlayer({getCues:()=>S.doc?.audioCues,getUrl:audioUrl,getDefaultBgm:()=>S.defaultBgm?{...S.defaultBgm,url:assetUrl(S.defaultBgm.url)}:null,getLegacy:id=>S.audios.find(a=>Number(a.id)===Number(S.doc?.talks[id]?.audio)),onWarning:m=>toast(m,'note')});
-  if(!largeScene)largeScene=new StudentAgeScene.Renderer($('#large-scene'),{portraitGeometryPending:path=>portraitSizePending.has(S.project?.id+':'+path),screenRefs:()=>S.conditionRefs,onPaperClose:()=>scenePlayer?.schedule(),assetUrl,emojiAtlas:'/api/social-emojis?token='+encodeURIComponent(token),talkUi:{manifest:'/api/talk-ui?token='+encodeURIComponent(token),resource:name=>'/api/talk-ui?resource='+encodeURIComponent(name)+'&token='+encodeURIComponent(token)},onBeforeInteract:()=>{if(storyPreview||!isLocalProject(S.project))return false;if(linePlayback)stopLinePlayback();return sceneMode==='edit';},onDrag:commitSceneDrag,onSelectRole:selectStageRole,onContextMenu:openActorMenu,onCGContextMenu:openCGMenu,onAssetStatus:renderSceneWarnings,canEditDialogue:()=>sceneMode==='edit'&&isLocalProject(S.project)&&!!talk(),onChooseSpeaker:cycleSpeaker});
+  if(!largeScene)largeScene=new StudentAgeScene.Renderer($('#large-scene'),{portraitGeometryPending:path=>portraitSizePending.has(S.project?.id+':'+path),portraitModelPending:scenePortraitModelPending,screenRefs:()=>S.conditionRefs,onPaperClose:()=>scenePlayer?.schedule(),assetUrl,emojiAtlas:'/api/social-emojis?token='+encodeURIComponent(token),talkUi:{manifest:'/api/talk-ui?token='+encodeURIComponent(token),resource:name=>'/api/talk-ui?resource='+encodeURIComponent(name)+'&token='+encodeURIComponent(token)},onBeforeInteract:()=>{if(storyPreview||!isLocalProject(S.project))return false;if(linePlayback)stopLinePlayback();return sceneMode==='edit';},onDrag:commitSceneDrag,onSelectRole:selectStageRole,onContextMenu:openActorMenu,onCGContextMenu:openCGMenu,onAssetStatus:renderSceneWarnings,canEditDialogue:()=>sceneMode==='edit'&&isLocalProject(S.project)&&!!talk(),onChooseSpeaker:cycleSpeaker});
   if(!scenePlayer)scenePlayer=new StudentAgeScene.Player({loadTalk:id=>Remote.ensure(S.doc.talks,[id],{pin:true}),getDoc:()=>({...S.doc,branchFolders:S.branchFolders}),onHistory:recordPreviewHistory,getContext:sceneContext,manual:()=>!!largeScene?.paperVisible||!!storyPreview&&(!storyPreview.auto||storyPreview.exiting||$('#story-history').open),getChoices:previewRoutes,onRender:scenePlayerRender,onChoices:choices=>{largeScene.showChoices(choices,route=>scenePlayer.choose(route));$('#scene-status').textContent='请选择要预览的路线。';},onSelect:id=>{S.selected=id;S.activeFolder=Branches.ownedBy(S.branchFolders,id);if(S.activeFolder)S.folderOpen[S.activeFolder]=true;S.coalesce=null;if(!storyPreview){renderChrome();renderList();renderEditor();}},onWarning:m=>toast(m,'note'),onPlaying:()=>updateStoryPreviewControls()});
 }
 function renderPreview() {
@@ -1669,6 +1669,12 @@ function refreshSceneAssets(){
   renderPreview();
 }
 const portraitSizeRequests=new Set(),portraitSizePending=new Set();
+function scenePortraitModelPending(role){
+ const person=S.doc?.persons[role.id];
+ if(!(role.grade===0?person?.l2d:person?.l2d2)?.length)return false;
+ const info=portraitAvailability.get(portraitMetadataKey(role.id,role.grade,role.cloth));
+ return !info||info.status!=='error'&&!!(info.active||info.available);
+}
 function prepareSceneExpressions(state){
  const project=S.project?.id,paths=[...new Set(values(state?.roles).filter(r=>r.visible).flatMap(r=>StudentAgeScene.portraitCandidates(S.doc,r)))].filter(p=>p&&!p.startsWith('portrait-cache/')&&!portraitSizeRequests.has(project+':'+p));
  if(paths.length){
