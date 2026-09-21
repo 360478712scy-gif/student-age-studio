@@ -12,7 +12,7 @@ import traceback
 from game_locator import settings_path
 from platform_support import lock_file, unlock_file
 
-APP_VERSION = '1.3.13'
+APP_VERSION = '1.3.14'
 
 def display_version(value):
     return {'1.3.12-beta.12': '1.3.11.12', '1.3.12-beta.11': '1.3.11.11', '1.3.12-beta.10': '1.3.11.10', '1.3.12-beta.9': '1.3.11.9', '1.3.12-beta.8': '1.3.11.8', '1.3.12-beta.7': '1.3.11.7', '1.3.12-beta.6': '1.3.11.6', '1.3.12-beta.5': '1.3.11.5', '1.3.12-beta.4': '1.3.11.4', '1.3.12-beta.3': '1.3.11.3', '1.3.12-beta.2': '1.3.11.2', '1.3.12-beta.1': '1.3.11.1', '1.3.10-beta.2': '1.3.9.2', '1.3.10-beta.1': '1.3.9.1', '1.3.7-beta.2': '1.3.7.1', '1.3.7-beta.3': '1.3.7.2', '1.3.7-beta.4': '1.3.7.3', '1.3.7-beta.5': '1.3.7.4', '1.3.7-beta.6': '1.3.7.5', '1.3.7-beta.7': '1.3.7.6', '1.3.7-beta.8': '1.3.7.7', '1.3.7-beta.9': '1.3.7.8', '1.3.7-beta.10': '1.3.7.9'}.get(str(value).removeprefix('v'), value)
@@ -55,7 +55,11 @@ class ErrorLogs:
         with _lock:
             self.root.mkdir(parents=True, exist_ok=True)
             with (self.root / '.writer.lock').open('a+b') as guard:
-                lock_file(guard)
+                try:
+                    lock_file(guard)
+                except BlockingIOError as error:
+                    from server import ApiError
+                    raise ApiError('另一个窗口正在写入错误日志，请稍后重试。', 409, 'log_busy') from error
                 try:
                     atomic_write(self.root / 'settings.json', json_bytes({'autoCleanup':value}))
                     if value: self._prune()
@@ -64,7 +68,8 @@ class ErrorLogs:
 
     def _prune(self):
         for path in self._files()[:-KEEP]:
-            path.unlink()
+            try: path.unlink()
+            except OSError: pass
 
     def status(self):
         # Do not create files just because the settings panel was opened.
@@ -92,13 +97,19 @@ class ErrorLogs:
                 self.root.mkdir(parents=True, exist_ok=True)
                 # Multiple open app versions share this directory and quota.
                 with (self.root / '.writer.lock').open('a+b') as guard:
-                    lock_file(guard)
+                    owned = True
+                    try:
+                        lock_file(guard)
+                    except BlockingIOError:
+                        # Never drop a diagnostic because another window holds the lock:
+                        # the file name is unique, so writing beside it stays safe.
+                        owned = False
                     try:
                         with (self.root / name).open('x', encoding='utf-8') as output:
                             output.write(text)
                         if self.settings()['autoCleanup']: self._prune()
                     finally:
-                        unlock_file(guard)
+                        if owned: unlock_file(guard)
             return name
         except Exception:
             return None

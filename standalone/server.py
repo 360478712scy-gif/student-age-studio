@@ -1262,7 +1262,12 @@ class StudioStore:
         lock_path = safe_path(project.path, "StudentAgeStudio/.save.lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with lock_path.open("a+b") as lock_file:
-            lock_file_acquire(lock_file)
+            # Never wait forever for a peer that stopped responding: report it so the
+            # editor can retry instead of hanging on saving with no way out.
+            try:
+                lock_file_acquire(lock_file)
+            except BlockingIOError as error:
+                raise ApiError("另一个窗口正在保存这个模组，暂时无法写入。请稍后重试。", 409, "save_busy") from error
             try:
                 context = self.talk_segments.request_context
                 generation = None
@@ -4247,15 +4252,20 @@ class StudioHandler(BaseHTTPRequestHandler):
                 paths = payload.get("paths", [])
                 if not isinstance(paths, list) or len(paths) > 128:
                     raise ApiError("立绘尺寸请求无效。")
-                from extract_game_assets import portrait_dimensions
+                from extract_game_assets import native_portrait_paths, portrait_dimensions
                 with self.server.location_lock:
                     store = self.server.store
                     with store.lock:
                         store.project(payload.get("projectId"))
                         game, catalog = store.game, store.catalog()
                 result = portrait_dimensions(game, catalog, paths)
+                # An exported preview is scaled to a shared height, so its pixels are not
+                # the runtime size the game lays out with. Native portraits stay
+                # unanswered until the game texture is measured, and the editor keeps
+                # asking; only non-native images fall back to their own pixels.
+                native = native_portrait_paths(catalog, paths)
                 for path in paths:
-                    if path in result:continue
+                    if path in result or path in native:continue
                     try:
                         with Image.open(store.asset(payload.get('projectId'),path)) as source:result[path]=list(source.size)
                     except (ApiError,OSError,ValueError):pass

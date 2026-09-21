@@ -872,7 +872,7 @@ async function loadProject(id,preserve=false) {
   if(!preserve&&(S.deferredProject||String(S.project?.id)!==String(id))&&isLocalProject(availableProject(id))&&!availableProject(id).originalMode){projectFeedback('正在备份模组：'+availableProject(id).name+'…');let backup;try{backup=await api('/api/backup',{projectId:id,kind:'automatic',requestId:crypto.randomUUID()});}catch(error){error.message='自动备份未完成：'+error.message;throw error;}if(backup.warning)toast(backup.warning,'note');if(request!==projectLoadSequence)return false;}
   const data=await api('/api/project?id='+encodeURIComponent(id)+'&talkStorage='+(new URLSearchParams(location.search).get('talkStorage')==='indexed'?'indexed':'segmented')+(window.STUDIO_ORIGINAL_MODE()&&originalEvents(id).size?'&originalEvents='+[...originalEvents(id)].join(','):''));await STUDIO_IDS.refresh(id);if(request!==projectLoadSequence)return false;previous={...S};
   if(!isReadableProject(data.project)||String(data.project.id)!==String(id))throw Error('读取的项目与当前选择不符，请重新打开。');
-  if(S.project&&String(S.project.id)!==String(data.project.id)){scenePlayer?.dispose();scenePlayer=null;StudentAgeScene.portraitSizes.clear();portraitSizeRequests.clear();portraitSizePending.clear();reconcileStoryClaims();}S.project=data.project;S.deferredProject=false;S.referenceResolution=data.referenceResolution||[2560,1440];S.revision=data.revision;S.localIds=data.localIds||{};S.catalogAvailable=!!data.catalogAvailable;
+  if(S.project&&String(S.project.id)!==String(data.project.id)){scenePlayer?.dispose();scenePlayer=null;StudentAgeScene.portraitSizes.clear();portraitSizeRequests.clear();portraitSizePending.clear();portraitSizeAttempts.clear();reconcileStoryClaims();}S.project=data.project;S.deferredProject=false;S.referenceResolution=data.referenceResolution||[2560,1440];S.revision=data.revision;S.localIds=data.localIds||{};S.catalogAvailable=!!data.catalogAvailable;
   S.goalImageIds=data.goalImageIds||[];S.doc={protagonistGender:data.protagonistGender===2?2:1,eventGrades:data.eventGrades||{}};for(const k of MAPS){const rows=data[k]||{};S.doc[k]=k!=='talks'&&Object.keys(rows).length>500?IndexedTalks.create(Object.entries(rows).map(([id,row])=>[id,JSON.stringify(row)])):rows;}if(data.indexedTalks)S.doc.talks=IndexedTalks.create(data.indexedTalks.rows);if(data.segmentedTalks){const projectId=id;S.doc.talks=Remote.create(data.segmentedTalks,(path,body)=>api(path,{...body,projectId}),data.revision);}
   S.premises=clone(data.premises||{});S.branchFolders=clone(data.branchFolders||{});S.folderOpen={};S.activeFolder=null;S.doc.talkOwners=clone(data.talkOwners||{});StudentAgeEventOwnership.sync(S.doc,S.branchFolders);S.doc.audioCues=data.audioCues||{version:1,sfx:{},bgm:[]};S.bgmDraft=null;S.audios=[];S.defaultBgm=null;stageAudio?.stop();
   const computedOrder=initialOrder();const storedOrder=ids(data.order).filter(id=>S.doc.talks[id]);S.order=[...new Set([...storedOrder,...computedOrder])];S.event=preserve&&(oldEvent==='all'||S.doc.events[oldEvent])?oldEvent:(values(S.doc.events)[0]?.id || 'all');
@@ -1668,7 +1668,10 @@ function refreshSceneAssets(){
   }
   renderPreview();
 }
-const portraitSizeRequests=new Set(),portraitSizePending=new Set();
+const portraitSizeRequests=new Set(),portraitSizePending=new Set(),portraitSizeAttempts=new Map();
+// The service answers from what it has already measured and keeps measuring in the
+// background, so an unanswered path is asked again a few times instead of never.
+const PORTRAIT_SIZE_ATTEMPTS=12;
 function scenePortraitModelPending(role){
  const person=S.doc?.persons[role.id];
  if(!(role.grade===0?person?.l2d:person?.l2d2)?.length)return false;
@@ -1682,6 +1685,7 @@ function prepareSceneExpressions(state){
   api('/api/portrait-dimensions',{projectId:project,paths}).then(sizes=>{
    if(S.project?.id!==project)return;
    for(const [path,size] of Object.entries(sizes))StudentAgeScene.portraitSizes.set(path,size);
+   for(const p of paths){if(sizes[p])continue;const key=project+':'+p,used=(portraitSizeAttempts.get(key)||0)+1;portraitSizeAttempts.set(key,used);if(used<PORTRAIT_SIZE_ATTEMPTS)portraitSizeRequests.delete(key);}
      }).catch(()=>paths.forEach(p=>portraitSizeRequests.delete(project+':'+p))).finally(()=>{
    if(S.project?.id!==project)return;
    paths.forEach(p=>portraitSizePending.delete(project+':'+p));largeScene?.refreshPortraits();
@@ -1902,7 +1906,7 @@ async function selectProjectHome(id,keepSource=false){
  if(S.dirty)throw Error('请先保存当前剧情草稿。');const project=availableProject(id);if(!project)throw Error('模组已不在列表中，请刷新。');
  if(!keepSource)window.STUDIO_ORIGINAL_SOURCE.set(null);
  window.STUDIO_PAUSE_PREVIEW?.();scenePlayer?.dispose();scenePlayer=null;window.STUDIO_EVENTS?.close();
- ++projectLoadSequence;StudentAgeScene.portraitSizes.clear();portraitSizeRequests.clear();portraitSizePending.clear();reconcileStoryClaims();S.project=project;S.doc=null;reconcileStoryClaims();S.localIds={};S.conditionRefs={};S.deferredProject=true;S.selected=null;S.event='all';S.revision=null;S.undo=[];S.redo=[];S.saved='';S.order=[];S.premises={};S.branchFolders={};S.conditionsLoading=false;
+ ++projectLoadSequence;StudentAgeScene.portraitSizes.clear();portraitSizeRequests.clear();portraitSizePending.clear();portraitSizeAttempts.clear();reconcileStoryClaims();S.project=project;S.doc=null;reconcileStoryClaims();S.localIds={};S.conditionRefs={};S.deferredProject=true;S.selected=null;S.event='all';S.revision=null;S.undo=[];S.redo=[];S.saved='';S.order=[];S.premises={};S.branchFolders={};S.conditionsLoading=false;
  localStorage.setItem('studentAgeStudio.project',String(id));renderProjects();renderChrome();
  await window.STUDIO_OPEN_WORKSHOP();preloadConditionCatalog(id,window.STUDIO_WORKSHOP_NAV?.assetContext?.(id)?.revision).catch(()=>{});window.dispatchEvent(new CustomEvent('studio-project-ready'));return true;
 }

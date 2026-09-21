@@ -6,6 +6,9 @@ import tempfile
 import sys
 from pathlib import Path
 
+# A legacy-cache copy may take minutes on a slow drive, but must not wait for ever.
+CACHE_MIGRATION_LOCK_TIMEOUT = 300.0
+
 
 def user_data_root():
     override = os.environ.get('STUDIO_USER_DATA_ROOT')
@@ -95,7 +98,13 @@ def prepare_game_cache(game):
     import secrets
     from platform_support import lock_file, unlock_file
     with (target/'.migration.lock').open('a+b') as handle:
-        lock_file(handle)
+        # Copying a legacy cache can legitimately outlast the default lock timeout, so
+        # this one waits longer; a peer that never finishes still surfaces as an error
+        # instead of freezing the startup path.
+        try:
+            lock_file(handle, timeout=CACHE_MIGRATION_LOCK_TIMEOUT)
+        except BlockingIOError as error:
+            raise RuntimeError('另一个窗口正在迁移旧缓存，请稍后重新打开工作台。') from error
         try:
             if marker.exists(): return target
             for directory, folders, files in os.walk(source, followlinks=False):

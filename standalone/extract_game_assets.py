@@ -10,6 +10,7 @@ import os
 import struct
 import sys
 import threading
+import time
 
 HERE = Path(__file__).resolve().parent
 for directory in (HERE / 'vendor', HERE.parent / 'tools/asset-reader'):
@@ -130,41 +131,207 @@ def cached_file(output, mapping, aliases):
 
 
 _portrait_dimensions_lock = threading.RLock()
+_portrait_unpack_guard = threading.Lock()
+_portrait_unpacking = threading.Event()
+_portrait_unpack_thread = None
+# Tests replace this with an in-process runner; production measures in a worker process.
+_portrait_unpack_runner = None
+# Reading one big role bundle can take a long time on a cold cache. A request only
+# reads what earlier passes measured; one background pass does the measuring so a slow
+# drive can delay a size but can never freeze the editor.
+PORTRAIT_DIMENSION_BUDGET = 2.0
+PORTRAIT_UNPACK_BUDGET = 300.0
+# A bundle that fails to measure is retried: a couple of immediate attempts cover a
+# transient "antivirus holds the file", then a growing delay keeps the disk quiet. It is
+# never disabled for the session, so the size still arrives once the cause disappears.
+PORTRAIT_RETRY_FREE = 2
+PORTRAIT_RETRY_BASE = 30.0
+PORTRAIT_RETRY_MAX = 300.0
+NATIVE_PORTRAIT_PREFIXES = ('role_full/', 'role_half/', 'role_head/', 'role_comic/', 'role_comic_head/', 'role_photo/')
+PORTRAIT_MANIFEST_NAME = 'portrait-dimensions-v5.json'
+_portrait_seed = None
+_portrait_retry = {}
+# A pass is only progress when the manifest moved. A bundle that cannot be read
+# (antivirus, permissions) or a cache directory that cannot be written measures
+# nothing, and the request path must not start one process per request for it.
+_portrait_pass_failures = 0
+_portrait_pass_not_before = 0.0
 
 
-def portrait_dimensions(game, catalog, paths):
-    # Serialize this metadata manifest, never the editing/saving store.
-    with _portrait_dimensions_lock:
-        return _portrait_dimensions(game, catalog, paths)
+def _portrait_pass_delay(failures):
+    """The same curve as the per-bundle retry: two immediate passes, then 30/60/…/300s."""
+    if failures <= PORTRAIT_RETRY_FREE:
+        return 0.0
+    return min(PORTRAIT_RETRY_MAX, PORTRAIT_RETRY_BASE * (2 ** (failures - PORTRAIT_RETRY_FREE - 1)))
 
 
-def _known_portrait_dimensions(path, relative):
-    """Reuse measured runtime dimensions only for the exact game resource bytes."""
+def _portrait_manifest_stamp(game):
+    """(mtime_ns, size) of the measurement manifest, or None while it is absent."""
+    try:
+        stat = (game_cache(Path(game)) / PORTRAIT_MANIFEST_NAME).stat()
+        return (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return None
+
+
+def portrait_dimensions(game, catalog, paths, budget=PORTRAIT_DIMENSION_BUDGET):
+    """Portrait sizes measured so far; a request never waits for a bundle to be unpacked.
+
+    A bundle that still needs measuring is handled by one shared background pass, so a
+    slow, huge or offline game folder can delay a size but can never freeze the editor.
+    """
+    deadline = time.monotonic() + max(0.0, budget)
+    # While a pass unpacks bundles the request stays read-only instead of queueing
+    # behind it: a slow measurement must never turn into a slow editor.
+    held = False
+    if not _portrait_unpacking.is_set():
+        held = _portrait_dimensions_lock.acquire(timeout=min(0.5, max(0.0, budget)))
+    try:
+        result, needs_unpack = _portrait_dimensions(game, catalog, paths, deadline, persist=held)
+    finally:
+        if held:
+            _portrait_dimensions_lock.release()
+    if needs_unpack and time.monotonic() >= _portrait_pass_not_before:
+        _unpack_portraits_in_background(game, catalog, paths)
+    return result
+
+
+def _unpack_portraits_in_background(game, catalog, paths):
+    global _portrait_unpack_thread
+    with _portrait_unpack_guard:
+        if _portrait_unpacking.is_set():
+            return
+        _portrait_unpacking.set()
+        runner = _portrait_unpack_runner or _spawn_portrait_measure
+        before = _portrait_manifest_stamp(game)
+        try:
+            started = runner(game, catalog, paths)
+        except Exception:
+            _portrait_unpacking.clear()
+            raise
+        _portrait_unpack_thread = threading.Thread(target=_watch_portrait_measure, args=(started, game, before),
+                                                   daemon=True, name='portrait-measure')
+        thread = _portrait_unpack_thread
+    thread.start()
+
+
+def _spawn_portrait_measure(game, catalog, paths):
+    """Measure in a separate process.
+
+    Opening a role bundle is seconds of reading and decompression, and on Windows a
+    virus scanner makes it far longer. Doing that here would hold this process's GIL
+    for the whole time, so every other request would feel slow until it finished.
+    """
+    import subprocess
+    from platform_support import process_options, worker_command
+    options = process_options()
+    if sys.platform == 'win32':
+        options['creationflags'] |= subprocess.BELOW_NORMAL_PRIORITY_CLASS
+    wanted = json.dumps([str(path) for path in paths][:128], ensure_ascii=False)
+    command = worker_command(Path(__file__), game) + ['--portrait-measure', '--paths', wanted]
+    return subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **options)
+
+
+def _watch_portrait_measure(process, game=None, before=None):
+    try:
+        process.wait(timeout=PORTRAIT_UNPACK_BUDGET)
+    except Exception:
+        try:
+            process.kill(); process.wait()
+        except Exception:
+            pass
+    finally:
+        # Only success moves the cache forward. `needs_unpack` says a candidate bundle
+        # has no entry for its revision yet, not that it can be read or that the cache
+        # can be written, so a failing pass has to be rate limited here: otherwise every
+        # request would start one more process that reads and unpacks the same bundle.
+        global _portrait_pass_failures, _portrait_pass_not_before
+        if game is not None and _portrait_manifest_stamp(game) != before:
+            _portrait_pass_failures = 0
+        else:
+            _portrait_pass_failures += 1
+            _portrait_pass_not_before = time.monotonic() + _portrait_pass_delay(_portrait_pass_failures)
+        with _portrait_unpack_guard:
+            _portrait_unpacking.clear()
+
+
+def _portrait_seed_bundles():
+    global _portrait_seed
+    if _portrait_seed is None:
+        try:
+            seed = json.loads(Path(__file__).with_name('native-portrait-dimensions.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            seed = {}
+        _portrait_seed = seed if isinstance(seed, dict) and seed.get('version') == 2 else {}
+    return _portrait_seed.get('bundles', {})
+
+
+def _known_portrait_dimensions(path, relative, deadline=None):
+    """Reuse measured runtime dimensions only for the exact game resource bytes.
+
+    The hash is the only part of a request that still touches game bytes, so it is
+    read in blocks and abandoned at `deadline`: a slow or antivirus-scanned drive
+    makes the request answer from what it has instead of waiting for the whole file.
+    The background pass then verifies the same bundle without a request behind it.
+    """
     try:
         import hashlib
-        seed = json.loads(Path(__file__).with_name('native-portrait-dimensions.json').read_text(encoding='utf-8'))
-        if seed.get('version') != 2:
-            return None
-        entry = seed.get('bundles', {}).get(relative)
+        entry = _portrait_seed_bundles().get(relative)
         if not entry or path.stat().st_size != entry['size']:
             return None
+        digest = hashlib.sha256()
         with path.open('rb') as stream:
-            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-        if digest == entry['sha256']:
+            while True:
+                block = stream.read(1 << 20)
+                if not block:
+                    break
+                digest.update(block)
+                if deadline is not None and time.monotonic() >= deadline:
+                    return None
+        if digest.hexdigest() == entry['sha256']:
             return entry['sizes']
     except (OSError, ValueError, KeyError, TypeError):
         pass
     return None
 
 
-def _portrait_resource_dimensions(env):
+def _portrait_resources(mapping, wanted_exports):
+    """Native texture resource -> exported file, for the paths the caller asked about."""
+    resources = {}
+    for alias, exported in mapping.items():
+        if exported in wanted_exports:
+            resource = resource_name('/' + str(alias).lstrip('/'), 'textures')
+            if resource and resource.startswith(NATIVE_PORTRAIT_PREFIXES):
+                resources[resource] = exported
+    return resources
+
+
+def native_portrait_paths(catalog, paths):
+    """Requested paths whose size must come from the game texture, never from an export.
+
+    Exported previews are scaled to a shared height, so their pixel size is not the
+    runtime size the game lays out with. Callers must leave these paths unanswered
+    until the game texture has actually been measured.
+    """
+    mapping = catalog.get('assetMap') if isinstance(catalog, dict) else None
+    if not isinstance(mapping, dict):
+        return set()
+    wanted = {str(p): mapping.get(str(p), mapping.get(str(p).lower())) for p in paths
+              if isinstance(p, str) and not p.lower().replace('\\', '/').startswith('mods/')}
+    exports = set(_portrait_resources(mapping, set(v for v in wanted.values() if v)).values())
+    return {p for p, exported in wanted.items() if exported in exports}
+
+
+def _portrait_resource_dimensions(env, wanted=None):
     # UISprite.SetTextureUrl -> ResInfo.GetSpriteAsync loads Texture2D and
     # Sprite.Create uses its default 100 PPU. The imported Sprite's PPU is NOT
     # used on this path. Atlas-only resources retain their Sprite dimensions.
     textures, sprites = {}, {}
     for name, pointer in env.container.items():
         resource = resource_name(name, 'textures')
-        if not resource or not resource.startswith(('role_full/', 'role_half/', 'role_head/', 'role_comic/', 'role_comic_head/', 'role_photo/')):
+        if not resource or not resource.startswith(NATIVE_PORTRAIT_PREFIXES):
+            continue
+        if wanted is not None and resource not in wanted:
             continue
         obj = pointer.deref()
         if obj.type.name == 'Texture2D':
@@ -178,37 +345,62 @@ def _portrait_resource_dimensions(env):
     return {**sprites, **textures}
 
 
-def _portrait_dimensions(game, catalog, paths):
+def _portrait_retry_ready(stamp):
+    record = _portrait_retry.get(stamp)
+    if not isinstance(record, dict):
+        return True
+    failures = max(0, int(record.get('failures', 0)))
+    if failures <= PORTRAIT_RETRY_FREE:
+        return True
+    delay = min(PORTRAIT_RETRY_MAX, PORTRAIT_RETRY_BASE * (2 ** (failures - PORTRAIT_RETRY_FREE - 1)))
+    return time.monotonic() - float(record.get('at', 0) or 0) >= delay
+
+
+def _portrait_retry_failed(stamp):
+    record = _portrait_retry.setdefault(stamp, {'failures': 0})
+    record['failures'] = int(record.get('failures', 0)) + 1
+    record['at'] = time.monotonic()
+
+
+def _portrait_retry_done(stamp):
+    _portrait_retry.pop(stamp, None)
+
+
+def _portrait_dimensions(game, catalog, paths, deadline, unpack=False, persist=True):
     """Read native portrait sizes, without decoding textures or enlarging thumbnails.
 
     Cache by bundle fingerprint. Older thumbnail caches can be upgraded on demand.
-    Caller serializes this small metadata cache's writes.
+    Caller serializes this small metadata cache's writes. Loading a bundle is the slow
+    part, so it only happens when `unpack` is set (the background pass); a request only
+    reads what earlier passes measured, and reports `needs_unpack` so the caller can
+    start that pass instead of waiting for it. `unpack` marks that background pass, which
+    is the only place a game bundle is ever opened.
     """
     game = Path(game)
-    mapping = catalog.get('assetMap', {})
+    catalog = catalog if isinstance(catalog, dict) else {}
+    mapping = catalog.get('assetMap')
+    if not isinstance(mapping, dict):
+        mapping = {}
     wanted = {str(p): mapping.get(str(p), mapping.get(str(p).lower())) for p in paths
               if isinstance(p, str) and not p.lower().replace('\\', '/').startswith('mods/')}
     wanted = {p: v for p, v in wanted.items() if v}
     if not wanted:
-        return {}
+        return {}, False
     home = game_cache(game)
-    manifest = home / 'portrait-dimensions-v5.json'
+    manifest = home / PORTRAIT_MANIFEST_NAME
     try:
         cache = json.loads(manifest.read_text(encoding='utf-8'))
+        if not isinstance(cache, dict):
+            cache = {}
     except (OSError, ValueError):
         cache = {}
-    resources = {}
     wanted_exports = set(wanted.values())
-    for alias, exported in mapping.items():
-        if exported in wanted_exports:
-            resource = resource_name('/' + alias.lstrip('/'), 'textures')
-            if resource and resource.startswith(('role_full/', 'role_half/', 'role_head/', 'role_comic/', 'role_comic_head/', 'role_photo/')):
-                resources[resource] = exported
+    resources = _portrait_resources(mapping, wanted_exports)
     if not resources:
-        return {}
+        return {}, False
     # Addressables groups for full portraits and expression sheets use role bundles.
     sizes = {}
-    changed = False
+    needs_unpack = False
     for relative in catalog.get('bundles', {}):
         if 'textures_assets_' not in relative.lower():
             continue
@@ -220,22 +412,61 @@ def _portrait_dimensions(game, catalog, paths):
         path = game / relative
         if not path.is_file():
             continue
-        stamp = f'{path.stat().st_size}:{path.stat().st_mtime_ns}'
-        entry = cache.get(relative, {})
-        if entry.get('stamp') != stamp:
-            dimensions = _known_portrait_dimensions(path, relative)
-            if dimensions is None:
-                env = UnityPy.load(str(path))
-                dimensions = _portrait_resource_dimensions(env)
-            entry = {'stamp': stamp, 'sizes': dimensions}
-            cache[relative] = entry
-            changed = True
-        sizes.update(entry.get('sizes', {}))
-    if changed:
-        home.mkdir(parents=True, exist_ok=True)
-        write_json(manifest, cache)
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        stamp = f'{stat.st_size}:{stat.st_mtime_ns}'
+        entry = cache.get(relative) if isinstance(cache.get(relative), dict) else {}
+        # A fingerprint match means this exact revision was measured in full, so a
+        # portrait it does not list is genuinely absent from the bundle.
+        measured = entry.get('sizes') if entry.get('stamp') == stamp and isinstance(entry.get('sizes'), dict) else {}
+        if measured:
+            sizes.update(measured)
+        missing = set(resources) - set(sizes)
+        if not missing:
+            break
+        if entry.get('stamp') == stamp:
+            continue
+        if time.monotonic() >= deadline:
+            if not unpack:
+                needs_unpack = True
+            continue
+        if not _portrait_retry_ready(stamp):
+            # Failed recently: wait out the delay instead of hammering the disk. The
+            # next pass retries, so a transient read failure heals by itself.
+            if not unpack:
+                needs_unpack = True
+            continue
+        dimensions = _known_portrait_dimensions(path, relative, deadline)
+        if dimensions is not None:
+            merged = dimensions
+        elif unpack:
+            try:
+                # The whole bundle is measured once per revision: a portrait it does not
+                # list is then genuinely absent, so the fingerprint alone answers later.
+                merged = _portrait_resource_dimensions(UnityPy.load(str(path)))
+            except Exception:
+                # One unreadable bundle must not stop the pass; retry it after the delay.
+                _portrait_retry_failed(stamp)
+                continue
+        else:
+            # Measuring this bundle means unpacking it; never do that on a request.
+            needs_unpack = True
+            continue
+        _portrait_retry_done(stamp)
+        sizes.update(merged)
+        cache[relative] = {'stamp': stamp, 'sizes': merged}
+        # Persist per bundle: a later pass resumes after the bundles already measured.
+        # A reader that does not own the manifest lock never writes it.
+        if persist:
+            try:
+                home.mkdir(parents=True, exist_ok=True)
+                write_json(manifest, cache)
+            except OSError:
+                pass
     exported_sizes = {exported: sizes[resource] for resource, exported in resources.items() if resource in sizes}
-    return {p: exported_sizes[v] for p, v in wanted.items() if v in exported_sizes}
+    return {p: exported_sizes[v] for p, v in wanted.items() if v in exported_sizes}, needs_unpack
 
 
 def extract(game, progress=None):
@@ -367,10 +598,38 @@ def extract(game, progress=None):
             'failures': len(failures), 'manifest': str(manifest)}
 
 
+def measure_catalog(game):
+    """The catalog views a measurement pass needs, read straight from the game cache.
+
+    The worker process has no StudioStore, and only these three maps take part in
+    resolving a portrait path to its bundle.
+    """
+    try:
+        cache = json.loads((game_cache(Path(game)) / 'asset-map.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(cache, dict):
+        return {}
+    return {'assetMap': cache.get('assetMap') or {}, 'bundles': cache.get('bundles') or {},
+            'bundleOutputs': cache.get('bundleOutputs') or {}}
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--game', default=str(DEFAULT_GAME))
+    parser.add_argument('--portrait-measure', action='store_true')
+    parser.add_argument('--paths', default='[]')
     args = parser.parse_args()
-    result = extract(args.game, lambda i, n, name, count: print(json.dumps(
-        {'bundle': i + 1, 'total': n, 'name': name, 'exported': count}), flush=True))
-    print(json.dumps(result), flush=True)
+    if args.portrait_measure:
+        try:
+            paths = json.loads(args.paths)
+        except ValueError:
+            paths = []
+        paths = paths if isinstance(paths, list) else []
+        _portrait_dimensions(args.game, measure_catalog(args.game), paths,
+                             time.monotonic() + PORTRAIT_UNPACK_BUDGET, unpack=True)
+        print(json.dumps({'measured': len(paths)}), flush=True)
+    else:
+        result = extract(args.game, lambda i, n, name, count: print(json.dumps(
+            {'bundle': i + 1, 'total': n, 'name': name, 'exported': count}), flush=True))
+        print(json.dumps(result), flush=True)

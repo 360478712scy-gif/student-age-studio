@@ -61,7 +61,11 @@ def resource_manifest(kind, game=None):
             from platform_support import lock_file, unlock_file
             folder.mkdir(parents=True,exist_ok=True)
             with (folder/'.prepare.lock').open('a+b') as handle:
-                lock_file(handle)
+                try:
+                    lock_file(handle)
+                except BlockingIOError as error:
+                    from server import ApiError
+                    raise ApiError('界面素材正在被另一个窗口准备，请稍后重试。', 409, 'ui_assets_busy') from error
                 try:
                     try:return _read(folder)
                     except (OSError,ValueError,KeyError):

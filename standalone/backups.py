@@ -31,7 +31,10 @@ class ModBackups:
         with _LOCK:
             self.root.mkdir(parents=True, exist_ok=True)
             with (self.root / '.backup.lock').open('a+b') as stream:
-                lock_file(stream)
+                try:
+                    lock_file(stream)
+                except BlockingIOError as error:
+                    raise self.api.ApiError('另一个工作台正在处理模组备份，请稍后重试。', 409, 'backup_busy') from error
                 try:
                     yield
                 finally:

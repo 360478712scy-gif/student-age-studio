@@ -52,12 +52,47 @@ def file_fingerprint(path):
     return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, changed, entry.st_ino, entry.st_mode)
 
 
-def lock_file(stream, blocking=True):
+# A peer process that never releases a lock must not freeze the editor forever.
+# Callers turn BlockingIOError into a retryable message instead.
+LOCK_TIMEOUT = 30.0
+
+
+def _lock_deadline(timeout):
+    # float('inf') keeps a caller that truly needs to wait working, without a branch
+    # in the retry loop: every comparison against it stays false.
+    return time.monotonic() + timeout
+
+
+def _lock_retry_pause(deadline, error, message):
+    if time.monotonic() >= deadline:
+        raise BlockingIOError(message) from error
+    time.sleep(.05)
+
+
+def lock_file(stream, blocking=True, timeout=None):
+    """Acquire an exclusive lock, never waiting longer than `timeout` seconds.
+
+    blocking=False keeps the previous immediate failure; blocking=True now fails with
+    BlockingIOError once the deadline passes instead of spinning forever, so a peer
+    that stopped responding becomes a retryable message instead of a frozen editor.
+    timeout=None uses LOCK_TIMEOUT; pass float('inf') to wait without a deadline.
+    """
+    if timeout is None:
+        timeout = LOCK_TIMEOUT
     if os.name != 'nt':
-        return fcntl.flock(stream.fileno(), fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+        if not blocking:
+            return fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        deadline = _lock_deadline(timeout)
+        while True:
+            try:
+                return fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as error:
+                if error.errno not in (errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK): raise
+                _lock_retry_pause(deadline, error, 'Another editor has held this file lock too long')
     stream.seek(0, os.SEEK_END)
     if stream.tell() == 0:
         stream.write(b'\0'); stream.flush()
+    deadline = _lock_deadline(timeout)
     while True:
         stream.seek(0)
         try:
@@ -66,7 +101,7 @@ def lock_file(stream, blocking=True):
             if error.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK): raise
             if not blocking:
                 raise BlockingIOError('Another editor holds this file') from error
-            time.sleep(.05)
+            _lock_retry_pause(deadline, error, 'Another editor has held this file lock too long')
 
 
 def unlock_file(stream):

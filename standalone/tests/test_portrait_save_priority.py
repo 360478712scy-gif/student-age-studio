@@ -17,7 +17,7 @@ class PortraitSavePriorityTests(unittest.TestCase):
     req=urllib.request.Request(host.origin+route,json.dumps(payload).encode(),headers={'X-Studio-Token':host.token,'Content-Type':'application/json'})
     with urllib.request.urlopen(req,timeout=8) as response:return json.load(response)
    try:
-    with patch.dict(sys.modules,{'extract_game_assets':SimpleNamespace(portrait_dimensions=dimensions)}),ThreadPoolExecutor(2) as pool:
+    with patch.dict(sys.modules,{'extract_game_assets':SimpleNamespace(portrait_dimensions=dimensions,native_portrait_paths=lambda catalog,paths:set())}),ThreadPoolExecutor(2) as pool:
      portrait=pool.submit(post,'/api/portrait-dimensions',{'projectId':project.id,'paths':[]})
      try:
       self.assertTrue(started.wait(2));save=pool.submit(post,'/api/save',{'projectId':project.id,'revision':revision,'talkPatch':{'version':1,'upsert':{'900001001':{'id':900001001,'content':'保存不等素材'}},'deleted':[]}})

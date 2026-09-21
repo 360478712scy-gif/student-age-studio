@@ -43,6 +43,31 @@ _HASH_PENDING_CAP = 2000
 # NTFS may defer directory timestamps across rapid creates. File fingerprints
 # remain authoritative for content, but cannot replace enumerating Windows names.
 _DIRECTORY_NAMES_REUSABLE = os.name != 'nt'
+# One listing render fingerprints every asset of the project. On Windows that is a file
+# open per asset, which antivirus filters, so a recent result is reused while the cheap
+# stat (size, mtime) still matches. Checks that guard a write or a hash stay fresh.
+_FINGERPRINT_TTL = 15.0
+_FINGERPRINT_CAP = 20000
+_fingerprint_cache = {}
+
+
+def cached_fingerprint(path):
+    key = str(path)
+    try:
+        stat = os.stat(key)
+    except OSError:
+        _fingerprint_cache.pop(key, None)
+        return file_fingerprint(path)
+    cheap = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+    now = time.monotonic()
+    hit = _fingerprint_cache.get(key)
+    if hit is not None and hit[0] == cheap and now - hit[2] < _FINGERPRINT_TTL:
+        return hit[1]
+    value = file_fingerprint(path)
+    if len(_fingerprint_cache) >= _FINGERPRINT_CAP:
+        _fingerprint_cache.clear()
+    _fingerprint_cache[key] = (cheap, value, now)
+    return value
 
 
 def strings(value):
@@ -519,7 +544,7 @@ class AssetCatalog:
                 if versions is not None and path in versions:
                     version = versions[path]
                 else:
-                    version = file_fingerprint(path)
+                    version = cached_fingerprint(path)
                 key = self.image_hashes.get((str(path), version))
                 saved = self.hash_index.get(str(path), {})
                 if key is None and isinstance(saved, dict) and saved.get('stamp') == list(version) and isinstance(saved.get('hash'), str): key = saved['hash']
@@ -644,7 +669,7 @@ class AssetCatalog:
             try:
                 watched = {row[0] for row in folder_watch} if cached.get('_folderWatch', []) == folder_watch else None
                 unchanged = watched is not None and all(
-                    str(path) in watched or file_fingerprint(path) == version
+                    str(path) in watched or cached_fingerprint(path) == version
                     for path, version in cached.get('_files', []))
             except OSError: unchanged = False
             if unchanged:
@@ -683,7 +708,7 @@ class AssetCatalog:
             if key in folder_versions and folder_versions[key] is not None:
                 file_versions.append((path, folder_versions[key]))
             else:
-                file_versions.append((path, file_fingerprint(path)))
+                file_versions.append((path, cached_fingerprint(path)))
         versions = dict(file_versions)
         for item in items:
             paths = sorted({entry['_path'] for entry in [item, *item.get('_variants', [])] if entry.get('_path')})

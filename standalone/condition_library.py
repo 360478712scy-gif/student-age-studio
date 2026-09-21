@@ -225,7 +225,10 @@ class UserConditionPresets:
         with self.lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.with_suffix('.lock').open('a+b') as handle:
-                lock_file(handle)
+                try:
+                    lock_file(handle)
+                except BlockingIOError as error:
+                    raise self.api.ApiError('另一个窗口正在保存用户条件配置，请稍后重试。', 409, 'condition_busy') from error
                 try:
                     data = self.api.read_json(self.path, {'entries': []})
                     if not isinstance(data, dict) or not isinstance(data.get('entries'), list):
