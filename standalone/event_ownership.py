@@ -3,38 +3,115 @@ def ids(value):
     return [str(v) for v in value if type(v) is int or isinstance(v,str) and v.isdigit()] if isinstance(value,list) else []
 
 
-def ownership(events, talks, options, folders, previous=None):
-    event_ids=set(events)
-    owners={t:set(ids(v)) & event_ids for t,v in (previous or {}).items() if t in talks}
+def _number(value):
+    return int(value) if isinstance(value,str) and value.isdigit() else None
+
+
+def _links(talks, options, folders):
     edges={t:ids(r.get('nextTalk'))+ids(r.get('nextTalk2'))+[
         dest for oid in ids(r.get('option')) for field in ('talkId','talkId2') for dest in ids(options.get(oid,{}).get(field))] for t,r in talks.items()}
     for folder in folders.values():
         parent=str(folder.get('parentTalkId'))
         edges.setdefault(parent,[]).extend(ids(folder.get('talkIds'))+[str(folder[k]) for k in ('routerId','exitId','endId') if folder.get(k)])
-    retained={}
-    for t,v in owners.items():
-        for e in v: retained.setdefault(e,[]).append(t)
-    def walk(todo, assign):
-        seen=set()
-        while todo:
-            t=todo.pop()
-            if t in seen or t not in talks:continue
-            seen.add(t);assign(t);todo.extend(edges.get(t,[]))
-    # Real connections decide first: a line reachable from an event's entry belongs to that event.
+    reverse={}
+    for src,dests in edges.items():
+        for dest in dests: reverse.setdefault(dest,[]).append(src)
+    return edges, reverse
+
+
+def _walk(talks, edges, todo, assign, allow=None):
+    seen=set()
+    while todo:
+        t=todo.pop()
+        if t in seen or t not in talks:continue
+        seen.add(t)
+        if allow is not None and not allow(t):continue
+        assign(t);todo.extend(edges.get(t,[]))
+
+
+def _forward(events, talks, options, edges):
+    """Lines reached by walking forward from an event entry. This is real membership."""
     reached={}
     for event,row in events.items():
         todo=ids(row.get('talkId'))+[dest for oid in ids(row.get('options')) for field in ('talkId','talkId2') for dest in ids(options.get(oid,{}).get(field))]
-        walk(todo, lambda t,event=event: reached.setdefault(t,set()).add(event))
-    # Remembered ownership only keeps disconnected (authored but not yet linked) lines with their event;
-    # it never adds a second event to a line already reached from another event's entry.
-    result={t:set(v) for t,v in reached.items()}
+        _walk(talks, edges, todo, lambda t,event=event: reached.setdefault(t,set()).add(event))
+    return reached
+
+
+def display_ownership(events, talks, options, folders, band=None):
+    """Lines to show while an event is open. This does not make them members of the event.
+
+    A line that runs into the event, continues out of it, or sits in the event's number
+    block (talk = event×1000+n, option = event×100+n) is listed with that event. It stays
+    an external dialogue unless the event entry actually reaches it.
+    ``band`` limits the number block to those event ids.
+    """
+    event_ids=set(events)
+    band_ids=event_ids if band is None else {str(v) for v in band if str(v) in event_ids}
+    edges, reverse=_links(talks, options, folders)
+    reached=_forward(events, talks, options, edges)
+    forward=set(reached)
+    by_event={}
+    for talk,evs in reached.items():
+        for event in evs: by_event.setdefault(event,set()).add(talk)
+    for event,members in by_event.items():
+        todo,seen=list(members),set(members)
+        fresh=[]
+        while todo:
+            current=todo.pop()
+            for prev in reverse.get(current,[]):
+                if prev in forward or prev in seen or prev not in talks:continue
+                seen.add(prev);reached.setdefault(prev,set()).add(event);todo.append(prev);fresh.append(prev)
+        _walk(talks, edges, fresh, lambda t,event=event: reached.setdefault(t,set()).add(event),
+              lambda t,event=event: not (t in forward and event not in reached.get(t,())))
+    for event in band_ids:
+        number=_number(event)
+        if not number:continue
+        seeds=[t for t in talks if (n:=_number(t)) is not None and n//1000==number]
+        for oid,row in options.items():
+            if (n:=_number(oid)) is not None and n//100==number:
+                seeds.extend(ids(row.get('talkId'))+ids(row.get('talkId2')))
+        def allow(t,event=event):
+            owned=reached.get(t)
+            if owned and event not in owned and t in forward:
+                owned.add(event)
+                return False
+            return True
+        _walk(talks, edges, seeds, lambda t,event=event: reached.setdefault(t,set()).add(event), allow)
+    return {t:sorted(map(int,v)) for t,v in reached.items() if v}
+
+
+def ownership(events, talks, options, folders, previous=None, band=None, anchor=None):
+    """Real membership: the event entry's own forward chain, plus lines authored into the event.
+
+    Lines that are only shown beside an event (a chain that runs into it, or a matching
+    number with no link from the entry) stay out of this map, so the external-dialogue
+    list keeps them. ``anchor`` ids were just created inside the event and stay members
+    even when their number would otherwise only be a display hint.
+    """
+    event_ids=set(events)
+    anchored={str(v) for v in (anchor or []) if str(v) in talks}
+    edges,_reverse=_links(talks, options, folders)
+    forward=_forward(events, talks, options, edges)
+    # A saved owner that exists only because an older build treated display lines as
+    # members is dropped, otherwise the external list stays empty after one save.
+    shown=set(display_ownership(events, talks, options, folders, band))
+    extra=shown-set(forward)-anchored
+    retained={}
+    for t,v in (previous or {}).items():
+        if t not in talks or t in extra:continue
+        for e in set(ids(v)) & event_ids: retained.setdefault(e,[]).append(t)
+    result={t:set(v) for t,v in forward.items()}
     for event in events:
-        walk(list(retained.get(event,[])), lambda t,event=event: None if t in reached else result.setdefault(t,set()).add(event))
+        _walk(talks, edges, list(retained.get(event,[])), lambda t,event=event: None if t in forward else result.setdefault(t,set()).add(event))
+    for t in anchored:
+        if t not in result: result[t]=set()
+        for e in set(ids((previous or {}).get(t))) & event_ids: result[t].add(e)
     return {t:sorted(map(int,v)) for t,v in result.items() if v}
 
 
-def deletion(events,talks,options,folders,previous,removed,interactions=None,reference_talks=None):
-    owners=ownership(events,talks,options,folders,previous)
+def deletion(events,talks,options,folders,previous,removed,interactions=None,reference_talks=None,band=None):
+    owners=ownership(events,talks,options,folders,previous,band)
     removed=set(map(str,removed))
     # Remove only dialogues owned by the explicitly removed events. A line still
     # owned by a surviving event (shared continuations, merged branches) stays.

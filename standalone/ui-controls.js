@@ -20,6 +20,8 @@ proto.showModal=function(){
  const target=this.querySelector('[autofocus]')||this.querySelector('input:not([type=hidden]):not([disabled]),select:not([disabled]),textarea:not([disabled]),button:not([disabled]),[tabindex]:not([tabindex="-1"])');
  try{(target||this).focus({preventScroll:true});}catch{}
  raise();
+ // A pinned drawer (the JSON panel) is shown again by raise() and would cover this menu.
+ if(this.classList.contains('uc-popup')){try{if(this.matches(':popover-open'))this.hidePopover();void this.getBoundingClientRect();this.showPopover();void this.getBoundingClientRect();}catch{}}
 };
 proto.close=function(value){
  if(layered(this)){const i=stack.indexOf(this);if(i>=0)stack.splice(i,1);try{if(this.matches(':popover-open'))this.hidePopover();}catch{}this.removeAttribute('popover');this.removeAttribute('data-studio-layered');const shield=this._studioShield;this._studioShield=null;if(shield){try{if(shield.matches(':popover-open'))shield.hidePopover();}catch{}shield.remove();}}
@@ -185,7 +187,7 @@ function createPopup(){
 function readRows(){
  const {select}=active.info;
  active.rows=Array.from(select.options,(option,index)=>({option,index,label:optionText(option),hidden:option.hidden||option.parentElement.hidden,group:option.parentElement instanceof HTMLOptGroupElement?option.parentElement.label:'',disabled:option.disabled||(option.parentElement instanceof HTMLOptGroupElement&&option.parentElement.disabled)}));
- search.hidden=select.dataset.noSearch==='true'||active.rows.filter(row=>!row.hidden).length<10;if(search.hidden)search.value='';
+ search.hidden=select.dataset.search==='always'?false:(select.dataset.noSearch==='true'||active.rows.filter(row=>!row.hidden).length<10);if(search.hidden)search.value='';
 }
 function filterRows(initial){
  if(!active)return;const query=search.value.trim().toLocaleLowerCase();
@@ -238,7 +240,7 @@ function open(info,initialQuery=''){
   }catch(error){window.STUDIO_REPORT_ERROR?.(error);}finally{info.referenceBusy=false;focusBack(info);}})();return;
  }
  if(active?.info===info){close();return}if(active)close(false);sync(info);createPopup();
- active={info,rows:[],filtered:[],focused:-1,page:0,stale:false};popup.classList.toggle('uc-toolbar-popup',['studio-project','studio-feature'].includes(info.select.id));popup.querySelector('.uc-popup-title').textContent=nameOf(info.select);search.hidden=info.select.dataset.noSearch==='true';search.value=search.hidden?'':initialQuery;
+ active={info,rows:[],filtered:[],focused:-1,page:0,stale:false};popup.classList.toggle('uc-toolbar-popup',['studio-project','studio-feature'].includes(info.select.id));popup.querySelector('.uc-popup-title').textContent=nameOf(info.select);search.hidden=info.select.dataset.search==='always'?false:info.select.dataset.noSearch==='true';search.value=search.hidden?'':initialQuery;
  info.button.setAttribute('aria-expanded','true');info.button.setAttribute('aria-controls',list.id);
  popup.showModal();readRows();filterRows(!initialQuery);if(!search.hidden)search.focus({preventScroll:true});else list.querySelector('button:not(:disabled)')?.focus({preventScroll:true});
  const selected=list.querySelector('[aria-selected="true"]');selected?.scrollIntoView({block:'nearest'});

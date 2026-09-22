@@ -141,7 +141,9 @@ class PluginModeTests(unittest.TestCase):
   with self.assertRaises(b.ApiError):removal.remove(self.store,dict(projectId=self.id,confirmation=first['confirmation']),b)
   self.assertTrue(self.project.path.exists())
   dest=self.store.workshop/'sub';dest.mkdir(parents=True);b.atomic_write(dest/'manifest.json',b.json_bytes({'title':'订阅'}));ident=next(p.id for p in self.store.projects() if p.readonly)
-  with self.assertRaises(b.ApiError):removal.remove(self.store,{'projectId':ident},b)
+  token=removal.remove(self.store,{'projectId':ident},b)['confirmation']
+  hidden=removal.remove(self.store,{'projectId':ident,'confirmation':token},b)
+  self.assertTrue(hidden['hidden']);self.assertTrue(dest.is_dir());self.assertNotIn(ident,[p.id for p in self.store.projects()])
  def test_player_prefs_and_import_do_not_touch_mod(self):
   out=music.access(self.store,b);self.assertEqual(out['tracks'][0]['id'],'tifa-theme');self.assertTrue(out['tracks'][0]['bundled']);self.assertEqual(len([r for r in out['tracks'] if r.get('bundled')]),4)
   raw=b'RIFF'+b'\x00'*4+b'WAVEfmt '+b'\x00'*32

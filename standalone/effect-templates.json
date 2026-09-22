@@ -1556,5 +1556,138 @@
     "categoryId": 20,
     "description": "替换该人物当前维度的倾向；只有人物原有对应倾向时生效，其他三个维度不变。",
     "source": "CommonEvtMgr type20; EffectorChangeRelation ctor/OnRun subtype64; TheEntity.Role.ChangeMainPersonality"
+  },
+  {
+    "label": "属性百分比加成",
+    "template": [
+      1,
+      10,
+      1,
+      0.1
+    ],
+    "match": {
+      "0": 1,
+      "1": 10
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "属性",
+        "type": "int",
+        "range": {
+          "table": "PersonAttrCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "加成比例（0.1 为 +10%，负数为降低）",
+        "type": "float"
+      }
+    ],
+    "category": "改变属性",
+    "categoryId": 1,
+    "description": "按比例提高或降低这项属性的获取。填写 0.1 表示增加 10%，游戏里显示为百分比。",
+    "source": "Effect.EffectorChangeAttr.OnRun subtype 10; RoleIncType.AttrMul"
+  },
+  {
+    "label": "社交时增减属性",
+    "template": [
+      21,
+      1,
+      101,
+      1
+    ],
+    "match": {
+      "0": 21,
+      "1": 1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "属性",
+        "type": "int",
+        "range": {
+          "table": "PersonAttrCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "变化量（负数为减少）",
+        "type": "float"
+      }
+    ],
+    "category": "社交活动",
+    "categoryId": 21,
+    "description": "进行社交时增减所选属性。正数增加，负数减少。",
+    "source": "CommonEvtMgr type 21; EffectorSocial.OnRun subtype 1; RoleIncType.DoSomething 1209"
+  },
+  {
+    "label": "社交时额外好感",
+    "template": [
+      21,
+      4,
+      1
+    ],
+    "match": {
+      "0": 21,
+      "1": 4
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "额外好感（负数为减少）",
+        "type": "float"
+      }
+    ],
+    "category": "社交活动",
+    "categoryId": 21,
+    "description": "社交时在原有好感变化之外，再增加或减少这里的数值。",
+    "source": "Effect.EffectorSocial.OnRun subtype 4; OtherAttrInc 1404"
+  },
+  {
+    "label": "送礼好感百分比",
+    "template": [
+      21,
+      100,
+      0.2
+    ],
+    "match": {
+      "0": 21,
+      "1": 100
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "加成比例（0.2 为 +20%，负数为降低）",
+        "type": "float"
+      }
+    ],
+    "category": "社交活动",
+    "categoryId": 21,
+    "description": "按比例改变送礼得到的好感。0.2 表示增加 20%。",
+    "source": "Effect.EffectorSocial.OnRun subtype 100; OtherAttrMul 223"
+  },
+  {
+    "label": "请教同学的消耗和效果百分比",
+    "template": [
+      21,
+      95,
+      0.5
+    ],
+    "match": {
+      "0": 21,
+      "1": 95
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "加成比例（0.5 为 +50%，负数为降低）",
+        "type": "float"
+      }
+    ],
+    "category": "社交活动",
+    "categoryId": 21,
+    "description": "按比例改变请教同学的消耗和效果。",
+    "source": "Effect.EffectorSocial.OnRun subtype 95; OtherAttrInc 2136"
   }
 ]

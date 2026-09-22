@@ -576,7 +576,10 @@ class StudioStore:
             except OSError: pass
             seen = set()
             for root, path, readonly in candidates:
-                identity = os.path.normcase(str(path))
+                try: resolved = path.resolve()
+                except OSError: continue
+                if not resolved.exists() or resolved.name == 'StudentAgeStudioRemovedMods' or 'StudentAgeStudioRemovedMods' in resolved.parts: continue
+                identity = os.path.normcase(str(resolved))
                 if identity in seen: continue
                 seen.add(identity)
                 try: project = self._project_at(root, path, readonly)
@@ -1742,7 +1745,7 @@ class StudioStore:
             if removed_event_ids:
                 if unreadable: save_warnings.append(next(iter(unreadable.values())).message + '。该文件中对被删事件的引用未检查。')
                 cascade_deleted, cascade_options = deletion({**self.catalog_rows('EvtCfg', catalog), **original_maps.get('EvtCfg.json', {})}, original_talks,
-                    original_maps.get('OptionCfg.json', {}), premise_state.get('branchFolders', {}), old_owners, removed_event_ids, {**self.catalog_rows('InteractCfg',catalog),**all_maps.get('InteractCfg.json', {})},catalog_talks)
+                    original_maps.get('OptionCfg.json', {}), premise_state.get('branchFolders', {}), old_owners, removed_event_ids, {**self.catalog_rows('InteractCfg',catalog),**all_maps.get('InteractCfg.json', {})},catalog_talks, band=set(original_maps.get('EvtCfg.json', {})))
                 migrating={str(v) for v in payload.get('_idleChatMigration',[])}
                 if migrating:
                     from event_ownership import interaction_talks
@@ -1935,7 +1938,7 @@ class StudioStore:
             old_state = copy.deepcopy(state)
             if 'externalDialogueFolders' in payload:
                 from external_dialogues import folders as external_folders
-                external_owners=ownership({**self.catalog_rows('EvtCfg',catalog), **all_maps.get('EvtCfg.json',{})}, {**self.catalog_rows('TalkCfg',catalog), **all_maps.get('TalkCfg.json',{})}, all_maps.get('OptionCfg.json',{}), state.get('branchFolders',{}), state.get('talkOwners',{}))
+                external_owners=ownership({**self.catalog_rows('EvtCfg',catalog), **all_maps.get('EvtCfg.json',{})}, {**self.catalog_rows('TalkCfg',catalog), **all_maps.get('TalkCfg.json',{})}, all_maps.get('OptionCfg.json',{}), state.get('branchFolders',{}), state.get('talkOwners',{}), band=set(all_maps.get('EvtCfg.json', {})))
                 previous_external=state.get('externalDialogueFolders',{})
                 shared_external={str(i) for f in previous_external.values() if f.get('uses') for i in f.get('talkIds',[])} | {str(i) for i in state.get('externalDialogueIds',[])}
                 external_rows={k:v for k,v in all_maps.get('TalkCfg.json',{}).items() if not external_owners.get(k) or k in shared_external}
@@ -2000,11 +2003,12 @@ class StudioStore:
                 except ApiError: proposed_owners = {}
             # Original connectivity records ownership before a submitted edit
             # disconnects a segment. This also covers non-UI table saves.
+            mod_events=set(all_maps.get('EvtCfg.json', {}))
             inferred_owners = ownership({**self.catalog_rows('EvtCfg', catalog), **original_maps.get('EvtCfg.json', {})}, original_talks,
-                original_maps.get('OptionCfg.json', {}), previous_folders, old_owners)
+                original_maps.get('OptionCfg.json', {}), previous_folders, old_owners, band=set(original_maps.get('EvtCfg.json', {})))
             known_owners = {t:list(set(inferred_owners.get(t, [])) | set(proposed_owners.get(t, []))) for t in set(inferred_owners) | set(proposed_owners)}
             state['talkOwners'] = ownership({**self.catalog_rows('EvtCfg', catalog), **all_maps.get('EvtCfg.json', {})},
-                {t:r for t,r in all_maps.get('TalkCfg.json', {}).items() if t not in redirects}, all_maps.get('OptionCfg.json', {}), folders, known_owners)
+                {t:r for t,r in all_maps.get('TalkCfg.json', {}).items() if t not in redirects}, all_maps.get('OptionCfg.json', {}), folders, known_owners, band=mod_events)
             premises = state.get("premises", {})
             if "premises" in payload or premises:
                 try:

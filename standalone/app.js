@@ -144,11 +144,17 @@ function initialOrder() {
   for(const id of Object.keys(S.doc.talks).map(Number).sort((a,b)=>a-b))if(!set.has(id))ordered.push(id);
   return ordered;
 }
+function shownWith(eventId){
+  const display=StudentAgeEventOwnership.display(S.doc,S.branchFolders),want=eventId==='all'?null:Number(eventId),allowed=new Set();
+  const take=(id,owners)=>{if(want===null?owners.some(e=>S.doc.events[e]):owners.includes(want))allowed.add(Number(id));};
+  for(const [id,owners] of Object.entries(display))take(id,owners);
+  for(const [id,owners] of Object.entries(S.doc.talkOwners||{}))take(id,owners||[]);
+  return allowed;
+}
 function visibleIds() {
   if(externalSession){const hidden=Timeline.internals(S.branchFolders);return externalScope().filter(id=>!hidden.has(id)&&(!S.search||StudentAgeSearch.matches(S.search,id,speaker(S.doc.talks[id]),talkText(S.doc.talks[id]))));}
   const hidden=Timeline.internals(S.branchFolders);let list=S.order.filter(id=>S.doc && S.doc.talks[id]&&!hidden.has(id));
-  if(S.event!=='all'){const event=S.doc.events[S.event];const allowed=new Set(Object.entries(S.doc.talkOwners||{}).filter(([,owners])=>owners.includes(Number(S.event))).map(([id])=>Number(id)));list=list.filter(id=>allowed.has(id));}
-  list=list.filter(id=>(S.doc.talkOwners?.[id]||[]).some(e=>S.doc.events[e]));
+  const allowed=shownWith(S.event);list=list.filter(id=>allowed.has(id));
   if(S.search){if(Remote.info(S.doc.talks)){requestTalkSearch();list=list.filter(id=>S.segmentSearch?.has(String(id)));}else{const q=S.search.toLocaleLowerCase();list=list.filter(id=>{const t=S.doc.talks[id];return StudentAgeSearch.matches(q,id,speaker(t),t.content);});}}
   return list;
 }
@@ -965,7 +971,7 @@ function createEvent(options={}) {
 }
 function firstOwnedEventTalk(event) {
   const internal=Timeline.internals(S.branchFolders);
-  return S.order.find(id=>S.doc.talks[id]&&!internal.has(Number(id))&&(S.doc.talkOwners?.[id]||[]).includes(Number(event.id)))||0;
+  return S.order.find(id=>S.doc.talks[id]&&!internal.has(Number(id))&&shownWith(event.id).has(id))||0;
 }
 function eventDetails(id=S.event,creation=null) {
   const e=creation?{id:nextId(S.doc.events,1000000),title:"",type:creation.type,talkId:creation.entry?[creation.entry]:[],rate:1,maxcount:1,effect:[],condition:[]}:S.doc?.events[id];if(!e){toast('先选择一个具体事件。','note');return;}
@@ -2001,7 +2007,7 @@ function openAssetPicker(kind,options={}) {
   return window.STUDIO_ASSET_PICKER.open(kind,{...(kind==='background'&&!phoneEvent()?{selectDialogues:selectBackgroundDialogues}:{}),...options,selected:S.selected,event:S.event,folderKey:options.folderKey??S.activeFolder});
 }
 async function selectBackgroundDialogues(previous=[]){
- const project=S.project.id,scope=externalSession?externalScope():S.order.filter(id=>(S.doc.talkOwners?.[id]||[]).includes(Number(S.event))),hidden=Timeline.internals(S.branchFolders),allowed=scope.filter(id=>!hidden.has(id)&&S.doc.talks[id]),chosen=new Set(previous.filter(id=>allowed.includes(id)));
+ const project=S.project.id,scope=externalSession?externalScope():S.order.filter(id=>shownWith(S.event).has(id)),hidden=Timeline.internals(S.branchFolders),allowed=scope.filter(id=>!hidden.has(id)&&S.doc.talks[id]),chosen=new Set(previous.filter(id=>allowed.includes(id)));
  if(!allowed.length)return null;
  const panel=document.createElement('dialog');panel.className='background-dialogue-picker';panel.innerHTML=`<header><h2>选择要换背景的对话</h2><button data-bg-cancel>关闭</button></header><p>${externalSession?'当前对话夹':'当前事件'} · 共 ${allowed.length} 句。选好后返回场景目录，再点击背景。</p><div class="bg-selection-tools"><button data-bg-all>全选</button><button data-bg-clear>清空</button><span data-bg-count></span></div><div class="bg-dialogue-list"></div><footer><button data-bg-prev>上一页</button><span data-bg-page></span><button data-bg-next>下一页</button><button class="primary" data-bg-confirm>选择背景</button></footer>`;document.body.append(panel);panel.showModal();let page=0,seq=0;
  const count=()=>{panel.querySelector('[data-bg-count]').textContent=`已选 ${chosen.size} 句`;panel.querySelector('[data-bg-confirm]').disabled=!chosen.size;};
@@ -2035,7 +2041,7 @@ window.STUDIO_USE_PICKED_ASSET=async(result,options={})=>{
     S.previewRole=id;enterSceneRole(id,{cloth:result.cloth==null?undefined:Number(result.cloth)});syncFaceFromTalk();
   }else if(kind==='background'){
     if(!S.doc.backgrounds[id])throw Error('场景尚未载入，请重新打开素材目录。');
-    if(options.backgroundTalkIds?.length){const targets=[...new Set(options.backgroundTalkIds)],allowed=new Set(externalSession?externalScope():S.order.filter(t=>(S.doc.talkOwners?.[t]||[]).includes(Number(S.event))));if(targets.some(t=>!allowed.has(t)||!S.doc.talks[t]))throw Error('所选对话已变化，请重新选择。');await Remote.ensure(S.doc.talks,targets);mutate('批量更换背景',()=>{for(const t of targets)S.doc.talks[t].bg=id;});return true;}
+    if(options.backgroundTalkIds?.length){const targets=[...new Set(options.backgroundTalkIds)],allowed=new Set(externalSession?externalScope():S.order.filter(t=>shownWith(S.event).has(t)));if(targets.some(t=>!allowed.has(t)||!S.doc.talks[t]))throw Error('所选对话已变化，请重新选择。');await Remote.ensure(S.doc.talks,targets);mutate('批量更换背景',()=>{for(const t of targets)S.doc.talks[t].bg=id;});return true;}
     mutate('设置场景',()=>{if(phoneEvent())configurePhone(phoneEvent(),Number(phoneEvent().npc)||0,id);else talk().bg=id;});
   }else if(kind==='cg'){
     if(!S.doc.cgs[id])throw Error('CG 尚未载入，请重新打开素材目录。');
