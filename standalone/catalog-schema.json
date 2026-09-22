@@ -6721,7 +6721,10 @@
           "editorType": "Default",
           "listDepth": 0
         }
-      ]
+      ],
+      "nativePage": true,
+      "order": 609,
+      "allowIncomplete": true
     },
     "MovieCfg": {
       "name": "MovieCfg",
@@ -10736,6 +10739,419 @@
       "description": "修改已有社交小游戏关卡；人物所用的小游戏在人物页绑定。",
       "editExistingOnly": true,
       "layout": "sections"
+    },
+    "LoveVindicateCfg": {
+      "name": "LoveVindicateCfg",
+      "filename": "LoveVindicateCfg.json",
+      "label": "表白结果",
+      "category": "恋爱与送礼",
+      "nativePage": true,
+      "order": 600,
+      "fields": [
+        {
+          "name": "id",
+          "label": "编号",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "target",
+          "label": "好感度阈值",
+          "type": "float",
+          "default": 0,
+          "section": "判定"
+        },
+        {
+          "name": "txt",
+          "label": "表白台词",
+          "type": "string",
+          "default": "",
+          "section": "显示",
+          "multiline": true
+        },
+        {
+          "name": "color",
+          "label": "文字颜色",
+          "type": "string",
+          "default": "#ffffff",
+          "section": "显示",
+          "editorType": "Color"
+        }
+      ],
+      "layout": "sections",
+      "allowIncomplete": true,
+      "description": "好感度达到阈值时的表白台词与颜色。"
+    },
+    "LoveVindicateRateCfg": {
+      "name": "LoveVindicateRateCfg",
+      "filename": "LoveVindicateRateCfg.json",
+      "label": "表白成功率",
+      "category": "恋爱与送礼",
+      "nativePage": true,
+      "order": 601,
+      "fields": [
+        {
+          "name": "id",
+          "label": "编号",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "favorParms",
+          "label": "好感参数",
+          "type": "list<float>",
+          "default": [],
+          "section": "成功率",
+          "visualList": true
+        },
+        {
+          "name": "attrParms",
+          "label": "属性参数",
+          "type": "list<float>",
+          "default": [],
+          "section": "成功率",
+          "visualList": true
+        }
+      ],
+      "layout": "sections",
+      "allowIncomplete": true,
+      "description": "表白成功率的好感与属性参数。"
+    },
+    "LoveActionCfg": {
+      "name": "LoveActionCfg",
+      "filename": "LoveActionCfg.json",
+      "label": "约会行动",
+      "category": "恋爱与送礼",
+      "nativePage": true,
+      "order": 602,
+      "fields": [
+        {
+          "name": "id",
+          "label": "编号",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "name",
+          "label": "行动名称",
+          "type": "string",
+          "default": "",
+          "section": "基本"
+        },
+        {
+          "name": "funcId",
+          "label": "功能编号",
+          "type": "int",
+          "default": 0,
+          "section": "基本"
+        }
+      ],
+      "layout": "sections",
+      "allowIncomplete": true,
+      "description": "约会可用的行动及其功能编号。"
+    },
+    "LoveBadmintonCfg": {
+      "name": "LoveBadmintonCfg",
+      "filename": "LoveBadmintonCfg.json",
+      "label": "羽毛球台词",
+      "category": "恋爱与送礼",
+      "nativePage": true,
+      "order": 603,
+      "fields": [
+        {
+          "name": "id",
+          "label": "编号",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "faqiu",
+          "label": "发球台词",
+          "type": "list<string>",
+          "default": [],
+          "section": "台词",
+          "visualList": true
+        },
+        {
+          "name": "score",
+          "label": "得分台词",
+          "type": "list<string>",
+          "default": [],
+          "section": "台词",
+          "visualList": true
+        },
+        {
+          "name": "loseScore",
+          "label": "失分台词",
+          "type": "list<string>",
+          "default": [],
+          "section": "台词",
+          "visualList": true
+        },
+        {
+          "name": "hit",
+          "label": "击球台词",
+          "type": "list<string>",
+          "default": [],
+          "section": "台词",
+          "visualList": true
+        },
+        {
+          "name": "opHit",
+          "label": "对手击球台词",
+          "type": "list<string>",
+          "default": [],
+          "section": "台词",
+          "visualList": true
+        },
+        {
+          "name": "heavyHit",
+          "label": "大力击球台词",
+          "type": "list<string>",
+          "default": [],
+          "section": "台词",
+          "visualList": true
+        }
+      ],
+      "layout": "sections",
+      "allowIncomplete": true,
+      "description": "羽毛球各环节的对话台词。"
+    },
+    "LoveBreakfastCfg": {
+      "name": "LoveBreakfastCfg",
+      "filename": "LoveBreakfastCfg.json",
+      "label": "爱心早餐",
+      "category": "恋爱与送礼",
+      "nativePage": true,
+      "order": 604,
+      "fields": [
+        {
+          "name": "id",
+          "label": "编号",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "npc",
+          "label": "人物",
+          "type": "int",
+          "default": 0,
+          "section": "对象",
+          "range": {
+            "table": "PersonCfg"
+          }
+        },
+        {
+          "name": "item",
+          "label": "物品",
+          "type": "int",
+          "default": 0,
+          "section": "对象",
+          "range": {
+            "table": "ItemCfg / BookCfg"
+          }
+        },
+        {
+          "name": "msgIcon",
+          "label": "消息图标",
+          "type": "string",
+          "default": "None",
+          "section": "消息"
+        },
+        {
+          "name": "msgTxt",
+          "label": "消息内容",
+          "type": "string",
+          "default": "",
+          "section": "消息",
+          "multiline": true
+        },
+        {
+          "name": "cond",
+          "label": "出现条件",
+          "type": "list<list<double>>",
+          "default": [],
+          "section": "条件",
+          "editorType": "Condition",
+          "listDepth": 2
+        },
+        {
+          "name": "weight",
+          "label": "权重",
+          "type": "float",
+          "default": 1,
+          "section": "条件"
+        }
+      ],
+      "layout": "sections",
+      "allowIncomplete": true,
+      "description": "人物赠送爱心早餐的物品、消息与条件。"
+    },
+    "LoveDrawCfg": {
+      "name": "LoveDrawCfg",
+      "filename": "LoveDrawCfg.json",
+      "label": "情侣画",
+      "category": "恋爱与送礼",
+      "nativePage": true,
+      "order": 605,
+      "fields": [
+        {
+          "name": "id",
+          "label": "编号",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "color",
+          "label": "颜色",
+          "type": "string",
+          "default": "#ffffff",
+          "section": "显示",
+          "editorType": "Color"
+        }
+      ],
+      "layout": "sections",
+      "allowIncomplete": true,
+      "description": "情侣画的颜色配置。"
+    },
+    "LoveRibbonCfg": {
+      "name": "LoveRibbonCfg",
+      "filename": "LoveRibbonCfg.json",
+      "label": "祈福飘带",
+      "category": "恋爱与送礼",
+      "nativePage": true,
+      "order": 606,
+      "fields": [
+        {
+          "name": "id",
+          "label": "编号",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "names",
+          "label": "署名",
+          "type": "list<string>",
+          "default": [],
+          "section": "内容",
+          "visualList": true
+        },
+        {
+          "name": "content",
+          "label": "祈福内容",
+          "type": "string",
+          "default": "",
+          "section": "内容",
+          "multiline": true
+        },
+        {
+          "name": "weight",
+          "label": "权重",
+          "type": "float",
+          "default": 1,
+          "section": "条件"
+        },
+        {
+          "name": "cond",
+          "label": "出现条件",
+          "type": "list<list<double>>",
+          "default": [],
+          "section": "条件",
+          "editorType": "Condition",
+          "listDepth": 2
+        }
+      ],
+      "layout": "sections",
+      "allowIncomplete": true,
+      "description": "祈福飘带的署名、内容与出现条件。"
+    },
+    "LoveGreetingCfg": {
+      "name": "LoveGreetingCfg",
+      "filename": "LoveGreetingCfg.json",
+      "label": "早安问候",
+      "category": "恋爱与送礼",
+      "nativePage": true,
+      "order": 607,
+      "fields": [
+        {
+          "name": "id",
+          "label": "编号",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "scenes",
+          "label": "场景编号",
+          "type": "list<int>",
+          "default": [],
+          "section": "触发",
+          "visualList": true
+        },
+        {
+          "name": "cond",
+          "label": "出现条件",
+          "type": "list<list<double>>",
+          "default": [],
+          "section": "触发",
+          "editorType": "Condition",
+          "listDepth": 2
+        },
+        {
+          "name": "talkId",
+          "label": "对话编号",
+          "type": "int",
+          "default": 0,
+          "section": "触发",
+          "range": {
+            "table": "TalkCfg"
+          }
+        }
+      ],
+      "layout": "sections",
+      "allowIncomplete": true,
+      "description": "各场景的早安问候及其对话。"
+    },
+    "WishCfg": {
+      "name": "WishCfg",
+      "filename": "WishCfg.json",
+      "label": "许愿",
+      "category": "恋爱与送礼",
+      "nativePage": true,
+      "order": 608,
+      "fields": [
+        {
+          "name": "id",
+          "label": "编号",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "name",
+          "label": "愿望",
+          "type": "string",
+          "default": "",
+          "section": "内容"
+        },
+        {
+          "name": "effect",
+          "label": "许愿效果",
+          "type": "list<list<float>>",
+          "default": [],
+          "section": "效果",
+          "editorType": "Effect",
+          "listDepth": 2
+        },
+        {
+          "name": "tag",
+          "label": "标签",
+          "type": "int",
+          "default": 0,
+          "section": "内容"
+        }
+      ],
+      "layout": "sections",
+      "allowIncomplete": true,
+      "description": "许愿内容与效果。"
     }
   },
   "features": [

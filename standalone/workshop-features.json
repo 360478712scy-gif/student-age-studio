@@ -967,5 +967,153 @@
     "native": true,
     "homeCategory": "builtin",
     "createLabel": "添加电视节目"
+  },
+  {
+    "id": "love-confession",
+    "label": "表白",
+    "description": "编辑表白台词、颜色与成功率参数",
+    "primaryTable": "LoveVindicateCfg",
+    "tables": [
+      "LoveVindicateCfg",
+      "LoveVindicateRateCfg"
+    ],
+    "entry": {
+      "kind": "table",
+      "table": "LoveVindicateCfg"
+    },
+    "previewKind": "love-confession",
+    "group": "恋爱与送礼",
+    "createLabel": "添加表白",
+    "native": true,
+    "module": true,
+    "homeCategory": "extension"
+  },
+  {
+    "id": "love-actions",
+    "label": "约会行动",
+    "description": "编辑约会行动名称与功能编号",
+    "primaryTable": "LoveActionCfg",
+    "tables": [
+      "LoveActionCfg"
+    ],
+    "entry": {
+      "kind": "table",
+      "table": "LoveActionCfg"
+    },
+    "previewKind": "love-actions",
+    "group": "恋爱与送礼",
+    "createLabel": "添加约会行动",
+    "native": true,
+    "homeCategory": "extension"
+  },
+  {
+    "id": "love-badminton",
+    "label": "羽毛球",
+    "description": "编辑羽毛球各环节台词",
+    "primaryTable": "LoveBadmintonCfg",
+    "tables": [
+      "LoveBadmintonCfg"
+    ],
+    "entry": {
+      "kind": "table",
+      "table": "LoveBadmintonCfg"
+    },
+    "previewKind": "love-badminton",
+    "group": "恋爱与送礼",
+    "createLabel": "添加羽毛球台词",
+    "native": true,
+    "homeCategory": "extension"
+  },
+  {
+    "id": "love-breakfast",
+    "label": "爱心早餐",
+    "description": "编辑人物赠送早餐的物品、消息与条件",
+    "primaryTable": "LoveBreakfastCfg",
+    "tables": [
+      "LoveBreakfastCfg"
+    ],
+    "entry": {
+      "kind": "table",
+      "table": "LoveBreakfastCfg"
+    },
+    "previewKind": "love-breakfast",
+    "group": "恋爱与送礼",
+    "createLabel": "添加爱心早餐",
+    "native": true,
+    "homeCategory": "extension"
+  },
+  {
+    "id": "love-draw",
+    "label": "情侣画",
+    "description": "编辑情侣画颜色",
+    "primaryTable": "LoveDrawCfg",
+    "tables": [
+      "LoveDrawCfg"
+    ],
+    "entry": {
+      "kind": "table",
+      "table": "LoveDrawCfg"
+    },
+    "previewKind": "love-draw",
+    "group": "恋爱与送礼",
+    "createLabel": "添加情侣画",
+    "native": true,
+    "homeCategory": "extension"
+  },
+  {
+    "id": "love-wish",
+    "label": "祈福许愿",
+    "description": "编辑祈福飘带与许愿内容效果",
+    "primaryTable": "LoveRibbonCfg",
+    "tables": [
+      "LoveRibbonCfg",
+      "WishCfg"
+    ],
+    "entry": {
+      "kind": "table",
+      "table": "LoveRibbonCfg"
+    },
+    "previewKind": "love-wish",
+    "group": "恋爱与送礼",
+    "createLabel": "添加祈福",
+    "native": true,
+    "module": true,
+    "homeCategory": "extension"
+  },
+  {
+    "id": "love-greeting",
+    "label": "早安问候",
+    "description": "编辑各场景早安问候及其对话",
+    "primaryTable": "LoveGreetingCfg",
+    "tables": [
+      "LoveGreetingCfg"
+    ],
+    "entry": {
+      "kind": "table",
+      "table": "LoveGreetingCfg"
+    },
+    "previewKind": "love-greeting",
+    "group": "恋爱与送礼",
+    "createLabel": "添加早安问候",
+    "native": true,
+    "homeCategory": "extension"
+  },
+  {
+    "id": "gift-events",
+    "label": "送礼事件",
+    "description": "编辑送礼物品、人物、条件与对话",
+    "primaryTable": "GiftEvtCfg",
+    "tables": [
+      "GiftEvtCfg"
+    ],
+    "entry": {
+      "kind": "table",
+      "table": "GiftEvtCfg"
+    },
+    "previewKind": "gift-events",
+    "group": "恋爱与送礼",
+    "createLabel": "添加送礼事件",
+    "native": true,
+    "homeCategory": "extension"
   }
 ]
