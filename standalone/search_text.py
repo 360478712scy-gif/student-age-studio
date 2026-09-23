@@ -1,13 +1,28 @@
 """The same offline pinyin matching used by the UI, including polyphonic initials."""
 from functools import lru_cache
 import json
+import logging
 from pathlib import Path
 import re
 import unicodedata
 
-source=Path(__file__).with_name('search-pinyin.js').read_text(encoding='utf-8')
-dictionary=json.loads(source.split('/* PINYIN_START */',1)[1].split('/* PINYIN_END */',1)[0])
-del source
+def load_dictionary(path):
+    # Search aids must not prevent opening the editor after an interrupted update.
+    try:
+        source=path.read_text(encoding='utf-8')
+        value=json.loads(source.split('/* PINYIN_START */',1)[1].split('/* PINYIN_END */',1)[0])
+        if not isinstance(value,dict) or any(
+            not isinstance(k,str) or not isinstance(v,list) or not v
+            or any(not isinstance(word,str) or not word for word in v)
+            for k,v in value.items()
+        ):
+            raise ValueError('Invalid pinyin dictionary')
+        return value
+    except (OSError,UnicodeError,ValueError,IndexError) as exc:
+        logging.getLogger(__name__).warning('Pinyin dictionary unavailable; literal search remains available: %s',exc)
+        return {}
+
+dictionary=load_dictionary(Path(__file__).with_name('search-pinyin.js'))
 
 def normalize(value):
     text=unicodedata.normalize('NFKC',str(value or '')).casefold().replace('ü','v')
