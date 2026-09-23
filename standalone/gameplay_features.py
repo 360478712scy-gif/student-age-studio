@@ -19,7 +19,7 @@ def _read(game,stamp):
     with _lock:
         try:
             old=json.loads(cache.read_text('utf-8'))
-            if old.get('stamp')==[list(s) for s in stamp] and old.get('version')==3:return old['tables']
+            if old.get('stamp')==[list(s) for s in stamp] and old.get('version')==4:return old['tables']
         except (OSError,ValueError,KeyError):pass
         from extract_game_assets import UnityPy
         tables={n:{} for n in (*NAMES,*LOOKUPS)}
@@ -35,7 +35,7 @@ def _read(game,stamp):
                 if isinstance(rows,dict):tables[table].update(rows)
         from platform_support import replace_file
         cache.parent.mkdir(parents=True,exist_ok=True);stage=cache.with_name(cache.name+'.'+uuid.uuid4().hex+'.tmp')
-        stage.write_text(json.dumps({'version':3,'stamp':stamp,'tables':tables},ensure_ascii=False),'utf-8');replace_file(stage,cache)
+        stage.write_text(json.dumps({'version':4,'stamp':stamp,'tables':tables},ensure_ascii=False),'utf-8');replace_file(stage,cache)
         return tables
 
 def original_rows(game,name):
@@ -44,3 +44,21 @@ def original_rows(game,name):
     stamp=tuple((str(p),p.stat().st_size,p.stat().st_mtime_ns) for p in paths)
     return _read(str(game),stamp).get(name,{})
 
+
+
+def love_issues(name, row):
+    """Native assumptions surfaced as acknowledgeable save warnings, not a gate."""
+    if name == 'LoveVindicateRateCfg':
+        import math
+        for key in ('favorParms', 'attrParms'):
+            values = row.get(key)
+            if not isinstance(values, list) or len(values) != 5 or any(isinstance(v, bool) or not isinstance(v, (float, int)) or not math.isfinite(v) for v in values):
+                yield key + ' 需要五个有限数值，否则原版可能无法计算表白成功率。'
+            elif values[1] < 0 or values[3] <= 0 or values[2] + values[4] <= 0 or values[2] + values[4] == 1:
+                yield key + ' 的对数参数可能无效，请检查系数、偏移和底数。'
+    elif name == 'GiftEvtCfg':
+        npc, talks, types = row.get('npc', []), row.get('talkId', []), row.get('type', [])
+        if not all(isinstance(v, list) for v in (npc, talks, types)):
+            yield '收礼人、剧情入口和赠送方式应为列表。'
+        elif len(npc) != len(talks) or len(types) > len(npc) or any(not isinstance(v, list) or not 1 <= len(v) <= 2 for v in talks):
+            yield '每位收礼人需要一组剧情入口；一项为通用入口，两项分别为男、女主角入口。缺省赠送方式会消耗礼物。'

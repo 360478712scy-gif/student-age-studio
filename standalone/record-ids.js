@@ -2,7 +2,7 @@
 (()=>{
 'use strict';
 const derived={TalkCfg:['EvtCfg',1000],OptionCfg:['EvtCfg',100],KZoneCommentCfg:['KZoneContentCfg',100],ModFaceCfg:['PersonCfg',1000]};
-const linked={DIYCfg:'ItemCfg',BirthdayPaintGuessCfg:'PersonCfg',PersonGrowCfg:'PersonCfg',KZoneProfileCfg:'PersonCfg',ModFaceCfg:'PersonCfg',ActionEvtCfg:'ActionCfg',ShopCfg:'ItemCfg / BookCfg'};
+const linked={LoveVindicateRateCfg:'PersonCfg',LoveBadmintonCfg:'PersonCfg',DIYCfg:'ItemCfg',BirthdayPaintGuessCfg:'PersonCfg',PersonGrowCfg:'PersonCfg',KZoneProfileCfg:'PersonCfg',ModFaceCfg:'PersonCfg',ActionEvtCfg:'ActionCfg',ShopCfg:'ItemCfg / BookCfg'};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const token=window.STUDIO_TOKEN&&window.STUDIO_TOKEN!=='__STUDIO_TOKEN__'?window.STUDIO_TOKEN:location.hash.slice(1).replace(/^token=/,'');
 let registry=null,used=new Set(),blocks={},reserved=new Set(),working=false,draft=null,applying=null,undoEntry=null,redoEntry=null,checkTimer=null,checkSequence=0;

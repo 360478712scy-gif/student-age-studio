@@ -2378,7 +2378,12 @@ class StudioStore:
 
     def validate_fields(self, name, rows, previous):
         # Work in progress is saveable; these editors do not gate on completeness.
-        if name in gameplay_features.NAMES:return
+        if name in gameplay_features.NAMES:
+            for key, row in rows.items():
+                for issue in gameplay_features.love_issues(name, row):
+                    with save_review.checking(ApiError, name + " 编号 " + key):
+                        raise ApiError(issue)
+            return
         fields = self.table_schema(name).get("fields", [])
         for key, row in rows.items():
             original = previous.get(key, {})

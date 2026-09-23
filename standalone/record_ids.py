@@ -10,11 +10,11 @@ from platform_support import file_fingerprint
 
 POST = 'KZoneContentCfg'
 COMMENT = 'KZoneCommentCfg'
-LINKED = {'DIYCfg':'ItemCfg','BirthdayPaintGuessCfg':'PersonCfg','PersonGrowCfg': 'PersonCfg', 'KZoneProfileCfg': 'PersonCfg',
+LINKED = {'LoveVindicateRateCfg':'PersonCfg','LoveBadmintonCfg':'PersonCfg','DIYCfg':'ItemCfg','BirthdayPaintGuessCfg':'PersonCfg','PersonGrowCfg': 'PersonCfg', 'KZoneProfileCfg': 'PersonCfg',
           'ModFaceCfg': 'PersonCfg', 'ActionEvtCfg': 'ActionCfg', 'ShopCfg': 'ItemCfg / BookCfg'}
 DERIVED = {'TalkCfg': ('EvtCfg', 1000), 'OptionCfg': ('EvtCfg', 100),
            COMMENT: (POST, 100), 'ModFaceCfg': ('PersonCfg', 1000)}
-CHILDREN = {'PersonCfg': ['PersonGrowCfg', 'KZoneProfileCfg', 'BirthdayPaintGuessCfg'], 'ActionCfg': ['ActionEvtCfg'],
+CHILDREN = {'PersonCfg': ['PersonGrowCfg', 'KZoneProfileCfg', 'BirthdayPaintGuessCfg', 'LoveVindicateRateCfg', 'LoveBadmintonCfg'], 'ActionCfg': ['ActionEvtCfg'],
             'ItemCfg': ['ShopCfg','DIYCfg'], 'BookCfg': ['ShopCfg']}
 
 

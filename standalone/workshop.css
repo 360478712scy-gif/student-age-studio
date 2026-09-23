@@ -83,3 +83,8 @@
 #workshop #wk-main>.wk-reference-note{margin:0 0 10px}
 
 html body .studio-delete-menu.wk-copy-menu button{color:var(--sg-text,#e4eee8)}
+
+/* Native love/gift editors share the workshop's existing surface and controls. */
+.wk-gift-recipients{grid-column:1/-1;min-width:0}.wk-gift-recipient{border:1px solid var(--border,#526980);border-radius:12px;padding:14px;margin:12px 0}.wk-gift-recipient>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.wk-love-ribbon{padding:24px 18px;border-radius:12px;background:color-mix(in srgb,#ad526a 25%,transparent)}.wk-love-ribbon p{white-space:pre-wrap}.wk-love-color{width:100%;height:100px;border-radius:12px;border:1px solid #82919d}
+
+.wk-gift-recipient{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}.wk-gift-recipient>header,.wk-gift-recipient>[data-field^="talkId"]{grid-column:1/-1}.wk-gift-recipient .wk-field{margin:0}.wk-gift-recipient>[data-field^="type"]{grid-column:2;grid-row:2}.wk-gift-recipient .wk-array-item{flex:1;min-width:220px}.wk-gift-recipient .wk-array{display:flex;flex-wrap:wrap;gap:8px}.wk-gift-recipient .wk-array>.text-button{align-self:center}.wk-gift-recipient .wk-value{width:auto}@media(max-width:900px){.wk-gift-recipient{grid-template-columns:1fr}.wk-gift-recipient>[data-field^="type"]{grid-column:auto;grid-row:auto}}
