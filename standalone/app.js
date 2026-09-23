@@ -1451,7 +1451,7 @@ function scenePlayerRender(state,flags) {
   if(!state||!largeScene)return;
   if(flags.ended&&storyPreview){closeStoryPreview();return;}
   const menu=$('#scene-context-menu');if(!menu.hidden&&(menu.dataset.project!==S.project?.id||Number(menu.dataset.talk)!==S.selected||!state.roles[menu.dataset.role]?.visible||sceneMode!=='edit'))closeContextMenu();$('#scene-panel').hidden=!talk();
-  largeScene.draw(S.doc,state,{edit:sceneMode==='edit'&&!S.project?.readOnly,animate:flags.animate});largeScene.showChoices([],()=>{});
+  largeScene.draw(S.doc,state,{edit:sceneMode==='edit'&&!S.project?.readOnly,textEffects:sceneMode!=='edit',animate:flags.animate});largeScene.showChoices([],()=>{});
   const visible=values(state.roles).filter(r=>r.visible);
   if(!state.roles[S.previewRole]?.visible)S.previewRole=visible[0]?.id??null;
   if(S.previewRole!==null){S.face=state.roles[S.previewRole].face;S.cloth=state.roles[S.previewRole].cloth;}

@@ -478,7 +478,7 @@ class Renderer {
     img.onerror=()=>{if(!current())return;if(++index<paths.length)img.src=this.options.assetUrl(paths[index]);else failure();};img.src=firstUrl;
   }
 
-  draw(doc,state,{edit=false,animate=false,fromState=null}={}) {
+  draw(doc,state,{edit=false,animate=false,fromState=null,textEffects=!edit}={}) {
     if(this.disposed)return;
     if(this.doc&&this.doc!==doc)this.invalidateAssets(true);
     if(this.drag){const role=state.roles[this.drag.role.id];
@@ -533,7 +533,7 @@ class Renderer {
       Promise.all(pending).then(()=>{if(this.exitAnimations.get(id)===exit){this.exitAnimations.delete(id);node.remove();this.queueCast();}});
     }
     this.container.querySelector('.scene-empty-cast').hidden=rendered.length>0||!!state.cg;
-    this.drawDialogue(state,edit);this.drawPaper(state,doc);window.StudentAgeScreenEffects?.draw(this,doc,state,animate);
+    this.drawDialogue(state,edit,textEffects);this.drawPaper(state,doc);window.StudentAgeScreenEffects?.draw(this,doc,state,animate);
     this.options.onAssetStatus?.([...this.assetWarnings.values()]);this.options.onStatus?.(state);this.queueCast();return state;
   }
   get paperVisible(){return !!this.state?.paperId&&this.paperClosed!==this.state.talkId;}
@@ -622,7 +622,7 @@ class Renderer {
     for(const [id,node] of this.actors){const role=this.state.roles[id];if(role){this.updateActorImage(this.doc,role,node);this.position(node,role,this.state.reference);}}
     for(const [id,exit] of this.exitAnimations){const role=this.state.roles[id];if(role)this.updateActorImage(this.doc,role,exit.node);}
   }
-  drawDialogue(state,edit){
+  drawDialogue(state,edit,textEffects){
     const editable=!!(edit&&state.talkId!==null&&this.options.canEditDialogue?.()),input=this.dialogueInput;
     const changedTalk=this.dialogueTalkId!==state.talkId,content=String(state.content||''),focused=document.activeElement===input;
     this.dialogueEditable=editable;this.dialogue.classList.toggle('scene-dialogue-editable',editable);
@@ -634,7 +634,7 @@ class Renderer {
     const name=state.speaker||'旁白';this.speakerButton.querySelector('strong').textContent=name;
     this.speakerButton.disabled=!editable||!this.options.onChooseSpeaker;
     this.speakerButton.setAttribute('aria-label',editable?name+'，点击选择说话人':name);
-    const paragraph=this.dialogue.querySelector('p');paragraph.textContent=content||(state.talkId===null?'选择一句对话，开始预览。':'');paragraph.hidden=editable;input.hidden=!editable;
+    const paragraph=this.dialogue.querySelector('p');const display=content||(state.talkId===null?'选择一句对话，开始预览。':'');if(textEffects&&!edit&&window.StudentAgePreviewText)window.StudentAgePreviewText.render(paragraph,display);else paragraph.textContent=display;paragraph.hidden=editable;input.hidden=!editable;
     if(changedTalk)this.dialogueComposing=false;
     if(input.value!==content&&(changedTalk||!this.dialogueComposing&&(!focused||content!==this.dialogueContent))){
       const start=input.selectionStart,end=input.selectionEnd,direction=input.selectionDirection,scroll=input.scrollTop;input.value=content;
