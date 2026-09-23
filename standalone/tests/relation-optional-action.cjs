@@ -12,10 +12,21 @@ function apply(actionId){const state={social:{...B.socialDraft(event),kind:'rela
 apply(0);assert.equal(next,8000000);assert.deepEqual(plain(doc.actions),{});assert.deepEqual(plain(event.effect),[[1,1,8]]);assert.equal(event.studioSocial.unlockedActionId,undefined);
 apply(101);const owned=event.studioSocial.unlockedActionId;assert.ok(doc.actions[owned]);assert.ok(doc.talks[1].effect.some(e=>e[0]===40&&e[2]===owned));assert.equal(doc.actions[owned].future.keep,true);
 apply(101);assert.equal(event.studioSocial.unlockedActionId,owned);assert.equal(Object.keys(doc.actions).length,1);const bound=plain(doc);
-apply(0);assert.equal(doc.actions[owned],undefined);assert.equal(event.studioSocial.unlockedActionId,undefined);assert.equal(event.future,'keep');assert.deepEqual(plain(event.condition),[[7,0,3,1]]);assert.deepEqual(plain(doc.talks[1].effect),[[1,1,7],[1,1,8]]);assert.deepEqual(refs.ActionCfg[101].effect,[[1,1,2]]);
+apply(0);assert.equal(doc.actions[owned],undefined);assert.equal(event.studioSocial.unlockedActionId,undefined);assert.equal(event.future,'keep');assert.deepEqual(plain(event.condition),[[7,0,3,1]]);assert.deepEqual(plain(doc.talks[1].effect),[[1,1,7]]);assert.deepEqual(refs.ActionCfg[101].effect,[[1,1,2]]);
 apply(0);assert.equal(Object.keys(doc.actions).length,0);assert.equal(next,8000001);
 const roundtrip=plain(doc);B.syncSocialEffects(roundtrip);assert.deepEqual(plain(roundtrip),plain(doc));
 assert.throws(()=>B.validateSocial(doc,event,{social:{...B.socialDraft(event),kind:'date',actionId:0}},refs),/请选择行动/);
 assert.throws(()=>B.validateSocial(doc,event,{social:{...B.socialDraft(event),kind:'relation',actionId:999}},refs),/请选择行动/);
 if(process.env.RELATION_FIXTURE_OUTPUT)fs.writeFileSync(process.env.RELATION_FIXTURE_OUTPUT,JSON.stringify({bound,unbound:plain(doc),owned,source:refs.ActionCfg[101]}));
 console.log('PASS: optional relation, bind/rebind/unbind, terminal-effect cleanup, JSON roundtrip, unknown fields/source action preserved, dates still require actions');
+
+assert.equal(B.canEditEventEffects(event),false);
+assert.equal(B.canEditEventEffects({talkId:[1],content:''}),false);
+assert.equal(B.canEditEventEffects({talkId:[],effect:[[1,1,2]]}),true);
+assert.equal(B.canEditEventEffects({type:50,talkId:[1]}),true);
+assert.equal(B.canEditEventEffects({content:'旧式事件正文',talkId:[1]}),true);
+const legacy=plain(doc);legacy.talks[1].effect.push([1,1,8]);legacy.talks[1].studioSocialEffects={20:[[1,1,8]]};
+B.syncSocialEffects(legacy);assert.deepEqual(plain(legacy.talks[1].effect),[[1,1,7],[1,1,8]]);
+legacy.talks[2]={id:2,effect:[],nextTalk:[]};legacy.talks[1].nextTalk=[2];B.syncSocialEffects(legacy);
+assert.deepEqual(plain(legacy.talks[2].effect),[]);assert.deepEqual(plain(legacy.talks[1].effect),[[1,1,7],[1,1,8]]);
+console.log('PASS: native event-effect visibility, manual effects not copied, legacy dialogue effects kept at original location');

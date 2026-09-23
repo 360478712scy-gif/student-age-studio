@@ -38,6 +38,7 @@ function validateSocial(doc,event,state,refs){const r=state.social;if(!r)return;
 }
 // Talk-based native events execute TalkCfg effects, not EvtCfg.effect.
 // Keep owned native links current, including when dialogue roots change outside the event form.
+function canEditEventEffects(event){return !event.studioGiftBindings?.length&&Number(event.type)!==110&&(!!event.content||[50,51,60].includes(Number(event.type))||Number(event.displayType)===1||(!event.talkId?.length&&!event.studioSocial));}
 function syncSocialEffects(doc){
  for(const event of Object.values(doc.events||{})){
   if(event.studioSocial?.kind==='favor')syncSocialEntry(event);
@@ -49,14 +50,14 @@ function syncSocialEffects(doc){
  }
  const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b),talks=doc.talks||{};
  for(const id of StudentAgeIndexedTalks.keysWithField(talks,'studioSocialEffects')){const t=talks[id];
-  for(const rows of Object.values(t.studioSocialEffects))for(const r of rows){const i=(t.effect||[]).findIndex(v=>same(v,r));if(i>=0)t.effect.splice(i,1);}t.studioSocialEffects={};
+  for(const [eventId,rows] of Object.entries(t.studioSocialEffects))for(const r of rows){const event=doc.events?.[eventId],manual=(event?.effect||[]).some(v=>same(v,r))&&!(event?.studioSocial?.effects||[]).some(v=>same(v,r));if(manual)continue;const i=(t.effect||[]).findIndex(v=>same(v,r));if(i>=0)t.effect.splice(i,1);}t.studioSocialEffects={};
  }
  const append=(t,eventId,rows)=>{if(!t)return;t.effect??=[];t.studioSocialEffects??={};const added=rows.filter(r=>!t.effect.some(v=>same(v,r)));t.effect.push(...copy(added));(t.studioSocialEffects[eventId]??=[]).push(...copy(added));};
  for(const e of Object.values(doc.events||{})){
   const gift=e.studioGiftBindings?.length;
   // GiftEvtCfg enters ShowTalk directly: count entry, not completion, just like native ShowEvent.
   if(gift)for(const id of new Set(e.talkId||[]))append(talks[id],e.id,[[50,2,e.id,e.studioGiftCounterSlot,1]]);
-  const effects=(e.studioSocial||gift)?e.effect:[];if(!effects?.length||e.content&&!gift)continue;
+  const effects=e.studioSocial?.effects||[];if(!effects?.length||e.content&&!gift)continue;
   const seen=new Set(),todo=[...(e.talkId||[])];while(todo.length){const id=todo.pop(),t=talks[id];if(!t||seen.has(id))continue;seen.add(id);
    const next=[...(t.nextTalk||[]),...(t.nextTalk2||[])].filter(v=>v>0),opts=(t.option||[]).map(id=>doc.options?.[id]).filter(Boolean);
    for(const o of opts)next.push(...(o.talkId||[]),...(o.talkId2||[]));
@@ -182,4 +183,4 @@ function applyGifts(doc,event,before,desired,allocate){
  for(const id of groups.keys())if(doc.giftEvents[id]&&!doc.giftEvents[id].npc?.length)delete doc.giftEvents[id];
  event.studioGiftBindings=owned;
 }
-window.StudentAgeEventBindings={socialNames,socialKinds,displayType,socialDraft,socialCommands,validateSocial,applySocial,clearSocialBindings,syncSocialEffects,create,actionPicker,giftsForEvent,applyGifts,resolveGiftSlots};})();
+window.StudentAgeEventBindings={canEditEventEffects,socialNames,socialKinds,displayType,socialDraft,socialCommands,validateSocial,applySocial,clearSocialBindings,syncSocialEffects,create,actionPicker,giftsForEvent,applyGifts,resolveGiftSlots};})();

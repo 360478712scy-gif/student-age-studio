@@ -618,3 +618,15 @@ html body .condition-browser>header,html body .condition-browser>.condition-brow
 .settings-sponsor-link{display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border:1px solid var(--sg-selected-line);border-radius:12px;color:var(--sg-gold);background:var(--sg-selected);text-decoration:none;font-weight:600}
 .settings-sponsor-link:hover{filter:brightness(1.08)}
 .settings-sponsor-link:focus-visible{outline:2px solid var(--sg-gold);outline-offset:3px}
+
+/* Dialog actions sit directly on the dialog surface, without a second dark slab. */
+html body dialog.social-dialog > footer {
+  background:transparent; border:0; box-shadow:none; padding:16px 0 0;
+  display:flex; align-items:center; justify-content:flex-end; gap:12px;
+}
+html body dialog.social-dialog > footer [data-account-count] { margin-right:auto; }
+html body dialog.social-account-dialog .social-account-card[aria-pressed="true"] {
+  border-color:var(--sg-accent,#8bb8e8); outline:2px solid var(--sg-accent,#8bb8e8); outline-offset:-2px;
+}
+html body dialog.social-account-dialog .social-account-card[aria-pressed]::after { content:'✓ 已选择'; font-size:12px; visibility:hidden; }
+html body dialog.social-account-dialog .social-account-card[aria-pressed="true"]::after { visibility:visible; }
