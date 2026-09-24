@@ -117,7 +117,7 @@ async function deletePremise(rowOrId){
 }
 window.STUDIO_DELETE_PREMISE=deletePremise;
 function eventRoots(e){return [...ids(e.talkId),...ids(e.options).flatMap(id=>[...ids(S.doc.options[id]?.talkId),...ids(S.doc.options[id]?.talkId2)])];}
-function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));fn();StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds);syncExternal(beforeIds);cleanLostPremises(writers);reconcileStoryClaims();updateDirty();if(redraw)render();scheduleRenumber();return true;}
+function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));const entryBefore=talk()&&!talk().roles?.length?{...talk(),roles:[],roleIds:[...(talk().roleIds||[])]}:null;fn();if(entryBefore&&talk()?.id===entryBefore.id&&talk().roles?.length){const beforeDoc={...S.doc,talks:{...S.doc.talks,[entryBefore.id]:entryBefore}};StudentAgeScene.preserveImplicitEntries(entryBefore,talk(),currentStage(false,beforeDoc));}StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds);syncExternal(beforeIds);cleanLostPremises(writers);reconcileStoryClaims();updateDirty();if(redraw)render();scheduleRenumber();return true;}
 let textDirtyTimer=null,textSearchTimer=null;
 function updateTextDirty(){
  // Input changes the live row immediately. Full-document comparison waits for a pause.

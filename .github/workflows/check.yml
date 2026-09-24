@@ -25,4 +25,5 @@ jobs:
       - run: node standalone/tests/all-story-export.cjs
       - run: node qa/tests/dialogue-text.cjs
       - run: node qa/tests/scene-engine.cjs
+      - run: node standalone/tests/implicit-entry-edit.cjs
       - run: python -B tools/build_update.py --out release/student-age-studio-update.zip

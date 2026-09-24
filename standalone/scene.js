@@ -281,6 +281,21 @@ function roleEntry(doc,state,roleId){
  if(scene.roles[roleId]?.entryTalkId!=null)return roleEntry(doc,scene,roleId);
  return null;
 }
+// Adding the first action disables native speaker auto-entry. Materialize only
+// the entries that were visible before this edit, without overriding explicit exits.
+function preserveImplicitEntries(before,after,state){
+ if(!before||!after||before.id!==after.id||before.roles?.length||!after.roles?.length)return false;
+ const added=[];
+ for(const id of list(before.roleIds)){
+  if(!list(after.roleIds).includes(id))continue;
+  const role=state?.roles?.[id];
+  if(!role?.visible||!role.entryImplicit||Number(role.entryTalkId)!==Number(before.id))continue;
+  if(after.roles.some(r=>Number(r[0])===id&&[1001,1002,1003,2001,2002].includes(Number(r[1]))))continue;
+  added.push([id,1001,role.layer||1,role.axis||3,0]);
+ }
+ if(!added.length)return false;
+ after.roles=[...added,...after.roles];return true;
+}
 function setRoleEntry(talk,entry,axis){
  axis=Number(axis);if(!talk||!entry||![1,2,3].includes(axis))return false;
  if(entry.index>=0){const command=(talk.roles||[])[entry.index];if(!command)return false;while(command.length<4)command.push(0);command[3]=axis;return true;}
@@ -853,5 +868,5 @@ class AudioPlayer {
   resume(){if(this.bgm&&!this.bgm.ended)this.bgm.play()?.catch?.(()=>{});for(const audio of this.sfx)if(!audio.ended)audio.play()?.catch?.(()=>{});if(this.desiredMusic){const {key,track}=this.desiredMusic;this.switchMusic(key,track);}}
   stop(){this.pause();this.bgm=null;this.sfx=[];this.group=null;this.nativeBgm=null;this.activeGroup=null;this.lastTalk=null;this.desiredMusic=null;this.failedMusic=null;}
 }
-window.StudentAgeScene={planSceneDrag,nativePositionPlayer,nativePositionFrames,nativeRoleOrder,normalizeNativeMoves,staticPortraitSize,bubbleAssets,releaseBubbleAssets,bubbleY,bubbleGlyph,portraitBox,portraitCacheKey,portraitFrames,portraitSizes,protagonistGender,portraitIdentity,routes,pathTo,blank,apply,reconstruct,roleEntry,setRoleEntry,portraitSource,portraitCandidates,backgroundPath,Renderer,Player,AudioPlayer};
+window.StudentAgeScene={preserveImplicitEntries,planSceneDrag,nativePositionPlayer,nativePositionFrames,nativeRoleOrder,normalizeNativeMoves,staticPortraitSize,bubbleAssets,releaseBubbleAssets,bubbleY,bubbleGlyph,portraitBox,portraitCacheKey,portraitFrames,portraitSizes,protagonistGender,portraitIdentity,routes,pathTo,blank,apply,reconstruct,roleEntry,setRoleEntry,portraitSource,portraitCandidates,backgroundPath,Renderer,Player,AudioPlayer};
 })();
