@@ -2384,5 +2384,72 @@
     "family": "考试排名",
     "filterCategory": "数值",
     "source": "Condition.ConditionerKnowledge"
+  },
+  {
+    "label": "恋爱状态",
+    "template": [
+      52,
+      1,
+      -1
+    ],
+    "match": {
+      "0": 52,
+      "1": 1
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "状态",
+        "type": "int",
+        "choices": [
+          {
+            "id": -1,
+            "label": "单身（没有恋人）"
+          },
+          {
+            "id": 1,
+            "label": "有恋人"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "label": "指定恋人",
+    "template": [
+      52,
+      2,
+      1,
+      100
+    ],
+    "match": {
+      "0": 52,
+      "1": 2
+    },
+    "parameters": [
+      {
+        "index": 2,
+        "label": "关系",
+        "type": "int",
+        "choices": [
+          {
+            "id": 1,
+            "label": "恋人是"
+          },
+          {
+            "id": -1,
+            "label": "恋人不是"
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg"
+        }
+      }
+    ]
   }
 ]
