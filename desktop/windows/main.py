@@ -41,7 +41,7 @@ def require_modern_webview():
 def main():
     if '--extract' in sys.argv:
         i=sys.argv.index('--extract'); name=sys.argv[i+1]
-        if name not in ('extract_catalog','extract_game_assets','extract_audio_assets','native_portraits','condition_library','model_idle','live_model','warm_ui_assets'): raise ValueError('Unknown worker')
+        if name not in ('extract_catalog','extract_game_assets','extract_audio_assets','native_portraits','condition_library','model_idle','live_model','warm_ui_assets','studio_cli','studio_mcp'): raise ValueError('Unknown worker')
         sys.argv=[str(WEB/(name+'.py')),*sys.argv[i+2:]]
         runpy.run_path(sys.argv[0],run_name='__main__'); return
     from child_processes import own_children

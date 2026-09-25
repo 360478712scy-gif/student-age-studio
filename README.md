@@ -33,6 +33,10 @@ Windows 原生源码窗口：`python -B desktop/windows/main.py`。
 
 公开源码不包含原游戏图片、字体和 Live2D SDK。`tools/prepare_game_ui.py --game 游戏目录` 可从本机游戏准备界面素材；这些文件保留在本机，勿提交到仓库。Live2D 动态预览暂时停用以减少资源占用，静态立绘与已有模型配置保留。参见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
+## AI 工具（命令行与 MCP）
+
+Claude、Codex 等 AI 助手可以通过命令行或 MCP 读取和修改模组剧情，保存走编辑器自己的流程（版本冲突检查、保存前备份、警告需确认）。接入方法见「工坊设置 → 外观与偏好 → AI 工具」，完整说明见 [docs/ai-tools.md](docs/ai-tools.md)。
+
 ## 在线更新
 
 beta.5 起，带更新能力的客户端启动后自动检查并下载 GitHub 轻量更新，也可在 **工坊设置 → 版本与反馈** 手动检查。
