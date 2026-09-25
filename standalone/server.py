@@ -3850,6 +3850,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                 raise ApiError("本地会话已失效，请重新打开应用。", 403, "unauthorized")
 
     def send_data(self, data, content_type, status=200, extra=None):
+        self.settle_body()
+        if status >= 500:
+            self.close_connection = True  # the handler failed midway; do not reuse this connection
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
@@ -3859,8 +3862,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         for key, value in (extra or {}).items():
             self.send_header(key, value)
-        if status >= 400:
-            # An error may be raised before a POST body was read; never reuse that connection.
+        if self.close_connection:
             self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(data)
@@ -3872,6 +3874,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.send_data(json_bytes(value), "application/json; charset=utf-8", status, extra=extra)
 
     def send_file(self, path):
+        self.settle_body()
         stat = path.stat()
         length = stat.st_size
         etag = '"' + hashlib.sha256((str(path) + str((stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size))).encode()).hexdigest()[:32] + '"'
@@ -3880,6 +3883,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             self.send_header('ETag', etag)
             self.send_header('Cache-Control', 'private, no-cache')
             self.send_header('Cross-Origin-Resource-Policy', 'same-origin')
+            if self.close_connection:
+                self.send_header('Connection', 'close')
             self.end_headers()
             return
         start, end, partial = 0, length - 1, False
@@ -3907,6 +3912,8 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         if partial:
             self.send_header("Content-Range", "bytes " + str(start) + "-" + str(end) + "/" + str(length))
+        if self.close_connection:
+            self.send_header("Connection", "close")
         self.end_headers()
         with path.open("rb") as stream:
             stream.seek(start)
@@ -4204,7 +4211,9 @@ class StudioHandler(BaseHTTPRequestHandler):
             if length <= 0 or length > MAX_JSON:
                 raise ApiError("请求为空或超过大小限制。", 413)
             try:
-                payload = json.loads(self.rfile.read(length), parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+                body = self.rfile.read(length)
+                self._body_consumed = True
+                payload = json.loads(body, parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
             except (ValueError, UnicodeError, RecursionError):
                 raise ApiError("请求 JSON 无效。")
             if not isinstance(payload, dict):
@@ -4498,21 +4507,49 @@ class StudioHandler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
+    def serve_one(self, method):
+        self._body_consumed = False
+        self.handle_request(method)
+
+    def settle_body(self):
+        # Keep-alive is only safe when this request's body was read completely. Some routes answer before
+        # reading it (e.g. /api/updates/*, early errors); leftover bytes would become the start of the next
+        # request on this connection. Discard a small unread body before responding; otherwise announce
+        # that the connection closes so the client never sends another request on it.
+        if getattr(self, "_body_consumed", True):
+            return
+        self._body_consumed = True
+        if self.headers.get("Transfer-Encoding"):
+            self.close_connection = True
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            self.close_connection = True
+            return
+        if 0 < length <= MAX_JSON:
+            try:
+                self.rfile.read(length)
+            except OSError:
+                self.close_connection = True
+        elif length:
+            self.close_connection = True
+
     def do_GET(self):
-        self.handle_request("GET")
+        self.serve_one("GET")
 
     def do_POST(self):
         context = self.server.store.talk_segments.request_context
         context.token = self.headers.get('X-Studio-Talk-Generation')
         context.advanced = None
         try:
-            self.handle_request("POST")
+            self.serve_one("POST")
         finally:
             context.token = None
             context.advanced = None
 
     def do_OPTIONS(self):
-        self.handle_request("OPTIONS")
+        self.serve_one("OPTIONS")
 
 
 def create_server(args):
