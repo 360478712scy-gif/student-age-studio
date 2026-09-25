@@ -4587,6 +4587,10 @@ def create_server(args):
                         args.game or (active["game"] if active else fallback / "Game" if locations else DEFAULT_GAME),
                         active.get('extraMods', []) if active else (), migrate_cache=False)
     server = StudioServer(("127.0.0.1", args.port), store, args.web_root, locations)
+    if getattr(sys, "frozen", False) and os.name == "nt":
+        # Windows package root (next to 拾光工坊.exe): an install prompt users can hand to their AI assistant.
+        import studio_mcp
+        threading.Thread(target=studio_mcp.write_install_prompt, args=(Path(sys.executable).resolve().parent.parent, server.web_root), daemon=True).start()
     return server
 
 

@@ -81,6 +81,50 @@ class StudioAgentTests(unittest.TestCase):
         self.assertNotIn('1500000', doc['events'])
         self.assertFalse({str(t) for t in created['lineIds']} & {str(k) for k in doc['localIds'].get('talks', [])})
 
+    def test_staging_follows_the_game_rules(self):
+        s, mod = self.studio, self.mod
+        cfgs = self.store.project(mod).path / 'Cfgs' / 'zh-cn'
+        cfgs.mkdir(parents=True, exist_ok=True)
+        (cfgs / 'BgCfg.json').write_text(json.dumps({'900': {'id': 900, 'url': 'bg/img_tiantai', 'cloth': [0]}}), encoding='utf-8')
+        (cfgs / 'AudioCfg.json').write_text(json.dumps({'91': {'id': 91, 'name': '心动足迹', 'url': 'bgm/xindong', 'type': 1},
+                                                        '92': {'id': 92, 'name': '铃声', 'url': 'sfx/ring', 'type': 2}}), encoding='utf-8')
+        created = s.create_event(mod, '演出', [
+            {'speaker': '主角', 'text': '一', 'enter': '中', 'expression': '害羞', 'music': '心动足迹'},
+            {'speaker': '主角', 'text': '二', 'enter': '中'},
+            {'speaker': '旁白', 'text': '三', 'background': 'tiantai', 'sound': '铃声'},
+            {'speaker': '主角', 'text': '四', 'expression': '高兴'},
+            {'speaker': '主角', 'text': '五', 'exit': ['主角']}], event_id=1600000)
+        one, two, three, four, five = created['lineIds']
+        talks = self.store.load(mod)['talks']
+        self.assertEqual(talks[str(one)]['roles'], [[0, 1002, 1, 3, 0], [0, 3000, 4]])  # 中 is native axis 3
+        self.assertEqual(talks[str(two)]['roles'], [])  # already standing there: no second entrance
+        self.assertEqual(talks[str(three)]['bg'], 900)
+        # The new background cleared the stage; an expression on someone off stage brings them back in.
+        self.assertEqual(talks[str(four)]['roles'], [[0, 3000, 1]])
+        self.assertEqual(talks[str(five)]['roles'], [[0, 2002, 0]])
+        cues = self.store.load(mod)['audioCues']
+        self.assertEqual(cues['sfx'][str(three)], [{'audioId': 92, 'volume': 1}])
+        self.assertEqual([(g['audioId'], g['talkIds']) for g in cues['bgm']], [(91, [one, two, three, four, five])])
+        self.assertEqual(talks[str(one)]['audio'], 91)
+
+        # Lines inserted later continue from the stage as it stands: the protagonist is already in the middle.
+        inserted = s.add_lines(mod, 1600000, [{'speaker': '主角', 'text': '一点五', 'enter': '中', 'expression': '微笑'}], after=one)
+        self.assertEqual(self.store.load(mod)['talks'][str(inserted['lineIds'][0])]['roles'], [[0, 3000, 10]])
+
+        s.edit_line(mod, one, enter='左')
+        self.assertEqual(self.store.load(mod)['talks'][str(one)]['roles'], [[0, 1002, 1, 1, 0], [0, 3000, 4]])
+        s.edit_line(mod, one, enter='无', expression='')
+        self.assertEqual(self.store.load(mod)['talks'][str(one)]['roles'], [])
+        s.set_music(mod, [four, five], None)
+        self.assertEqual(self.store.load(mod)['audioCues']['bgm'][0]['talkIds'], [one, two, three])
+        view = s.event(mod, 1600000)['lines']
+        self.assertEqual(view[0]['musicStarts'], 91)
+        self.assertIn('background', next(l for l in view if l['id'] == three))
+        with self.assertRaises(studio_agent.AgentError):
+            s.edit_line(mod, one, enter='上')
+        self.assertEqual([i['name'] for i in s.assets(mod, 'music')['items']], ['心动足迹'])
+        self.assertEqual(s.assets(mod, 'expressions', person='主角')['items'][4]['name'], '害羞')
+
     def test_errors_are_explained(self):
         with self.assertRaises(studio_agent.AgentError) as missing:
             self.studio.event(self.mod, 1)
@@ -116,6 +160,19 @@ class McpProtocolTests(unittest.TestCase):
         self.assertTrue(all(t['inputSchema']['type'] == 'object' for t in replies[1]['result']['tools']))
         self.assertEqual(replies[2]['error']['code'], -32602)
         self.assertEqual(replies[3]['result'], {})
+
+    def test_self_check_and_install_prompt(self):
+        with patch('sys.stdout', io.StringIO()) as out:
+            code = studio_mcp.check(studio_mcp.argparse.Namespace(mods=None, game='/nonexistent-game', workshop=None))
+        self.assertEqual(code, 1)
+        self.assertFalse(json.loads(out.getvalue())['ok'])
+        commands = studio_mcp.launch_commands(Path(studio_mcp.__file__).parent)
+        self.assertIn('--check', commands['check'])
+        self.assertIn('student-age-studio', commands['prompt'])
+        self.assertIn(commands['claudeCode'], commands['prompt'])
+        with tempfile.TemporaryDirectory() as folder:
+            target = studio_mcp.write_install_prompt(folder, Path(studio_mcp.__file__).parent)
+            self.assertIn('list_mods', target.read_text(encoding='utf-8-sig'))
 
 
 if __name__ == '__main__':
