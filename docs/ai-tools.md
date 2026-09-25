@@ -19,13 +19,13 @@
 - **Claude 桌面版等支持 `mcpServers` 的客户端**：把设置页里的 JSON 合并到客户端的 MCP 配置中。
 - **Codex**：把设置页里的内容粘贴到 `~/.codex/config.toml`。
 
-源码运行时，命令形如：
+设置页生成的命令会通过安装版自带的固定入口启动，编辑器更新后仍然有效：
 
-```
-python3 -B /path/to/standalone/studio_mcp.py
-```
+- Windows 安装版：`StudioEngine.exe --server-only --mcp`，需要设置环境变量 `STUDIO_UPDATE_MANAGED=1`（设置页复制的配置已包含），不需要另装 Python。
+- Mac 安装版：App 自带的 Python 运行 App 内的 `update_bootstrap.py --mcp`，同样需要设置 `STUDIO_UPDATE_MANAGED=1`。
+- 源码运行：`python3 -B /path/to/standalone/studio_mcp.py`。
 
-Windows 安装版从重新打包的完整客户端开始支持：`StudioEngine.exe --extract studio_mcp`，不需要另装 Python。在此之前，可安装 Python 3.12 或以上版本和 `requirements.txt` 中的依赖，再用源码方式运行。
+任何支持 MCP（stdio 方式，即填写一条启动命令）的 AI 客户端都可以使用，例如 Claude、Codex、Cursor、Cline、Gemini CLI、Cherry Studio 等。
 
 默认使用编辑器保存的游戏与模组目录；`--mods`、`--game`、`--workshop` 可以覆盖。
 

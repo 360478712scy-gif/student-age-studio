@@ -29,7 +29,7 @@ INSTRUCTIONS = """拾光工坊（学生时代模组编辑器）的 MCP 工具，
 LINE_SCHEMA = {
     'type': 'object', 'required': ['text'],
     'properties': {
-        'speaker': {'description': '说话人：人物名称、人物编号、"旁白"(-1) 或 "主角"(0)。省略即旁白。', 'type': ['string', 'integer']},
+        'speaker': {'type': 'string', 'description': '说话人：人物名称、人物编号（如 "3"）、"旁白" 或 "主角"。省略即旁白。'},
         'text': {'type': 'string', 'description': '台词或旁白文字'},
         'displayName': {'type': 'string', 'description': '可选：覆盖显示的名字'},
         'enter': {'type': 'integer', 'enum': [1, 2, 3], 'description': '可选：该人物在这句登场，位置 1 左 / 2 中 / 3 右'},
@@ -48,7 +48,7 @@ WRITE = {'dry_run': {'type': 'boolean', 'description': '只预览，不写入'},
 
 def tool(name, description, properties, required=(), read_only=True):
     return {'name': name, 'description': description,
-            'inputSchema': {'type': 'object', 'properties': properties, 'required': list(required), 'additionalProperties': False},
+            'inputSchema': {'type': 'object', 'properties': properties, **({'required': list(required)} if required else {})},
             'annotations': {'readOnlyHint': read_only, 'destructiveHint': not read_only and name.startswith('delete'), 'idempotentHint': read_only}}
 
 
@@ -65,11 +65,11 @@ TOOLS = [
     tool('list_commands', '条件/效果模板目录。编写事件或选项的 condition/effect 前先查这里。',
          {'mod': MOD, 'kind': {'type': 'string', 'enum': ['condition', 'effect']}, 'query': {'type': 'string'}, 'limit': {'type': 'integer', 'default': 60}}, ['mod', 'kind']),
     tool('read_table', '读取任意配置表（如 ItemCfg、ActionCfg、PersonGrowCfg），默认只返回模组自己的记录。',
-         {'mod': MOD, 'name': {'type': 'string'}, 'ids': {'type': 'array', 'items': {'type': ['string', 'integer']}}, 'query': {'type': 'string'},
+         {'mod': MOD, 'name': {'type': 'string'}, 'ids': {'type': 'array', 'items': {'type': 'string'}, 'description': '记录编号列表'}, 'query': {'type': 'string'},
           'include_original': {'type': 'boolean'}, 'limit': {'type': 'integer', 'default': 50}}, ['mod', 'name']),
     tool('create_event', '新建剧情事件及其全部对话（可含选项分支）。编号自动分配，对话编号为 事件号×1000+序号。',
          {'mod': MOD, 'title': {'type': 'string'}, 'lines': {'type': 'array', 'items': LINE_SCHEMA},
-          'type': {'type': 'integer', 'default': 1, 'description': '事件类型编号'}, 'npc': {'type': ['string', 'integer'], 'description': '关联人物'},
+          'type': {'type': 'integer', 'default': 1, 'description': '事件类型编号'}, 'npc': {'type': 'string', 'description': '关联人物：名称或编号'},
           'map_id': {'type': 'integer', 'default': 0, 'description': '地点编号，0 为不限'}, 'rate': {'type': 'number', 'default': 1, 'description': '触发概率 0–1'},
           'maxcount': {'type': 'integer', 'default': 1}, 'condition': {'type': 'array'}, 'effect': {'type': 'array'},
           'event_id': {'type': 'integer', 'description': '可选：指定事件编号'}, **WRITE}, ['mod', 'title', 'lines'], False),
@@ -77,7 +77,7 @@ TOOLS = [
          {'mod': MOD, 'event_id': {'type': 'integer'}, 'lines': {'type': 'array', 'items': LINE_SCHEMA}, 'after': {'type': 'integer'}, **WRITE},
          ['mod', 'event_id', 'lines'], False),
     tool('edit_line', '修改一句对话的文字、说话人或显示名。',
-         {'mod': MOD, 'talk_id': {'type': 'integer'}, 'text': {'type': 'string'}, 'speaker': {'type': ['string', 'integer']},
+         {'mod': MOD, 'talk_id': {'type': 'integer'}, 'text': {'type': 'string'}, 'speaker': {'type': 'string', 'description': '新的说话人：名称、编号、旁白或主角'},
           'display_name': {'type': 'string'}, **WRITE}, ['mod', 'talk_id'], False),
     tool('delete_lines', '删除对话，并把前后自动接上，事件不会断开。', {'mod': MOD, 'talk_ids': {'type': 'array', 'items': {'type': 'integer'}}, **WRITE}, ['mod', 'talk_ids'], False),
     tool('update_event', '修改事件字段：title、type、npc、mapId、rate、maxcount、condition、effect 等。',
@@ -90,19 +90,35 @@ TOOLS = [
 
 
 def launch_commands(web_root):
-    """Commands that start the CLI and MCP server with this installation's own runtime."""
+    """Commands that start the CLI and MCP server with this installation's own runtime.
+
+    Installed clients go through their stable launcher, which picks the current update, so the
+    command survives editor updates. A source checkout runs the scripts directly."""
+    import os
     web_root = Path(web_root).resolve()
-    if getattr(sys, 'frozen', False):  # Windows client: the engine runs bundled scripts as workers
-        mcp, cli = [sys.executable, '--extract', 'studio_mcp'], [sys.executable, '--extract', 'studio_cli']
+    managed = os.environ.get('STUDIO_UPDATE_MANAGED') == '1'
+    env = {'STUDIO_UPDATE_MANAGED': '1'} if managed else {}
+    if getattr(sys, 'frozen', False):  # Windows client engine
+        base = [sys.executable, '--server-only']
+    elif managed:  # Mac client: bundled Python + the app's own update bootstrap
+        env['PYTHONNOUSERSITE'] = '1'
+        base = [sys.executable, '-B', str(Path(os.environ.get('STUDIO_BASE_WEB') or web_root) / 'update_bootstrap.py')]
     else:
-        mcp, cli = [sys.executable, '-B', str(web_root / 'studio_mcp.py')], [sys.executable, '-B', str(web_root / 'studio_cli.py')]
+        base = None
+    mcp = base + ['--mcp'] if base else [sys.executable, '-B', str(web_root / 'studio_mcp.py')]
+    cli = base + ['--cli'] if base else [sys.executable, '-B', str(web_root / 'studio_cli.py')]
+
     def shell(parts):
         return ' '.join(f'"{p}"' if (' ' in p or not p) else p for p in parts)
-    return {'mcp': mcp, 'cli': cli,
-            'claudeCode': 'claude mcp add student-age-studio -- ' + shell(mcp),
-            'codex': '[mcp_servers.student-age-studio]\ncommand = ' + json.dumps(mcp[0]) + '\nargs = ' + json.dumps(mcp[1:], ensure_ascii=False),
-            'json': {'mcpServers': {'student-age-studio': {'command': mcp[0], 'args': mcp[1:]}}},
-            'cliExample': shell(cli) + ' mods'}
+    env_flags = ''.join(f' -e {k}={v}' for k, v in env.items())
+    codex = '[mcp_servers.student-age-studio]\ncommand = ' + json.dumps(mcp[0]) + '\nargs = ' + json.dumps(mcp[1:], ensure_ascii=False)
+    if env:
+        codex += '\nenv = { ' + ', '.join(f'{k} = {json.dumps(v)}' for k, v in env.items()) + ' }'
+    server = {'command': mcp[0], 'args': mcp[1:], **({'env': env} if env else {})}
+    return {'mcp': mcp, 'cli': cli, 'env': env,
+            'claudeCode': 'claude mcp add student-age-studio' + env_flags + ' -- ' + shell(mcp),
+            'codex': codex, 'json': {'mcpServers': {'student-age-studio': server}},
+            'cliExample': (' '.join(f'{k}={v}' for k, v in env.items()) + ' ' if env and os.name != 'nt' else '') + shell(cli) + ' mods'}
 
 
 class Handler:
@@ -152,6 +168,9 @@ class Handler:
             return {}
         if method == 'tools/list':
             return {'tools': TOOLS}
+        if method in ('resources/list', 'resources/templates/list', 'prompts/list'):
+            # Some clients ask regardless of the advertised capabilities; answer with nothing.
+            return {method.split('/')[0] if method != 'resources/templates/list' else 'resourceTemplates': []}
         if method == 'tools/call':
             import studio_agent
             name, arguments = params.get('name'), params.get('arguments') or {}
@@ -180,6 +199,9 @@ class JsonRpcError(Exception):
 
 
 def serve(options, stdin=None, stdout=None):
+    for stream in (sys.stdin, sys.stdout):
+        if stream is not None and hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', newline='\n' if stream is sys.stdout else None)  # Windows defaults to the ANSI code page
     stdin = stdin or sys.stdin
     out = stdout or sys.stdout
     sys.stdout = sys.stderr  # protocol channel stays clean
@@ -193,16 +215,24 @@ def serve(options, stdin=None, stdout=None):
         except json.JSONDecodeError:
             out.write(json.dumps({'jsonrpc': '2.0', 'id': None, 'error': {'code': -32700, 'message': '无法解析的 JSON'}}) + '\n'); out.flush()
             continue
-        if 'id' not in message:  # notification (e.g. notifications/initialized)
-            continue
-        try:
-            response = {'jsonrpc': '2.0', 'id': message['id'], 'result': handler.handle(message)}
-        except JsonRpcError as error:
-            response = {'jsonrpc': '2.0', 'id': message['id'], 'error': {'code': error.code, 'message': error.message}}
-        except Exception as error:
-            traceback.print_exc(file=sys.stderr)
-            response = {'jsonrpc': '2.0', 'id': message['id'], 'error': {'code': -32603, 'message': str(error)}}
-        out.write(json.dumps(response, ensure_ascii=False) + '\n'); out.flush()
+        batch = isinstance(message, list)  # JSON-RPC batches (protocol 2025-03-26)
+        replies = [reply for reply in (respond(handler, item) for item in (message if batch else [message])) if reply is not None]
+        if replies:
+            out.write(json.dumps(replies if batch else replies[0], ensure_ascii=False) + '\n'); out.flush()
+
+
+def respond(handler, message):
+    if not isinstance(message, dict):
+        return {'jsonrpc': '2.0', 'id': None, 'error': {'code': -32600, 'message': '无效的请求'}}
+    if 'id' not in message:  # notification (e.g. notifications/initialized)
+        return None
+    try:
+        return {'jsonrpc': '2.0', 'id': message['id'], 'result': handler.handle(message)}
+    except JsonRpcError as error:
+        return {'jsonrpc': '2.0', 'id': message['id'], 'error': {'code': error.code, 'message': error.message}}
+    except Exception as error:
+        traceback.print_exc(file=sys.stderr)
+        return {'jsonrpc': '2.0', 'id': message['id'], 'error': {'code': -32603, 'message': str(error)}}
 
 
 def main(argv=None):
