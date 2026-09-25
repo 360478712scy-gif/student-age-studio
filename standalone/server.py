@@ -4591,6 +4591,16 @@ def create_server(args):
 
 
 def main():
+    # Stable entry for AI tools: installed clients start this module through their own launcher
+    # (Windows: StudioEngine.exe --server-only, Mac: update_bootstrap.py), which already selects the
+    # current update. So "--mcp"/"--cli" keep working across updates without a new client build.
+    if "--mcp" in sys.argv[1:] or "--cli" in sys.argv[1:]:
+        rest = [arg for arg in sys.argv[1:] if arg not in ("--mcp", "--cli")]
+        if "--mcp" in sys.argv[1:]:
+            import studio_mcp
+            return studio_mcp.main(rest)
+        import studio_cli
+        raise SystemExit(studio_cli.main(rest))
     parser = argparse.ArgumentParser(description="学生时代创作工坊本地服务")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--ready-file")

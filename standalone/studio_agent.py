@@ -404,7 +404,7 @@ class Studio:
             raise AgentError(f'事件编号 {ident} 已存在。')
         if ident * 1000 + 999 > MAX_ID:
             raise AgentError('事件编号过大，对话编号（事件号×1000+序号）会超出范围。')
-        npc_id = self._speaker(doc, npc) if npc not in (None, 0, '0') else 0
+        npc_id = self._speaker(doc, npc) if npc not in (None, 0, '0', '') else 0
         first, talks, options, order = self._build_lines(doc, ident, lines)
         doc['events'][str(ident)] = {'id': ident, 'title': str(title).strip(), 'type': _int(type, '事件类型'), 'talkId': [first],
                                      'rate': float(rate) if float(rate) != int(float(rate)) else int(float(rate)), 'npc': npc_id,
@@ -514,7 +514,7 @@ class Studio:
             raise AgentError('不支持修改的事件字段：' + '、'.join(sorted(unknown)) + '。可改：' + '、'.join(sorted(EVENT_FIELDS)))
         before = copy.deepcopy({k: doc.get(k) for k in server.TABLES if k != 'talks'})
         for key, value in (fields or {}).items():
-            row[key] = self._speaker(doc, value) if key == 'npc' and value not in (0, '0', None) else value
+            row[key] = (self._speaker(doc, value) if value not in (0, '0', None, '') else 0) if key == 'npc' else value
         return self._save(project, doc, before, confirm=confirm, dry_run=dry_run, summary={'eventId': event_id, 'fields': sorted(fields or {})})
 
     def delete_event(self, mod, event_id, confirm=None, dry_run=False):
