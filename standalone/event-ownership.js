@@ -1,7 +1,9 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.StudentAgeEventOwnership=api;})(typeof window==='object'?window:globalThis,()=>{
 'use strict';const ids=v=>Array.isArray(v)?v.map(Number).filter(Number.isFinite):[];
 function links(doc,folders){
- const edges={},talks=new Set(Object.keys(doc.talks));for(const t of talks){const r=doc.talks[t];edges[t]=[...ids(r.nextTalk),...ids(r.nextTalk2),...ids(r.option).flatMap(o=>[...ids(doc.options[o]?.talkId),...ids(doc.options[o]?.talkId2)])];}
+ // Segmented talk tables expose raw field reads; going through their row proxies costs far more on large mods.
+ const remote=globalThis.StudentAgeRemoteTalks?.info?.(doc.talks),field=remote?(t,k)=>remote.read(t,k):(t,k)=>doc.talks[t][k];
+ const edges={},talks=new Set(Object.keys(doc.talks));for(const t of talks)edges[t]=[...ids(field(t,'nextTalk')),...ids(field(t,'nextTalk2')),...ids(field(t,'option')).flatMap(o=>[...ids(doc.options[o]?.talkId),...ids(doc.options[o]?.talkId2)])];
  for(const f of Object.values(folders||{}))(edges[f.parentTalkId]??=[]).push(...ids(f.talkIds),...[f.routerId,f.exitId,f.endId].filter(v=>v!=null).map(Number));
  const reverse={};for(const [src,dests]of Object.entries(edges))for(const dest of dests)(reverse[dest]??=[]).push(Number(src));
  return {edges,reverse,talks};
@@ -15,8 +17,8 @@ function forward(talks,doc,edges){
 }
 function listed(reached){return Object.fromEntries(Object.entries(reached).filter(([,v])=>v.size).map(([t,v])=>[t,[...v].sort((a,b)=>a-b)]));}
 // Shown beside an event. Not membership: external dialogues stay in their own list.
-function display(doc,folders){
- const {edges,reverse,talks}=links(doc,folders),reached=forward(talks,doc,edges),entered=new Set(Object.keys(reached).map(Number));
+function display(doc,folders,graph=links(doc,folders)){
+ const {edges,reverse,talks}=graph,reached=forward(talks,doc,edges),entered=new Set(Object.keys(reached).map(Number));
  const byEvent={};for(const [talk,evs]of Object.entries(reached))for(const id of evs)(byEvent[id]??=[]).push(Number(talk));
  for(const [event,members]of Object.entries(byEvent)){const id=Number(event),todo=members.slice(),seen=new Set(members),fresh=[];while(todo.length){const current=todo.pop();for(const prev of reverse[current]||[]){if(entered.has(prev)||seen.has(prev)||!talks.has(String(prev)))continue;seen.add(prev);(reached[prev]??=new Set()).add(id);todo.push(prev);fresh.push(prev);}}walk(talks,edges,fresh,t=>(reached[t]??=new Set()).add(id),t=>!(entered.has(t)&&!(reached[t]&&reached[t].has(id))));}
  // Bucket talks and options by their event-number prefix once; scanning all talks per event is quadratic on large mods.
@@ -27,8 +29,8 @@ function display(doc,folders){
  return listed(reached);
 }
 function ownership(doc,folders,previous=doc.talkOwners||{},anchor=[]){
- const {edges,talks}=links(doc,folders),reached=forward(talks,doc,edges),anchored=new Set(anchor.map(Number));
- const extra=new Set(Object.keys(display(doc,folders)).map(Number).filter(t=>!reached[t]&&!anchored.has(t)));
+ const graph=links(doc,folders),{edges,talks}=graph,reached=forward(talks,doc,edges),anchored=new Set(anchor.map(Number));
+ const extra=new Set(Object.keys(display(doc,folders,graph)).map(Number).filter(t=>!reached[t]&&!anchored.has(t)));
  const retained={};for(const [t,v]of Object.entries(previous)){const id=Number(t);if(!doc.talks[t]||extra.has(id))continue;for(const e of ids(v))if(doc.events[e])(retained[e]??=[]).push(id);}
  const result={};for(const [t,v]of Object.entries(reached))result[t]=new Set(v);
  for(const key of Object.keys(doc.events)){const id=Number(key);walk(talks,edges,[...(retained[id]||[])],t=>{if(!reached[t])(result[t]??=new Set()).add(id);});}

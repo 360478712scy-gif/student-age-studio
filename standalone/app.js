@@ -1145,9 +1145,9 @@ function renderList() {
   if(!S.doc){$('#talk-list').innerHTML='<div class="small-empty">请打开或新建模组。</div>';return;}
   const visible=visibleIds(),allowed=new Set(visible),owners=new Map();for(const [key,f]of Object.entries(S.branchFolders))for(const id of ids(f.talkIds))owners.set(id,key);
   if(S.search){for(const start of visible){let id=start;const seen=new Set();while(owners.has(id)&&!seen.has(id)){seen.add(id);const f=S.branchFolders[owners.get(id)];allowed.add(f.parentTalkId);S.folderOpen[owners.get(id)]=true;id=f.parentTalkId;}}}
-  $('#talk-count').textContent=visible.length+' 句对话';const rendered=new Set();let renderedIndex=0;
+  $('#talk-count').textContent=visible.length+' 句对话';const rendered=new Set();let renderedIndex=0,parentCounts=null;
   function card(id,depth=0){if(!S.doc.talks[id]||rendered.has(id)||!allowed.has(id))return '';rendered.add(id);const t=S.doc.talks[id],restoreScene=Number(t.screenEffect?.[0])===4017&&!Remote.hasText(t),name=restoreScene?'恢复场景':Number(t.screenEffect?.[0])===4015?'CG · '+assetName(S.doc.cgs[t.screenEffect[1]]||{name:'插画'},'cg'):speaker(t),index=renderedIndex++;
-    const descriptions=ids(t.option).map(oid=>Branches.describe(S.doc,S.branchFolders,id,oid));
+    const descriptions=ids(t.option).map(oid=>Branches.describe(S.doc,S.branchFolders,id,oid,parentCounts??=Branches.optionParentCounts(S.doc)));
     descriptions.push(...Timeline.entries(S.branchFolders,id).map(([key])=>folderDescription(key)));
     if(t.check?.length&&!Timeline.entries(S.branchFolders,id).length)descriptions.push({key:id+':legacy',legacy:true,parentTalkId:id,option:{content:'分支1'},talkIds:[],references:[...new Set([...ids(t.nextTalk),...ids(t.nextTalk2)])]});
     const folders=descriptions.map(d=>renderFolder(d,depth,card)).join('');const personId=ids(t.roleIds).find(id=>id>=0),person=S.doc.persons[personId],gender=personId===0?S.doc.protagonistGender:Number(person?.gender),avatar=personId!==undefined?`<img loading="lazy" alt="${h(name)}" src="/api/talk-head?${new URLSearchParams({projectId:S.project.id,roleId:personId,grade:currentEventGrade()+1,gender:S.doc.protagonistGender,token})}">`:h(name.slice(0,1));
