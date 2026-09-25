@@ -24,6 +24,31 @@ PAGE_SIZE = 100
 MAX_PAGE_BYTES = 2 * 1024 * 1024
 
 
+
+def packed_summaries(summaries):
+    """Wire form of the talk summaries (tens of MB on large mods, parsed by WebView2 on every open).
+    Field lists repeat, so each distinct list is sent once in fieldSets and referenced by index.
+    Records omit values equal to recordDefaults (the most common value of each field); the client
+    restores them, so a record is still every field except content. truthyFields has no consumer."""
+    sets, index, packed, counts = [], {}, {}, {}
+    for summary in summaries.values():
+        for field, value in summary['record'].items():
+            encoded = json.dumps(value, sort_keys=True, ensure_ascii=False)
+            bucket = counts.setdefault(field, {})
+            bucket[encoded] = bucket.get(encoded, 0) + 1
+    defaults = {field: json.loads(max(bucket.items(), key=lambda item: item[1])[0]) for field, bucket in counts.items()}
+    encoded_defaults = {field: json.dumps(value, sort_keys=True, ensure_ascii=False) for field, value in defaults.items()}
+    for key, summary in summaries.items():
+        fields = tuple(summary['fields'])
+        if fields not in index:
+            index[fields] = len(sets)
+            sets.append(list(fields))
+        record = {field: copy.deepcopy(value) for field, value in summary['record'].items()
+                  if field == 'id' or json.dumps(value, sort_keys=True, ensure_ascii=False) != encoded_defaults[field]}
+        packed[key] = {'record': record, 'excerpt': summary['excerpt'],
+                       'hasText': summary['hasText'], 'fieldSet': index[fields]}
+    return {'fieldSets': sets, 'recordDefaults': defaults, 'summaries': packed}
+
 class SegmentError(ValueError):
     pass
 
@@ -208,7 +233,13 @@ class Generation:
         return {**copy.deepcopy(self.metadata), 'segmentedTalks': {
             'version': VERSION, 'generation': self.generation,
             'ids': list(self.entries), 'pageSize': PAGE_SIZE,
-            'eventIds': copy.deepcopy(self.event_ids), 'summaries': copy.deepcopy(self.summaries)}}
+            'eventIds': copy.deepcopy(self.event_ids), **copy.deepcopy(self.packed())}}
+
+    def packed(self):
+        # Summaries are fixed for this snapshot; pack them once rather than on every project open.
+        if getattr(self, '_packed', None) is None:
+            self._packed = packed_summaries(self.summaries)
+        return self._packed
 
     def page(self, requested):
         if not isinstance(requested, list) or len(requested) > PAGE_SIZE:

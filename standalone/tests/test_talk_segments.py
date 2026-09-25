@@ -235,5 +235,23 @@ class SegmentTests(unittest.TestCase):
         self.assert_source_unchanged()
 
 
+class PackedSummaryTest(unittest.TestCase):
+    def test_packed_summaries_restore_every_record_field(self):
+        import talk_segments
+        rows = {str(i): {'id': i, 'content': 't', 'bg': 0 if i % 3 else 7, 'nextTalk': [i + 1] if i % 2 else [],
+                         'roles': [], **({'extra': None} if i == 4 else {})} for i in range(1, 9)}
+        summaries = {k: {'fields': list(r), 'truthyFields': [], 'record': {f: v for f, v in r.items() if f != 'content'},
+                         'excerpt': 't', 'hasText': True} for k, r in rows.items()}
+        packed = talk_segments.packed_summaries(copy.deepcopy(summaries))
+        self.assertNotIn('truthyFields', json.dumps(packed))
+        for key, summary in summaries.items():
+            item = packed['summaries'][key]
+            fields = packed['fieldSets'][item['fieldSet']]
+            self.assertEqual(fields, summary['fields'])
+            restored = {f: item['record'].get(f, packed['recordDefaults'].get(f)) for f in fields if f != 'content'}
+            self.assertEqual(restored, summary['record'])
+            self.assertEqual(item['record']['id'], summary['record']['id'])
+
+
 if __name__ == '__main__':
     unittest.main()

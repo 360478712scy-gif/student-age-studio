@@ -3825,6 +3825,12 @@ class StudioServer(ThreadingHTTPServer):
 
 class StudioHandler(BaseHTTPRequestHandler):
     server_version = "StudentAgeStudio"
+    # Keep-alive: a story page issues hundreds of small requests, and on Windows every new loopback
+    # connection plus its handler thread costs noticeably more than reusing one. Nagle is disabled because
+    # headers and body are written separately; idle connections end after the timeout.
+    protocol_version = "HTTP/1.1"
+    disable_nagle_algorithm = True
+    timeout = 60
 
     def log_message(self, *_):
         pass  # Never log URLs containing local session tokens or request bodies.
@@ -3853,6 +3859,9 @@ class StudioHandler(BaseHTTPRequestHandler):
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         for key, value in (extra or {}).items():
             self.send_header(key, value)
+        if status >= 400:
+            # An error may be raised before a POST body was read; never reuse that connection.
+            self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(data)
 
@@ -3905,6 +3914,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             while remaining:
                 data = stream.read(min(65536, remaining))
                 if not data:
+                    self.close_connection = True  # File shrank: the promised length was not sent.
                     break
                 self.wfile.write(data)
                 remaining -= len(data)
@@ -4475,7 +4485,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 pass
         except (BrokenPipeError, ConnectionResetError, socket.timeout):
-            pass
+            self.close_connection = True
         except PermissionError as exc:
             self.send_json(self.error_response(exc, "文件访问被拒绝，请检查访问权限：" + str(exc.filename or "当前模组目录"), "file_permission", method), 403)
         except OSError as exc:
