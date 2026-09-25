@@ -3,3 +3,16 @@
 
 .warehouse-picker{width:min(1100px,94vw);max-height:90vh;box-sizing:border-box}.warehouse-picker[open]{display:flex;flex-direction:column;gap:14px}.warehouse-picker>.warehouse-grid{overflow:auto;min-height:120px;max-height:62vh;padding:4px}.warehouse-picker>.warehouse-search{flex-shrink:0}.warehouse-picker .warehouse-card.active{outline:2px solid #ead196}.warehouse-picker>select{width:100%}
 .character-picker.warehouse-picker>.character-filters,.character-picker.warehouse-picker>.warehouse-search{margin:0 24px}.character-picker.warehouse-picker>.warehouse-grid{margin:0 24px}.character-picker.warehouse-picker>.uc-select{margin:0 24px;width:auto;flex-shrink:0}.character-picker.warehouse-picker>.uc-select:has(select[hidden]){display:none}.character-picker.warehouse-picker>[role=status]{margin:0 24px 20px;padding:0;color:var(--muted)}.warehouse-picker .warehouse-no-image{font-size:13px;color:var(--muted)}
+
+/* Map library: location sections and an inline large preview. Colours inherit from the active theme. */
+.map-library .map-library-body{overflow:auto;min-height:0;flex:1}
+.map-library .map-library-body>h3{margin:18px 0 8px;font-size:14px}
+.map-library .map-library-place{margin:0 0 14px}
+.map-library .map-library-place>h4{margin:0 0 6px;font-size:13px;font-weight:650}
+.map-library .map-library-place>h4 small{font-weight:400;opacity:.7;margin-left:6px}
+.map-library .map-library-preview{display:flex;flex-direction:column;align-items:center;gap:6px;margin:0 0 10px}
+.map-library .map-library-preview[hidden]{display:none}
+.map-library .map-library-preview img{max-width:100%;max-height:48vh;object-fit:contain;border-radius:8px}
+.map-library .map-library-preview p{margin:0;font-size:12px;opacity:.8;overflow-wrap:anywhere}
+.map-library header,.warehouse-icon-picker header{gap:8px}
+.map-library header [data-map-reveal],.warehouse-icon-picker header [data-lib-reveal]{margin-left:auto}

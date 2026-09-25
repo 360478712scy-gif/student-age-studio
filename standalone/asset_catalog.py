@@ -732,60 +732,65 @@ class AssetCatalog:
             self.cache.pop(cache_key, None); self.error('读取时模组配置发生变化，请刷新目录。', 409, 'conflict')
         return result
 
+    def _filtered(self, query):
+        """Entries with every list filter applied, before paging. Callers hold store.lock and catalog_scope."""
+        result = self._entries(query)
+        items = result['items']
+        if query.get('socialOnly') == '1':
+            people_table=self.store.table(query.get('projectId'),'PersonCfg')
+            people_rows=people_table['rows']
+            eligible={str(k) for k,r in people_rows.items() if int(k)>0 and r.get('init') and r['init'][0] in (2,3,4)}
+            items=[item for item in items if str(item.get('sourceId')) in eligible and (item.get('sourceProjectId') in (None,'',query.get('projectId')) or query.get('source')=='original')]
+            # Selecting an existing social role must not require a readable portrait.
+            source_ids=set(self.store.catalog_rows('PersonCfg')) if query.get('source')=='original' else set(map(str,people_table.get('localIds',[])))
+            present={str(item.get('sourceId')) for item in items}
+            if query.get('sourceProjectId') in (None,'','all',query.get('projectId')):
+                for ident in sorted(eligible & source_ids - present,key=int):
+                    person=people_rows[ident];label=asset_name(person,'portrait')
+                    items.append({'assetId':'person-selection:'+ident,'sourceId':int(ident),'kind':'portrait','name':label,
+                                  'personIds':[int(ident)],'personNames':[label],'available':False,'canImport':False,
+                                  'hasAffection':has_affection(person),'_selectionOnly':True})
+        if query.get('clothingCategory'): items = [item for item in items if item.get('clothingCategory') == query['clothingCategory']]
+        people = {}
+        for item in items:
+            for index, name in enumerate(item.get('personNames', [])):
+                ident = item.get('personIds', [])[index] if not result.get('allMods') and index < len(item.get('personIds', [])) else None
+                key = 'id:' + str(ident) if ident is not None else 'name:' + name
+                entry = people.setdefault(key, {**({'id': ident} if ident is not None else {}), 'name': name, 'count': 0}); entry['count'] += 1
+        filters = sorted(people.values(), key=lambda row: (row['name'], row.get('id', -1)))
+        locations = sorted({place for item in items for place in item.get('locations', [item.get('location', '其他')])}) if result['kind'] == 'background' else []
+        if query.get('location') and result['kind'] == 'background':
+            items = [item for item in items if query['location'] in item.get('locations', [item.get('location', '其他')])]
+        if query.get('affection') in ('yes', 'no') and result['kind'] == 'portrait':
+            items = [item for item in items if bool(item.get('hasAffection')) == (query['affection'] == 'yes')]
+        q = str(query.get('q', '')).strip().casefold()
+        if q: items = [item for item in items if search_matches(q,item['name'],item.get('relativePath', ''),*item.get('personNames', []),*item.get('searchNames', []),item.get('sourceProjectName', ''))]
+        if str(query.get('personId', '')):
+            person = str(query['personId'])
+            items = [item for item in items if (not item.get('personIds') if person == 'unmarked' else person in map(str, item.get('personIds', [])))]
+        if query.get('personName'): items = [item for item in items if query['personName'] in item.get('personNames', [])]
+        if query.get('audioGroup') == '8' and result['kind'] == 'audio':
+            items = [item for item in items if 8 in item.get('audioGroups', [])]
+        if query.get('type') and result['kind'] in {'audio','item'}:
+            items = [item for item in items if str(item.get('type')) == str(query['type']) or item.get('origin') == 'folder' and not item.get('audioTypeInferred')]
+        # Filter first, then hide visually identical images without deleting files
+        # or losing a duplicate's membership in a different category. An
+        # unfiltered background set already deduplicated for the current
+        # hash generation stays unique, so the second pass is skipped; any
+        # filtered view or other kind keeps its exact old pass.
+        unfiltered = result['kind'] == 'background' and not str(query.get('q', '')).strip() and all(
+            query.get(key) in (None, '') for key in ('location', 'personId', 'personName', 'clothingCategory', 'audioGroup', 'type', 'socialOnly', 'affection'))
+        if result['kind'] not in {'audio','portrait'} or query.get('variantMode') in {'portrait','expression'}:
+            if unfiltered and result.get('_hashGeneration') == self._hash_generation:
+                pass
+            else:
+                versions = {path: version for path, version in result.get('_files', [])} or None
+                items = self._deduplicate_backgrounds(items, versions)
+        return result, items, filters, locations
+
     def list(self, query):
         with self.store.lock, self.store.catalog_scope():
-            result = self._entries(query)
-            items = result['items']
-            if query.get('socialOnly') == '1':
-                people_table=self.store.table(query.get('projectId'),'PersonCfg')
-                people_rows=people_table['rows']
-                eligible={str(k) for k,r in people_rows.items() if int(k)>0 and r.get('init') and r['init'][0] in (2,3,4)}
-                items=[item for item in items if str(item.get('sourceId')) in eligible and (item.get('sourceProjectId') in (None,'',query.get('projectId')) or query.get('source')=='original')]
-                # Selecting an existing social role must not require a readable portrait.
-                source_ids=set(self.store.catalog_rows('PersonCfg')) if query.get('source')=='original' else set(map(str,people_table.get('localIds',[])))
-                present={str(item.get('sourceId')) for item in items}
-                if query.get('sourceProjectId') in (None,'','all',query.get('projectId')):
-                    for ident in sorted(eligible & source_ids - present,key=int):
-                        person=people_rows[ident];label=asset_name(person,'portrait')
-                        items.append({'assetId':'person-selection:'+ident,'sourceId':int(ident),'kind':'portrait','name':label,
-                                      'personIds':[int(ident)],'personNames':[label],'available':False,'canImport':False,
-                                      'hasAffection':has_affection(person),'_selectionOnly':True})
-            if query.get('clothingCategory'): items = [item for item in items if item.get('clothingCategory') == query['clothingCategory']]
-            people = {}
-            for item in items:
-                for index, name in enumerate(item.get('personNames', [])):
-                    ident = item.get('personIds', [])[index] if not result.get('allMods') and index < len(item.get('personIds', [])) else None
-                    key = 'id:' + str(ident) if ident is not None else 'name:' + name
-                    entry = people.setdefault(key, {**({'id': ident} if ident is not None else {}), 'name': name, 'count': 0}); entry['count'] += 1
-            filters = sorted(people.values(), key=lambda row: (row['name'], row.get('id', -1)))
-            locations = sorted({place for item in items for place in item.get('locations', [item.get('location', '其他')])}) if result['kind'] == 'background' else []
-            if query.get('location') and result['kind'] == 'background':
-                items = [item for item in items if query['location'] in item.get('locations', [item.get('location', '其他')])]
-            if query.get('affection') in ('yes', 'no') and result['kind'] == 'portrait':
-                items = [item for item in items if bool(item.get('hasAffection')) == (query['affection'] == 'yes')]
-            q = str(query.get('q', '')).strip().casefold()
-            if q: items = [item for item in items if search_matches(q,item['name'],item.get('relativePath', ''),*item.get('personNames', []),*item.get('searchNames', []),item.get('sourceProjectName', ''))]
-            if str(query.get('personId', '')):
-                person = str(query['personId'])
-                items = [item for item in items if (not item.get('personIds') if person == 'unmarked' else person in map(str, item.get('personIds', [])))]
-            if query.get('personName'): items = [item for item in items if query['personName'] in item.get('personNames', [])]
-            if query.get('audioGroup') == '8' and result['kind'] == 'audio':
-                items = [item for item in items if 8 in item.get('audioGroups', [])]
-            if query.get('type') and result['kind'] in {'audio','item'}:
-                items = [item for item in items if str(item.get('type')) == str(query['type']) or item.get('origin') == 'folder' and not item.get('audioTypeInferred')]
-            # Filter first, then hide visually identical images without deleting files
-            # or losing a duplicate's membership in a different category. An
-            # unfiltered background set already deduplicated for the current
-            # hash generation stays unique, so the second pass is skipped; any
-            # filtered view or other kind keeps its exact old pass.
-            unfiltered = result['kind'] == 'background' and not str(query.get('q', '')).strip() and all(
-                query.get(key) in (None, '') for key in ('location', 'personId', 'personName', 'clothingCategory', 'audioGroup', 'type', 'socialOnly', 'affection'))
-            if result['kind'] not in {'audio','portrait'} or query.get('variantMode') in {'portrait','expression'}:
-                if unfiltered and result.get('_hashGeneration') == self._hash_generation:
-                    pass
-                else:
-                    versions = {path: version for path, version in result.get('_files', [])} or None
-                    items = self._deduplicate_backgrounds(items, versions)
+            result, items, filters, locations = self._filtered(query)
             try: page, size = max(0, int(query.get('page', 0))), min(100, max(1, int(query.get('pageSize', 60))))
             except (TypeError, ValueError): self.error('素材页码无效。')
             total = len(items)
@@ -798,6 +803,56 @@ class AssetCatalog:
                 row['previewUrl'] = '' if item.get('_selectionOnly') else '/api/asset-preview?' + urllib.parse.urlencode({'catalogKey': result['catalogKey'], 'assetId': item['assetId'], 'projectId': result['projectId'], 'revision': result['revision'], 'mediaRevision': item['mediaRevision']})
                 public.append(row)
             return {key: value for key, value in result.items() if not key.startswith('_') and key != 'items'} | {'items': public, 'total': total, 'page': page, 'pageSize': size, 'personFilters': filters, 'locationFilters': locations, 'backgroundCache': self.hash_progress()}
+
+    def _cached_path(self, project, item, kind, source):
+        """The item's file only if it already exists locally; never renders or extracts anything."""
+        if item.get('_path'):
+            return item['_path']
+        if item.get('_nativeRole') is not None:
+            role, grade, cloth = item['_nativeRole'], item.get('previewGrade', 1) - 1, item.get('previewCloth', 0)
+            try:
+                return self._resource(project, f"portrait-cache/{role}-{grade}-{cloth}-{item.get('previewFace', 0)}.png", 'portrait')['_path']
+            except self.api.ApiError:
+                pass
+        if source != 'original' or item.get('_selectionOnly'):
+            return None
+        row = item.get('_row') or {}
+        if kind == 'portrait':
+            urls = row.get('url' if item.get('previewGrade', 1) == 1 else 'url2') or []
+            urls = urls if isinstance(urls, list) else [urls]
+            cloth = item.get('previewCloth', 0)
+            candidates = strings(urls[cloth]) if cloth < len(urls) else []
+        else:
+            candidates = [item['resource']] if kind == 'social' and item.get('resource') else strings(
+                row.get('urls') if kind == 'cg' else row.get('icon') if kind in {'avatar', 'item'} else row.get('url'))
+        for resource in candidates:
+            try:
+                return self._resource(project, resource, kind)['_path']
+            except self.api.ApiError:
+                pass
+        return None
+
+    def reveal(self, query):
+        """Open a readable folder with the library's current (filtered) files under their display names."""
+        import asset_browser
+        from platform_support import open_directory
+        with self.store.lock, self.store.catalog_scope():
+            result, items, _filters, _locations = self._filtered(query)
+            project = self.store.project(query.get('projectId'))
+            kind, source = result['kind'], result.get('source', query.get('source'))
+            entries = []
+            for item in items:
+                owner = item.get('_sourceProject') or project
+                path = self._cached_path(owner, item, kind, source)
+                label = item.get('name') or ''
+                if item.get('expressionName'):
+                    label += ' · ' + item['expressionName']
+                entries.append((label, path))
+        labels = {'original': '原版', 'mod': '模组', 'custom': '自定义'}
+        title = str(query.get('title') or kind) + ' · ' + labels.get(source, str(source or ''))
+        target, written, skipped = asset_browser.build(title, entries)
+        open_directory(target)
+        return {'path': str(target), 'count': written, 'skipped': skipped}
 
     def preview(self, query):
         with self.store.lock:

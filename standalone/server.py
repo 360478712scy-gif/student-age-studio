@@ -1017,9 +1017,15 @@ class StudioStore:
             for key in added:
                 table[key] = rows[key]
             ids = result.setdefault('catalogIds', {}).setdefault(name, [])
-            ids.extend(key for key in added if key not in ids)
+            # Set lookups: checking membership in the growing list was quadratic on large tables.
+            known = set(ids)
+            for key in added:
+                if key not in known:
+                    ids.append(key)
+                    known.add(key)
             if project.original_mode:
-                result['localIds'][name] = [key for key in result['localIds'].get(name, []) if key not in set(added)] + added
+                added_keys = set(added)
+                result['localIds'][name] = [key for key in result['localIds'].get(name, []) if key not in added_keys] + added
 
     def other_premise_pairs(self, project):
         pairs = set()
@@ -4003,6 +4009,11 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_file(self.server.store.asset(query.get("projectId", [""])[0], query.get("path", [""])[0]))
             if route == "/api/asset-folders":
                 return self.send_json(self.server.store.asset_catalog.folders())
+            if route == "/api/map-library":
+                import asset_browser
+                self.server.store.project(query.get("projectId", [""])[0])
+                with self.server.store.catalog_scope():
+                    return self.send_json(asset_browser.map_library(self.server.store))
             if route == "/api/asset-catalog":
                 self.server.media_warmup.request_scan()
                 return self.send_json(self.server.store.asset_catalog.list({key: value[0] for key, value in query.items()}))
@@ -4185,6 +4196,11 @@ class StudioHandler(BaseHTTPRequestHandler):
                 bootstrap = '<script nonce="' + nonce + '">window.STUDIO_TOKEN=' + json.dumps(self.server.token) + ';window.STUDIO_BOOTSTRAPPING=true;window.STUDIO_DISPLAY_IDS=' + json.dumps(preferences['showRecordIds']) + ';window.STUDIO_AUTO_SAVE=' + json.dumps(preferences['autoSave']) + ';window.STUDIO_SAVE_ON_EXIT='+json.dumps(preferences['saveOnExit'])+';window.STUDIO_ONBOARDING_COMPLETE='+json.dumps(preferences['onboardingComplete'])+';window.STUDIO_WORKSHOP_FAVORITES=' + json.dumps(preferences['workshopFavorites']) + ";</script>"
                 from error_logs import APP_VERSION, display_version
                 bootstrap = bootstrap.replace('</script>', ';window.STUDIO_VERSION='+json.dumps(display_version(APP_VERSION))+';</script>')
+                try:
+                    auto_backup = self.server.store.backups.settings()['autoBackup']
+                except Exception:
+                    auto_backup = False
+                bootstrap = bootstrap.replace('</script>', ';window.STUDIO_AUTO_BACKUP='+json.dumps(auto_backup)+';</script>')
                 bootstrap = bootstrap.replace('</script>', ';window.STUDIO_THEME='+json.dumps(preferences['theme'])+';document.documentElement.dataset.theme=window.STUDIO_THEME;window.STUDIO_GLASS_MATERIAL='+json.dumps(preferences['glassMaterial'])+';document.documentElement.dataset.glassMaterial=window.STUDIO_GLASS_MATERIAL;</script>')
                 if preferences['theme'] == 'classic':
                     for sheet in ('glass-palette.css', 'glass-theme.css'):
@@ -4244,6 +4260,13 @@ class StudioHandler(BaseHTTPRequestHandler):
                 folder.mkdir(parents=True,exist_ok=True)
                 open_directory(folder)
                 return self.send_json({'ok':True})
+            if route == '/api/asset-catalog-reveal':
+                return self.send_json(self.server.store.asset_catalog.reveal({key: str(value) for key, value in payload.items()}))
+            if route == '/api/map-library-reveal':
+                import asset_browser
+                project = self.server.store.project(payload.get('projectId'))
+                with self.server.store.catalog_scope():
+                    return self.send_json(asset_browser.reveal_map(self.server.store, project))
             if route == '/api/asset-catalog-delete':
                 return self.send_json(self.server.store.asset_catalog.delete_asset(payload))
             if route == "/api/asset-library-import":

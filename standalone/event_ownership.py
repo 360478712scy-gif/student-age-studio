@@ -64,13 +64,19 @@ def display_ownership(events, talks, options, folders, band=None):
                 seen.add(prev);reached.setdefault(prev,set()).add(event);todo.append(prev);fresh.append(prev)
         _walk(talks, edges, fresh, lambda t,event=event: reached.setdefault(t,set()).add(event),
               lambda t,event=event: not (t in forward and event not in reached.get(t,())))
+    # Bucket talks and options by their event-number prefix once; scanning every talk for each
+    # event is quadratic and took seconds on large mods.
+    talks_by_event,options_by_event={},{}
+    for t in talks:
+        if (n:=_number(t)) is not None: talks_by_event.setdefault(n//1000,[]).append(t)
+    for oid,row in options.items():
+        if (n:=_number(oid)) is not None: options_by_event.setdefault(n//100,[]).append(row)
     for event in band_ids:
         number=_number(event)
         if not number:continue
-        seeds=[t for t in talks if (n:=_number(t)) is not None and n//1000==number]
-        for oid,row in options.items():
-            if (n:=_number(oid)) is not None and n//100==number:
-                seeds.extend(ids(row.get('talkId'))+ids(row.get('talkId2')))
+        seeds=list(talks_by_event.get(number,()))
+        for row in options_by_event.get(number,()):
+            seeds.extend(ids(row.get('talkId'))+ids(row.get('talkId2')))
         def allow(t,event=event):
             owned=reached.get(t)
             if owned and event not in owned and t in forward:

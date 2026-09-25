@@ -42,4 +42,20 @@ class BackupLocationTests(unittest.TestCase):
             self.assertTrue(Path(original['modPath']).is_dir())
         self.assertEqual(file.read_text(),'keep')
 
+    def test_automatic_backup_is_off_by_default_and_can_be_enabled(self):
+        manager=self.store.backups
+        self.assertFalse(manager.settings()['autoBackup'])
+        skipped=manager.create({'projectId':self.project.id,'kind':'automatic','requestId':'open_default'})
+        self.assertEqual(skipped,{'skipped':True})
+        self.assertEqual(manager.status(self.project.id)['backups'],[])
+        manual=manager.create({'projectId':self.project.id,'requestId':'manual_default'})
+        self.assertTrue(Path(manual['modPath']).is_dir())
+        enabled=manager.configure({'autoBackup':True})
+        self.assertTrue(enabled['autoBackup']);self.assertTrue(enabled['autoCleanup'])
+        automatic=manager.create({'projectId':self.project.id,'kind':'automatic','requestId':'open_enabled'})
+        self.assertTrue(Path(automatic['modPath']).is_dir())
+        # Changing another setting keeps the choice.
+        self.assertTrue(manager.configure({'autoCleanup':False})['autoBackup'])
+        with self.assertRaises(Exception):manager.configure({'autoBackup':'yes'})
+
 if __name__=='__main__':unittest.main()

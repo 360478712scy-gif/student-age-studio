@@ -156,3 +156,6 @@ html[data-theme="glass-atelier"] body .uc-popup .uc-option:is(:hover,.uc-focused
 html[data-theme="glass-atelier"] body .uc-popup .uc-option[aria-selected=true]{background:var(--at-wash)!important;border-color:var(--at-wash-line)!important;color:var(--at-accent-strong)!important}
 html[data-theme="glass-atelier"] body .uc-popup .uc-optgroup{margin-top:10px;padding:10px 4px 4px!important;border-top:1px solid var(--at-line-strong);color:var(--at-ink)!important;font-weight:650;letter-spacing:.04em}
 html[data-theme="glass-atelier"] body .uc-popup .uc-options>.uc-optgroup:first-child{margin-top:0;border-top:0;padding-top:4px!important}
+
+/* Asset library dialogs are glass in the other themes; on paper they read better as an opaque sheet. */
+html[data-theme="glass-atelier"] body dialog:is(.catalogue-warehouse,#asset-picker){background:var(--at-sheet)!important}
