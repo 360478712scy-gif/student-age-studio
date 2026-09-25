@@ -2087,10 +2087,30 @@ window.STUDIO_STORY_NAV={
 };
 // Exposed pure/data operations make graph integrity checkable without a running game.
 const jsonStoryKeys={TalkCfg:'talks',EvtCfg:'events',OptionCfg:'options',PersonCfg:'persons',ModFaceCfg:'faces',BgCfg:'backgrounds',CGCfg:'cgs',PaperCfg:'papers',ActionCfg:'actions',ActionEvtCfg:'actionEvents',InteractCfg:'interactions',GiftEvtCfg:'giftEvents',MinigameActionCfg:'minigameActions'};
+// Segmented (disk-backed) talk tables are shown in the JSON drawer one scope at a time: the lines of the
+// event being edited, or pages of the whole table. Only that scope is read from disk.
+const jsonSegmentState={page:0,scope:null,size:200};
+function jsonSegment(name){
+ if(name!=='TalkCfg'||!S.doc?.talks||!Remote.info(S.doc.talks)||S.deferredProject)return null;
+ let all,label;
+ if(externalSession){all=externalScope().filter(id=>S.doc.talks[id]);label='当前对话文件夹';}
+ else if(S.event!=='all'&&S.doc.events[S.event]){const shown=shownWith(S.event);all=S.order.filter(id=>shown.has(id)&&S.doc.talks[id]);label='事件 '+S.event+' 的对话';}
+ else{all=Object.keys(S.doc.talks).map(Number).sort((a,b)=>a-b);label='全部对话';}
+ const scope=S.project?.id+'|'+(externalSession?'external:'+externalSession.folder:S.event);
+ if(scope!==jsonSegmentState.scope){jsonSegmentState.scope=scope;jsonSegmentState.page=0;}
+ const size=jsonSegmentState.size,pages=Math.max(1,Math.ceil(all.length/size)),page=Math.min(Math.max(0,jsonSegmentState.page),pages-1);jsonSegmentState.page=page;
+ return {ids:all.slice(page*size,page*size+size).map(String),label,page,pages,total:all.length,key:scope+'|'+page};
+}
 window.STUDIO_STORY_JSON={
- async prepare(){if(S.doc?.talks){const info=Remote.info(S.doc.talks);if(info)info.base.compatibility=true;try{await Remote.ensure(S.doc.talks);}catch(error){if(info)info.base.compatibility=false;throw error;}}},
+ segment:name=>jsonSegment(name),
+ segmentKey:()=>jsonSegment('TalkCfg')?.key||'',
+ setSegmentPage(page){jsonSegmentState.page=Math.max(0,Number(page)||0);},
+ // Whole-table reads stay available for small, fully loaded tables; segmented tables load only the visible scope.
+ async prepare(name='TalkCfg'){if(!S.doc?.talks)return;const info=Remote.info(S.doc.talks);if(!info)return;info.base.compatibility=true;const segment=jsonSegment(name);try{await Remote.ensure(S.doc.talks,segment?segment.ids:[]);}catch(error){info.base.compatibility=false;throw error;}},
  finish(){const info=Remote.info(S.doc?.talks);if(info){info.base.compatibility=false;Remote.pin(S.doc.talks,S.selected);}},
- read(name,disk={}){const key=jsonStoryKeys[name];if(!key||!S.doc?.[key]||S.deferredProject)return null;const baseline=S.saved?IndexedTalks.parse(S.saved)[0]?.[key]||{}:{},rows=S.doc[key],keys=new Set([...Object.keys(disk),...(S.localIds[key]||[]).map(String)]);for(const [id,row]of Object.entries(rows))if(JSON.stringify(row)!==JSON.stringify(baseline[id]))keys.add(id);return Object.fromEntries([...keys].filter(id=>rows[id]).map(id=>[id,clone(rows[id])]));},
+ read(name,disk={}){const key=jsonStoryKeys[name];if(!key||!S.doc?.[key]||S.deferredProject)return null;
+  const segment=jsonSegment(name);if(segment){const present=segment.ids.filter(id=>S.doc.talks[id]);if(present.some(id=>!Remote.ready(S.doc.talks,id)))return null;return Object.fromEntries(present.map(id=>[id,clone(S.doc.talks[id])]));}
+  const baseline=S.saved?IndexedTalks.parse(S.saved)[0]?.[key]||{}:{},rows=S.doc[key],keys=new Set([...Object.keys(disk),...(S.localIds[key]||[]).map(String)]);for(const [id,row]of Object.entries(rows))if(JSON.stringify(row)!==JSON.stringify(baseline[id]))keys.add(id);return Object.fromEntries([...keys].filter(id=>rows[id]).map(id=>[id,clone(rows[id])]));},
  async write(name,rows,disk={}){const key=jsonStoryKeys[name];if(!key||!S.doc?.[key]||S.deferredProject)return false;if(!editable())throw Error('当前模组不可编辑。');const previous=this.read(name,disk);if(JSON.stringify(previous)===JSON.stringify(rows))return true;
   rows=clone(rows);const map={};if(['talks','options','events'].includes(key))for(const [id,row]of Object.entries(rows)){const next=Number(row?.id);if(Number.isInteger(next)&&next>0&&next<=2147483647&&String(next)!==id){map[id]=next;row.id=Number(id);}}
   for(const [id,next]of Object.entries({...map}))if((rows[next]||S.doc[key][next])&&localStoryIds(key).has(Number(next))&&map[next]===undefined)map[next]=Number(id);
