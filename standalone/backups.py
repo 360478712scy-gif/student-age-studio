@@ -48,7 +48,10 @@ class ModBackups:
         config = self.api.read_json(self.root / 'settings.json', {})
         if not isinstance(config, dict):
             raise self.api.ApiError('备份设置无法读取，请检查备份文件夹。')
-        return {'path': str(self.root), 'autoCleanup': config.get('autoCleanup', True) is not False, 'limit': 5}
+        # Backing up on every open copies the whole mod (hundreds of MB with art), which dominated open time;
+        # it is opt-in. Manual backups are unaffected.
+        return {'path': str(self.root), 'autoCleanup': config.get('autoCleanup', True) is not False,
+                'autoBackup': config.get('autoBackup', False) is True, 'limit': 5}
 
     def entries(self, folder):
         result = []
@@ -99,6 +102,9 @@ class ModBackups:
             enabled = payload.get('autoCleanup', current['autoCleanup'])
             if not isinstance(enabled, bool):
                 raise self.api.ApiError('请选择是否自动清理旧备份。')
+            auto_backup = payload.get('autoBackup', current['autoBackup'])
+            if not isinstance(auto_backup, bool):
+                raise self.api.ApiError('请选择是否在打开模组时自动备份。')
             path = payload.get('path', str(previous))
             if not isinstance(path, str) or not path.strip() or not Path(path).expanduser().is_absolute():
                 raise self.api.ApiError('请填写备份文件夹的完整路径。')
@@ -120,7 +126,7 @@ class ModBackups:
                 self.root = target
                 with self.locked():
                     self.settings()
-                    self.api.atomic_write(target / 'settings.json', self.api.json_bytes({'autoCleanup': enabled}))
+                    self.api.atomic_write(target / 'settings.json', self.api.json_bytes({'autoCleanup': enabled, 'autoBackup': auto_backup}))
                     if not self.fixed_root:
                         self.api.atomic_write(self.location_path, self.api.json_bytes({'path': str(target)}))
                     removed = 0
@@ -159,6 +165,8 @@ class ModBackups:
         kind, request_id = payload.get('kind', 'manual'), payload.get('requestId')
         if kind not in {'automatic', 'manual'} or not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{8,100}', request_id):
             raise self.api.ApiError('备份请求无效，请重试。')
+        if kind == 'automatic' and not self.settings()['autoBackup']:
+            return {'skipped': True}
         with self.store.lock, self.locked():
             project = self.store.project(payload.get('projectId'), writable=True)
             folder = self.folder(project)

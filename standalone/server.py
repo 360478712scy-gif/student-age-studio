@@ -1017,9 +1017,15 @@ class StudioStore:
             for key in added:
                 table[key] = rows[key]
             ids = result.setdefault('catalogIds', {}).setdefault(name, [])
-            ids.extend(key for key in added if key not in ids)
+            # Set lookups: checking membership in the growing list was quadratic on large tables.
+            known = set(ids)
+            for key in added:
+                if key not in known:
+                    ids.append(key)
+                    known.add(key)
             if project.original_mode:
-                result['localIds'][name] = [key for key in result['localIds'].get(name, []) if key not in set(added)] + added
+                added_keys = set(added)
+                result['localIds'][name] = [key for key in result['localIds'].get(name, []) if key not in added_keys] + added
 
     def other_premise_pairs(self, project):
         pairs = set()
@@ -4185,6 +4191,11 @@ class StudioHandler(BaseHTTPRequestHandler):
                 bootstrap = '<script nonce="' + nonce + '">window.STUDIO_TOKEN=' + json.dumps(self.server.token) + ';window.STUDIO_BOOTSTRAPPING=true;window.STUDIO_DISPLAY_IDS=' + json.dumps(preferences['showRecordIds']) + ';window.STUDIO_AUTO_SAVE=' + json.dumps(preferences['autoSave']) + ';window.STUDIO_SAVE_ON_EXIT='+json.dumps(preferences['saveOnExit'])+';window.STUDIO_ONBOARDING_COMPLETE='+json.dumps(preferences['onboardingComplete'])+';window.STUDIO_WORKSHOP_FAVORITES=' + json.dumps(preferences['workshopFavorites']) + ";</script>"
                 from error_logs import APP_VERSION, display_version
                 bootstrap = bootstrap.replace('</script>', ';window.STUDIO_VERSION='+json.dumps(display_version(APP_VERSION))+';</script>')
+                try:
+                    auto_backup = self.server.store.backups.settings()['autoBackup']
+                except Exception:
+                    auto_backup = False
+                bootstrap = bootstrap.replace('</script>', ';window.STUDIO_AUTO_BACKUP='+json.dumps(auto_backup)+';</script>')
                 bootstrap = bootstrap.replace('</script>', ';window.STUDIO_THEME='+json.dumps(preferences['theme'])+';document.documentElement.dataset.theme=window.STUDIO_THEME;window.STUDIO_GLASS_MATERIAL='+json.dumps(preferences['glassMaterial'])+';document.documentElement.dataset.glassMaterial=window.STUDIO_GLASS_MATERIAL;</script>')
                 if preferences['theme'] == 'classic':
                     for sheet in ('glass-palette.css', 'glass-theme.css'):

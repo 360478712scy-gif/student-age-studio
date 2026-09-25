@@ -9,6 +9,7 @@ from contextlib import closing
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import sqlite3
@@ -25,26 +26,45 @@ MAX_PAGE_BYTES = 2 * 1024 * 1024
 
 
 
+def _default_key(value):
+    """Cheap identity for values that can be a field default: null, booleans, numbers, strings and
+    empty containers. The type is part of the key so 0, 0.0, False and "0" never match each other,
+    exactly as their JSON spellings differ. Anything else is never treated as a default."""
+    kind = type(value)
+    if kind is Decimal:
+        return ('Decimal', str(value))  # 1.0 and 1.00 are equal numbers but different JSON spellings
+    if value is None or kind in (bool, int, float, str):
+        return (kind.__name__, value)
+    if kind is list and not value:
+        return ('list',)
+    if kind is dict and not value:
+        return ('dict',)
+    return None
+
+
 def packed_summaries(summaries):
     """Wire form of the talk summaries (tens of MB on large mods, parsed by WebView2 on every open).
     Field lists repeat, so each distinct list is sent once in fieldSets and referenced by index.
-    Records omit values equal to recordDefaults (the most common value of each field); the client
-    restores them, so a record is still every field except content. truthyFields has no consumer."""
-    sets, index, packed, counts = [], {}, {}, {}
+    Records omit values equal to recordDefaults (the most common default-able value of each field);
+    the client restores them, so a record is still every field except content. truthyFields has no consumer."""
+    sets, index, packed, counts, samples = [], {}, {}, {}, {}
     for summary in summaries.values():
         for field, value in summary['record'].items():
-            encoded = json.dumps(value, sort_keys=True, ensure_ascii=False)
+            key = _default_key(value)
+            if key is None:
+                continue
             bucket = counts.setdefault(field, {})
-            bucket[encoded] = bucket.get(encoded, 0) + 1
-    defaults = {field: json.loads(max(bucket.items(), key=lambda item: item[1])[0]) for field, bucket in counts.items()}
-    encoded_defaults = {field: json.dumps(value, sort_keys=True, ensure_ascii=False) for field, value in defaults.items()}
+            bucket[key] = bucket.get(key, 0) + 1
+            samples.setdefault((field, key), value)
+    default_keys = {field: max(bucket.items(), key=lambda item: item[1])[0] for field, bucket in counts.items()}
+    defaults = {field: copy.deepcopy(samples[(field, key)]) for field, key in default_keys.items()}
     for key, summary in summaries.items():
         fields = tuple(summary['fields'])
         if fields not in index:
             index[fields] = len(sets)
             sets.append(list(fields))
         record = {field: copy.deepcopy(value) for field, value in summary['record'].items()
-                  if field == 'id' or json.dumps(value, sort_keys=True, ensure_ascii=False) != encoded_defaults[field]}
+                  if field == 'id' or field not in default_keys or _default_key(value) != default_keys[field]}
         packed[key] = {'record': record, 'excerpt': summary['excerpt'],
                        'hasText': summary['hasText'], 'fieldSet': index[fields]}
     return {'fieldSets': sets, 'recordDefaults': defaults, 'summaries': packed}
@@ -74,24 +94,27 @@ STRICT = json.JSONDecoder(object_pairs_hook=unique_object, parse_float=Decimal,
                           parse_constant=invalid_constant)
 
 
+# Faster than a per-character scan and byte-identical to it: C-level find/translate between string
+# literals, each literal kept verbatim, an unterminated one kept verbatim to the end.
+_STRING = re.compile(r'"(?:[^"\\]|\\.)*"', re.S)
+_SPACE = str.maketrans('', '', ' \r\n\t')
+
 def compact_record(text):
     """Remove only structural whitespace; preserve every token's exact spelling."""
     output = []
-    quoted = escaped = False
-    for char in text:
-        if quoted:
-            output.append(char)
-            if escaped:
-                escaped = False
-            elif char == '\\':
-                escaped = True
-            elif char == '"':
-                quoted = False
-        elif char == '"':
-            quoted = True
-            output.append(char)
-        elif char not in ' \r\n\t':
-            output.append(char)
+    pos = 0
+    while True:
+        quote = text.find('"', pos)
+        if quote < 0:
+            output.append(text[pos:].translate(_SPACE))
+            break
+        output.append(text[pos:quote].translate(_SPACE))
+        match = _STRING.match(text, quote)
+        if match is None:  # unterminated string: kept verbatim, as the character scanner did
+            output.append(text[quote:])
+            break
+        output.append(match.group())
+        pos = match.end()
     return ''.join(output).encode('utf-8')
 
 
@@ -233,7 +256,8 @@ class Generation:
         return {**copy.deepcopy(self.metadata), 'segmentedTalks': {
             'version': VERSION, 'generation': self.generation,
             'ids': list(self.entries), 'pageSize': PAGE_SIZE,
-            'eventIds': copy.deepcopy(self.event_ids), **copy.deepcopy(self.packed())}}
+            # The packed summaries are only serialized, never modified by callers: share them read-only.
+            'eventIds': copy.deepcopy(self.event_ids), **self.packed()}}
 
     def packed(self):
         # Summaries are fixed for this snapshot; pack them once rather than on every project open.
