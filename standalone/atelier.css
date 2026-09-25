@@ -140,3 +140,10 @@ html[data-theme="glass-atelier"] body :is(.uc-menu,.talk-context-menu,.scene-con
 html[data-theme="glass-atelier"] body #editor-content button.primary:not(:disabled){background:var(--at-wash)!important;border:1px solid var(--at-wash-line)!important;color:var(--at-accent-strong)!important;font-weight:600}
 html[data-theme="glass-atelier"] body #editor-content button.primary:hover:not(:disabled){background:var(--at-sheet)!important;border-color:var(--at-accent)!important}
 html[data-theme="glass-atelier"] body.json-drawer-open #studio-save-state{right:calc(var(--json-drawer-width) + var(--atelier-rail))}
+
+/* JSON drawer open: compress the page like the other themes do, leaving room for both the drawer and the
+   tool rail (which sits against the drawer's left edge) instead of letting the drawer cover the right side. */
+html[data-theme="glass-atelier"] body.studio-navigation.json-drawer-open{padding-right:calc(var(--json-drawer-width) + var(--atelier-rail))}
+html[data-theme="glass-atelier"] body.studio-navigation.json-drawer-open :is(#workshop,#story-events,#studio-help){right:calc(var(--json-drawer-width) + var(--atelier-rail))!important}
+html[data-theme="glass-atelier"] body.studio-navigation.json-drawer-open .workspace{grid-template-columns:minmax(175px,.8fr) minmax(280px,2fr) minmax(200px,1fr)}
+html[data-theme="glass-atelier"] body.json-drawer-open dialog[data-studio-layered]:not(.uc-popup){inset:0 calc(var(--json-drawer-width) + var(--atelier-rail)) 0 0}
