@@ -147,3 +147,12 @@ html[data-theme="glass-atelier"] body.studio-navigation.json-drawer-open{padding
 html[data-theme="glass-atelier"] body.studio-navigation.json-drawer-open :is(#workshop,#story-events,#studio-help){right:calc(var(--json-drawer-width) + var(--atelier-rail))!important}
 html[data-theme="glass-atelier"] body.studio-navigation.json-drawer-open .workspace{grid-template-columns:minmax(175px,.8fr) minmax(280px,2fr) minmax(200px,1fr)}
 html[data-theme="glass-atelier"] body.json-drawer-open dialog[data-studio-layered]:not(.uc-popup){inset:0 calc(var(--json-drawer-width) + var(--atelier-rail)) 0 0}
+
+/* Option lists (mod picker and other selects): keep each option a distinct bordered row and give group
+   headings a divider, as the other themes do, so 自己的模组 and 订阅模组 read as two separate groups. */
+html[data-theme="glass-atelier"] body .uc-popup .uc-options{display:flex;flex-direction:column;gap:4px}
+html[data-theme="glass-atelier"] body .uc-popup .uc-option{background:var(--at-sheet)!important;border:1px solid var(--at-line)!important;border-radius:var(--at-radius-sm)!important;color:var(--at-ink)!important}
+html[data-theme="glass-atelier"] body .uc-popup .uc-option:is(:hover,.uc-focused):not(:disabled){background:var(--at-hover)!important;border-color:var(--at-line-strong)!important}
+html[data-theme="glass-atelier"] body .uc-popup .uc-option[aria-selected=true]{background:var(--at-wash)!important;border-color:var(--at-wash-line)!important;color:var(--at-accent-strong)!important}
+html[data-theme="glass-atelier"] body .uc-popup .uc-optgroup{margin-top:10px;padding:10px 4px 4px!important;border-top:1px solid var(--at-line-strong);color:var(--at-ink)!important;font-weight:650;letter-spacing:.04em}
+html[data-theme="glass-atelier"] body .uc-popup .uc-options>.uc-optgroup:first-child{margin-top:0;border-top:0;padding-top:4px!important}
