@@ -1,0 +1,142 @@
+/* 纸本 · 工作室 (data-theme="glass-atelier").
+   Colours come from atelier-tones.css through the shared glass palette; this sheet changes layout and material:
+   a slim single-row toolbar, a docked tool rail instead of floating buttons, a bottom status line, flat paper
+   surfaces separated by hairlines, and denser lists. No blur, no WebGL, no animated gradients: cheaper to paint
+   in WebView2 on Windows. Everything is scoped to this theme so the other themes are untouched. */
+html[data-theme="glass-atelier"]{
+ --atelier-rail:48px;--atelier-status:24px;
+ --at-paper:var(--sg-bg);--at-sheet:var(--sg-surface);--at-raised:var(--sg-raised);--at-hover:var(--sg-hover);
+ --at-line:var(--sg-line-soft);--at-line-strong:var(--sg-line);--at-ink:var(--sg-text);--at-muted:var(--sg-muted);
+ --at-accent:var(--sg-gold);--at-accent-strong:var(--sg-gold-hover);--at-wash:var(--sg-selected);--at-wash-line:var(--sg-selected-line);
+ --at-radius:8px;--at-radius-sm:6px;
+ --at-shadow:0 1px 2px rgba(60,52,38,.06),0 8px 24px rgba(60,52,38,.07);
+ --sg-radius:10px;--sg-control-radius:7px;
+ --shadow:var(--at-shadow);--glass:var(--at-sheet);--glass-shadow:none;
+ font-family:"PingFang SC","Microsoft YaHei UI","Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+html[data-theme="glass-atelier"] body{background:var(--at-paper);color:var(--at-ink);font-size:13px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+
+/* ---- Material: flat paper. The glass renderer and frosted fallbacks are off for this theme. ---- */
+html[data-theme="glass-atelier"] body *,html[data-theme="glass-atelier"] body *::before,html[data-theme="glass-atelier"] body *::after{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+html[data-theme="glass-atelier"] body canvas.liquid-optics{display:none!important}
+html[data-theme="glass-atelier"] body :is(#workshop,#story-events,#studio-help,#studio-empty-home){background:var(--at-paper)!important}
+html[data-theme="glass-atelier"] body ::selection{background:var(--at-wash-line);color:var(--at-ink)}
+html[data-theme="glass-atelier"] body ::-webkit-scrollbar{width:10px;height:10px}
+html[data-theme="glass-atelier"] body ::-webkit-scrollbar-thumb{background:rgba(90,80,62,.22)!important;border:3px solid transparent;border-radius:10px;background-clip:padding-box}
+html[data-theme="glass-atelier"] body ::-webkit-scrollbar-thumb:hover{background:rgba(90,80,62,.38)!important;background-clip:padding-box}
+html[data-theme="glass-atelier"] body *{scrollbar-color:rgba(90,80,62,.28) transparent}
+
+/* ---- Controls ---- */
+html[data-theme="glass-atelier"] body button:not(:where(.story-scene *,#story-history *,#story-preview-controls *,.goal-native-canvas *,.message-native-phone *,.social-feed-card *,#space-preview *,.model-art *,.person-model-preview *)){border-radius:var(--sg-control-radius);box-shadow:none;transition:background-color .12s,border-color .12s,color .12s}
+html[data-theme="glass-atelier"] body :is(button.primary,[data-nav=save]):not(:disabled):not(:where(.story-scene *,#story-history *,#story-preview-controls *)){background:var(--at-accent)!important;border-color:var(--at-accent)!important;color:#fff!important}
+html[data-theme="glass-atelier"] body :is(button.primary,[data-nav=save]):hover:not(:disabled):not(:where(.story-scene *,#story-history *,#story-preview-controls *)){background:var(--at-accent-strong)!important;border-color:var(--at-accent-strong)!important}
+html[data-theme="glass-atelier"] body :is(input,textarea,select,.uc-trigger):not(:where(.story-scene *,#story-history *,.goal-native-canvas *,.message-native-phone *)){border-radius:var(--sg-control-radius)}
+html[data-theme="glass-atelier"] body :is(input,textarea,.uc-trigger):focus-visible,html[data-theme="glass-atelier"] body button:focus-visible{outline:2px solid var(--at-accent);outline-offset:1px;box-shadow:none!important}
+html[data-theme="glass-atelier"] body dialog:not(:where(.story-scene *)){border-radius:12px;border:1px solid var(--at-line-strong);box-shadow:0 24px 64px rgba(48,40,28,.18)}
+html[data-theme="glass-atelier"] body dialog::backdrop{background:rgba(40,34,24,.28)}
+
+/* ---- Toolbar: one 52px row; save state moves to the bottom status line ---- */
+html[data-theme="glass-atelier"] body #studio-toolbar{height:52px;padding:0 12px!important;gap:6px!important;background:var(--at-sheet)!important;border-bottom:1px solid var(--at-line-strong)!important;box-shadow:none!important;flex-wrap:nowrap}
+html[data-theme="glass-atelier"] body #studio-toolbar button{min-height:32px;height:32px;padding:0 10px;font-size:12.5px;background:transparent;border:1px solid transparent;color:var(--at-ink);border-radius:var(--at-radius-sm)}
+html[data-theme="glass-atelier"] body #studio-toolbar button:hover:not(:disabled){background:var(--at-hover)!important;border-color:var(--at-line)!important;color:var(--at-ink)!important}
+html[data-theme="glass-atelier"] body #studio-toolbar button.active{background:var(--at-wash)!important;border-color:var(--at-wash-line)!important;color:var(--at-accent-strong)!important}
+html[data-theme="glass-atelier"] body #studio-toolbar [data-nav=save]{padding:0 14px}
+html[data-theme="glass-atelier"] body #studio-toolbar .studio-brand{font-size:14px;font-weight:650;letter-spacing:.02em;display:flex;align-items:center;gap:8px;padding-right:10px;margin-right:4px;border-right:1px solid var(--at-line)}
+html[data-theme="glass-atelier"] body #studio-toolbar .studio-brand img{width:22px;height:22px;border-radius:6px}
+html[data-theme="glass-atelier"] body #studio-toolbar .studio-history button{width:30px;font-size:16px!important}
+html[data-theme="glass-atelier"] body #studio-toolbar .studio-project{font-size:11.5px;color:var(--at-muted);gap:6px}
+html[data-theme="glass-atelier"] body #studio-toolbar .studio-project .uc-trigger{height:32px!important;min-height:32px!important;background:var(--at-raised)!important;border:1px solid var(--at-line)!important;border-radius:var(--at-radius-sm)}
+html[data-theme="glass-atelier"] body #studio-toolbar .studio-project .uc-trigger:hover{border-color:var(--at-line-strong)!important}
+html[data-theme="glass-atelier"] body #studio-toolbar .studio-toolbar-actions{margin-left:auto;gap:4px}
+html[data-theme="glass-atelier"] body #studio-save-state{position:fixed!important;left:0;right:var(--atelier-rail);bottom:0;top:auto;height:var(--atelier-status);display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:0 16px;font-size:11px;line-height:1;color:var(--at-muted);background:var(--at-raised);border-top:1px solid var(--at-line);z-index:94;box-sizing:border-box}
+
+/* ---- Tool rail: the floating round buttons become a docked column on the right edge ---- */
+html[data-theme="glass-atelier"] body.studio-navigation{padding-right:var(--atelier-rail)}
+html[data-theme="glass-atelier"] body #studio-corner-tools{top:var(--studio-toolbar-height);right:0;bottom:0;width:var(--atelier-rail);justify-content:flex-start;gap:4px;padding:10px 0 calc(var(--atelier-status) + 8px);background:var(--at-sheet);border-left:1px solid var(--at-line-strong);box-sizing:border-box;pointer-events:auto}
+html[data-theme="glass-atelier"] body #studio-corner-items{gap:4px;transform:none!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important}
+html[data-theme="glass-atelier"] body #studio-corner-items button{pointer-events:auto!important}
+html[data-theme="glass-atelier"] body #studio-corner-toggle{display:none!important}
+html[data-theme="glass-atelier"] body #studio-corner-tools button.json-corner{width:34px;height:34px;min-width:34px;min-height:34px;border-radius:var(--at-radius)!important;background:transparent!important;border:1px solid transparent!important;color:var(--at-muted)!important;box-shadow:none!important;bottom:auto}
+html[data-theme="glass-atelier"] body #studio-corner-tools button.json-corner svg{width:19px;height:19px}
+html[data-theme="glass-atelier"] body #studio-corner-tools button.json-corner:hover{background:var(--at-hover)!important;border-color:var(--at-line)!important;color:var(--at-ink)!important}
+html[data-theme="glass-atelier"] body #studio-corner-tools button.active,html[data-theme="glass-atelier"] body #studio-corner-tools button[aria-pressed=true]{background:var(--at-wash)!important;border-color:var(--at-wash-line)!important;color:var(--at-accent-strong)!important}
+html[data-theme="glass-atelier"] body.json-drawer-open #studio-corner-tools{right:var(--json-drawer-width)}
+html[data-theme="glass-atelier"] body.studio-navigation :is(#workshop,#story-events,#studio-help){right:var(--atelier-rail)!important;bottom:var(--atelier-status)!important}
+
+/* ---- Story workspace: three panes separated by hairlines ---- */
+html[data-theme="glass-atelier"] body.studio-navigation .workspace{height:calc(100vh - var(--studio-toolbar-height) - var(--atelier-status));grid-template-columns:clamp(248px,19vw,300px) minmax(420px,1fr) clamp(270px,21vw,340px)}
+html[data-theme="glass-atelier"] body .dialogue-sidebar{background:var(--at-raised)!important;border-right:1px solid var(--at-line-strong)!important;padding:0!important}
+html[data-theme="glass-atelier"] body .dialogue-sidebar>*{margin-inline:12px}
+html[data-theme="glass-atelier"] body .dialogue-sidebar>.event-list-back{margin:12px 12px 4px;align-self:flex-start;font-size:12px;color:var(--at-muted);background:none;border:0;padding:4px 0}
+html[data-theme="glass-atelier"] body .dialogue-sidebar>.event-list-back:hover{color:var(--at-accent-strong)}
+html[data-theme="glass-atelier"] body .dialogue-sidebar .sidebar-preview button{width:100%;height:34px;font-weight:600}
+html[data-theme="glass-atelier"] body .dialogue-sidebar .search-box{background:var(--at-sheet);border:1px solid var(--at-line);border-radius:var(--at-radius-sm)}
+html[data-theme="glass-atelier"] body .dialogue-sidebar .list-meta{font-size:11px;letter-spacing:.06em;color:var(--at-muted)}
+html[data-theme="glass-atelier"] body .dialogue-sidebar .new-content-actions button{height:30px;font-size:12px}
+html[data-theme="glass-atelier"] body .dialogue-sidebar .talk-list{margin:6px 0 0!important;padding:0 0 8px!important;border-top:1px solid var(--at-line)}
+html[data-theme="glass-atelier"] body .dialogue-sidebar .sidebar-bottom{margin:0;padding:8px 12px;border-top:1px solid var(--at-line-strong);background:var(--at-raised)}
+html[data-theme="glass-atelier"] body .dialogue-sidebar .sidebar-bottom button{height:28px;font-size:12px}
+/* Dialogue rows: list items, not cards. The selected row carries an accent bar. */
+html[data-theme="glass-atelier"] body #talk-list .talk-card{margin:0!important;padding:10px 12px 10px 15px!important;border:0!important;border-bottom:1px solid var(--at-line)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
+html[data-theme="glass-atelier"] body #talk-list .talk-card:hover{background:var(--at-hover)!important}
+html[data-theme="glass-atelier"] body #talk-list .talk-card.selected{background:var(--at-sheet)!important}
+html[data-theme="glass-atelier"] body #talk-list .talk-card.selected::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--at-accent)}
+html[data-theme="glass-atelier"] body #talk-list .talk-card .talk-card-header strong{font-size:12.5px;font-weight:600}
+html[data-theme="glass-atelier"] body #talk-list .talk-card .talk-index{font-variant-numeric:tabular-nums;color:var(--at-muted);font-size:11px}
+html[data-theme="glass-atelier"] body #talk-list .talk-card .talk-snippet{font-size:12.5px;line-height:1.6;color:var(--at-ink);margin:4px 0 0}
+html[data-theme="glass-atelier"] body #talk-list .talk-tree-node .talk-tree-node{border-left:1px dashed var(--at-line-strong);margin-left:10px}
+html[data-theme="glass-atelier"] body .editor-column{background:var(--at-paper)!important}
+html[data-theme="glass-atelier"] body .editor-scroll{padding:18px 22px 40px!important}
+html[data-theme="glass-atelier"] body .inline-scene-heading h2,html[data-theme="glass-atelier"] body .preview-heading h2{font-size:15px;font-weight:650;letter-spacing:.01em}
+html[data-theme="glass-atelier"] body .large-scene{border-radius:var(--at-radius)!important;border:1px solid var(--at-line-strong)!important;box-shadow:var(--at-shadow)!important}
+html[data-theme="glass-atelier"] body .stage-catalog-buttons>button{background:var(--at-sheet)!important;border:1px solid var(--at-line)!important;border-radius:var(--at-radius)!important;box-shadow:none!important;min-height:58px}
+html[data-theme="glass-atelier"] body .stage-catalog-buttons>button:hover{border-color:var(--at-accent)!important;background:var(--at-sheet)!important}
+html[data-theme="glass-atelier"] body .stage-catalog-buttons strong{font-size:14px}
+html[data-theme="glass-atelier"] body .preview-column{background:var(--at-raised)!important;border-left:1px solid var(--at-line-strong)!important;padding:18px 16px!important}
+html[data-theme="glass-atelier"] body .expression-grid button{height:32px;font-size:12px}
+html[data-theme="glass-atelier"] body :is(.effect-section,.branch-card,.editor-content>section,.editor-content .panel,.editor-content .card){background:var(--at-sheet)!important;border:1px solid var(--at-line)!important;border-radius:var(--at-radius)!important;box-shadow:none!important}
+html[data-theme="glass-atelier"] body :is(.section-title h3,.effect-section summary,.expression-header h3,.editor-content h3){font-size:12px;font-weight:650;letter-spacing:.06em;color:var(--at-muted)}
+html[data-theme="glass-atelier"] body .segmented{background:var(--at-raised);border:1px solid var(--at-line);border-radius:var(--at-radius-sm);padding:2px}
+html[data-theme="glass-atelier"] body .segmented button{height:26px;border:0!important;background:transparent!important;font-size:12px}
+html[data-theme="glass-atelier"] body .segmented button:is(.active,[aria-pressed=true]){background:var(--at-sheet)!important;color:var(--at-accent-strong)!important;box-shadow:0 1px 2px rgba(60,52,38,.12)!important}
+
+/* ---- Event list: compact header, underline tabs, flat cards ---- */
+html[data-theme="glass-atelier"] body #story-events .events-header{padding:20px 28px 14px!important;border-bottom:1px solid var(--at-line);background:var(--at-sheet)}
+html[data-theme="glass-atelier"] body #story-events .events-header h1{font-size:22px;font-weight:700;letter-spacing:-.01em;margin:0}
+html[data-theme="glass-atelier"] body #story-events .events-header p{margin:4px 0 0;color:var(--at-muted);font-size:12px}
+html[data-theme="glass-atelier"] body #story-events .events-filters{gap:2px!important;padding:0!important;border-bottom:1px solid var(--at-line)}
+html[data-theme="glass-atelier"] body #story-events .events-filters button{background:transparent!important;border:0!important;border-bottom:2px solid transparent!important;border-radius:0!important;height:36px;padding:0 12px;color:var(--at-muted);font-size:13px}
+html[data-theme="glass-atelier"] body #story-events .events-filters button:hover{color:var(--at-ink)}
+html[data-theme="glass-atelier"] body #story-events .events-filters button:is(.active,[aria-pressed=true]){color:var(--at-accent-strong)!important;border-bottom-color:var(--at-accent)!important;font-weight:600}
+html[data-theme="glass-atelier"] body #story-events .events-main{padding:16px 28px 32px!important}
+html[data-theme="glass-atelier"] body #story-events .event-card{background:var(--at-sheet)!important;border:1px solid var(--at-line)!important;border-radius:var(--at-radius)!important;box-shadow:none!important;transition:border-color .12s,box-shadow .12s}
+html[data-theme="glass-atelier"] body #story-events .event-card:hover{border-color:var(--at-line-strong)!important;box-shadow:var(--at-shadow)!important}
+html[data-theme="glass-atelier"] body #story-events .event-card h2,html[data-theme="glass-atelier"] body #story-events .event-card h3{font-size:15px;font-weight:650}
+html[data-theme="glass-atelier"] body #story-events .event-card-actions{padding:6px 10px!important;background:var(--at-raised);border-top:1px solid var(--at-line)!important}
+html[data-theme="glass-atelier"] body #story-events .event-card-actions button{height:28px;font-size:12px;background:transparent!important;border-color:transparent!important}
+html[data-theme="glass-atelier"] body #story-events .event-card-actions button:hover{background:var(--at-hover)!important}
+
+/* ---- Workshop home: quiet tiles on paper ---- */
+html[data-theme="glass-atelier"] body .wk-home-heading h2{font-size:24px!important;font-weight:700;letter-spacing:-.01em}
+html[data-theme="glass-atelier"] body .wk-feature-group>h3{font-size:11.5px!important;letter-spacing:.08em!important;color:var(--at-muted)!important;padding-bottom:8px;border-bottom:1px solid var(--at-line);margin-bottom:12px}
+html[data-theme="glass-atelier"] body #workshop .wk-feature-grid{gap:10px}
+html[data-theme="glass-atelier"] body #workshop .wk-feature-card{background:var(--at-sheet)!important;border:1px solid var(--at-line)!important;border-radius:var(--at-radius)!important;box-shadow:none!important}
+html[data-theme="glass-atelier"] body #workshop .wk-feature-card:hover{border-color:var(--at-accent)!important;box-shadow:var(--at-shadow)!important;background:var(--at-sheet)!important}
+html[data-theme="glass-atelier"] body #workshop .wk-feature-main{min-height:112px!important}
+html[data-theme="glass-atelier"] body .wk-feature-top strong{font-size:15px!important;font-weight:650}
+html[data-theme="glass-atelier"] body .wk-feature-desc{font-size:12.5px;line-height:1.6}
+html[data-theme="glass-atelier"] body .wk-feature-count{background:var(--at-raised)!important;border:1px solid var(--at-line)!important;border-radius:999px;font-size:11px}
+
+/* ---- Drawers, menus, toasts ---- */
+html[data-theme="glass-atelier"] body #json-editor{border-left:1px solid var(--at-line-strong)!important;box-shadow:-12px 0 32px rgba(48,40,28,.08)!important}
+html[data-theme="glass-atelier"] body :is(.toast,#toast-region>*){background:var(--at-ink)!important;color:var(--at-paper)!important;border:0!important;border-radius:var(--at-radius)!important;box-shadow:var(--at-shadow)!important}
+html[data-theme="glass-atelier"] body :is(.uc-menu,.talk-context-menu,.scene-context-menu,[role=menu]){background:var(--at-sheet)!important;border:1px solid var(--at-line-strong)!important;border-radius:var(--at-radius)!important;box-shadow:0 12px 32px rgba(48,40,28,.14)!important}
+
+@media(max-width:1180px){html[data-theme="glass-atelier"] body.studio-navigation .workspace{grid-template-columns:230px minmax(360px,1fr) 260px}}
+@media(prefers-reduced-motion:reduce){html[data-theme="glass-atelier"] body *{transition:none!important}}
+
+/* Inside the editor body, primary buttons are tonal so long forms are not dominated by solid blocks;
+   the main calls to action (save, preview, play, create) stay solid. */
+html[data-theme="glass-atelier"] body #editor-content button.primary:not(:disabled){background:var(--at-wash)!important;border:1px solid var(--at-wash-line)!important;color:var(--at-accent-strong)!important;font-weight:600}
+html[data-theme="glass-atelier"] body #editor-content button.primary:hover:not(:disabled){background:var(--at-sheet)!important;border-color:var(--at-accent)!important}
+html[data-theme="glass-atelier"] body.json-drawer-open #studio-save-state{right:calc(var(--json-drawer-width) + var(--atelier-rail))}

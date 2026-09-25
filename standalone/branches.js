@@ -4,10 +4,12 @@ const ids=value=>Array.isArray(value)?value.map(Number).filter(Number.isFinite):
 const key=(parent,option)=>Number(parent)+':'+Number(option);
 const optionParents=(doc,option)=>Object.values(doc.talks||{}).filter(t=>ids(t.option).includes(Number(option))).map(t=>Number(t.id));
 const ownedBy=(folders,talkId)=>Object.entries(folders||{}).find(([,f])=>ids(f.talkIds).includes(Number(talkId)))?.[0]||null;
-function describe(doc,folders,parentTalkId,optionId){
+// Callers rendering many cards pass optionParentCounts(doc) so each card does not rescan every talk.
+const optionParentCounts=doc=>{const counts=new Map();for(const t of Object.values(doc.talks||{}))for(const o of new Set(ids(t.option)))counts.set(o,(counts.get(o)||0)+1);return counts;};
+function describe(doc,folders,parentTalkId,optionId,counts=null){
  const id=key(parentTalkId,optionId),folder=folders?.[id],option=doc.options?.[optionId];
  return {key:id,parentTalkId:Number(parentTalkId),optionId:Number(optionId),folder,option,managed:!!folder,
-  talkIds:ids(folder?.talkIds).filter(id=>doc.talks?.[id]),references:folder?[]:[...new Set([...ids(option?.talkId),...ids(option?.talkId2)])],shared:optionParents(doc,optionId).length>1};
+  talkIds:ids(folder?.talkIds).filter(id=>doc.talks?.[id]),references:folder?[]:[...new Set([...ids(option?.talkId),...ids(option?.talkId2)])],shared:(counts?counts.get(Number(optionId))||0:optionParents(doc,optionId).length)>1};
 }
 function initialContinuation(option){
  if(ids(option?.talkId).length>1)throw Error('这个选项有多个普通入口。请在选项设置中明确普通入口后，再添加文件夹内的对话。');
@@ -61,5 +63,5 @@ function cleanup(doc,folders,replacements={}){
   out[id]=f;
  }return out;
 }
-return {ids,key,optionParents,ownedBy,describe,initialContinuation,create,targets,insert,setContinuation,cleanup};
+return {ids,key,optionParents,optionParentCounts,ownedBy,describe,initialContinuation,create,targets,insert,setContinuation,cleanup};
 });

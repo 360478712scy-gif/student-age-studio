@@ -117,7 +117,7 @@ async function deletePremise(rowOrId){
 }
 window.STUDIO_DELETE_PREMISE=deletePremise;
 function eventRoots(e){return [...ids(e.talkId),...ids(e.options).flatMap(id=>[...ids(S.doc.options[id]?.talkId),...ids(S.doc.options[id]?.talkId2)])];}
-function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));const entryBefore=talk()&&!talk().roles?.length?{...talk(),roles:[],roleIds:[...(talk().roleIds||[])]}:null;fn();if(entryBefore&&talk()?.id===entryBefore.id&&talk().roles?.length){const beforeDoc={...S.doc,talks:{...S.doc.talks,[entryBefore.id]:entryBefore}};StudentAgeScene.preserveImplicitEntries(entryBefore,talk(),currentStage(false,beforeDoc));}StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds);syncExternal(beforeIds);cleanLostPremises(writers);reconcileStoryClaims();updateDirty();if(redraw)render();scheduleRenumber();return true;}
+function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);displayMemo=null;const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));const entryBefore=talk()&&!talk().roles?.length?{...talk(),roles:[],roleIds:[...(talk().roleIds||[])]}:null;fn();displayMemo=null;if(entryBefore&&talk()?.id===entryBefore.id&&talk().roles?.length){const beforeDoc={...S.doc,talks:{...S.doc.talks,[entryBefore.id]:entryBefore}};StudentAgeScene.preserveImplicitEntries(entryBefore,talk(),currentStage(false,beforeDoc));}StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds);syncExternal(beforeIds);cleanLostPremises(writers);reconcileStoryClaims();updateDirty();if(redraw)render();scheduleRenumber();return true;}
 let textDirtyTimer=null,textSearchTimer=null;
 function updateTextDirty(){
  // Input changes the live row immediately. Full-document comparison waits for a pause.
@@ -144,12 +144,22 @@ function initialOrder() {
   for(const id of Object.keys(S.doc.talks).map(Number).sort((a,b)=>a-b))if(!set.has(id))ordered.push(id);
   return ordered;
 }
+// One render pass asks for the same ownership map several times; reuse it until the current task ends.
+let displayMemo=null;
+function eventDisplay(){
+  if(displayMemo?.doc===S.doc&&displayMemo.folders===S.branchFolders)return displayMemo.value;
+  const value=StudentAgeEventOwnership.display(S.doc,S.branchFolders),memo={doc:S.doc,folders:S.branchFolders,value};displayMemo=memo;
+  queueMicrotask(()=>{if(displayMemo===memo)displayMemo=null;});return value;
+}
 function shownWith(eventId){
-  const display=StudentAgeEventOwnership.display(S.doc,S.branchFolders),want=eventId==='all'?null:Number(eventId),allowed=new Set();
+  const display=eventDisplay(),want=eventId==='all'?null:Number(eventId),memo=displayMemo,owners=S.doc.talkOwners,key=String(want);
+  const cached=memo?.shown?.get(key);if(cached?.owners===owners)return new Set(cached.allowed);
+  const allowed=new Set();
   const take=(id,owners)=>{if(want===null?owners.some(e=>S.doc.events[e]):owners.includes(want))allowed.add(Number(id));};
   for(const [id,owners] of Object.entries(display))take(id,owners);
   for(const [id,owners] of Object.entries(S.doc.talkOwners||{}))take(id,owners||[]);
-  return allowed;
+  if(memo)(memo.shown??=new Map()).set(key,{owners,allowed});
+  return new Set(allowed);
 }
 function visibleIds() {
   if(externalSession){const hidden=Timeline.internals(S.branchFolders);return externalScope().filter(id=>!hidden.has(id)&&(!S.search||StudentAgeSearch.matches(S.search,id,speaker(S.doc.talks[id]),talkText(S.doc.talks[id]))));}
@@ -971,7 +981,7 @@ function createEvent(options={}) {
 }
 function firstOwnedEventTalk(event) {
   const internal=Timeline.internals(S.branchFolders);
-  return S.order.find(id=>S.doc.talks[id]&&!internal.has(Number(id))&&shownWith(event.id).has(id))||0;
+  const shown=shownWith(event.id);return S.order.find(id=>S.doc.talks[id]&&!internal.has(Number(id))&&shown.has(id))||0;
 }
 function eventDetails(id=S.event,creation=null) {
   const e=creation?{id:nextId(S.doc.events,1000000),title:"",type:creation.type,talkId:creation.entry?[creation.entry]:[],rate:1,maxcount:1,effect:[],condition:[]}:S.doc?.events[id];if(!e){toast('先选择一个具体事件。','note');return;}
@@ -1135,9 +1145,9 @@ function renderList() {
   if(!S.doc){$('#talk-list').innerHTML='<div class="small-empty">请打开或新建模组。</div>';return;}
   const visible=visibleIds(),allowed=new Set(visible),owners=new Map();for(const [key,f]of Object.entries(S.branchFolders))for(const id of ids(f.talkIds))owners.set(id,key);
   if(S.search){for(const start of visible){let id=start;const seen=new Set();while(owners.has(id)&&!seen.has(id)){seen.add(id);const f=S.branchFolders[owners.get(id)];allowed.add(f.parentTalkId);S.folderOpen[owners.get(id)]=true;id=f.parentTalkId;}}}
-  $('#talk-count').textContent=visible.length+' 句对话';const rendered=new Set();let renderedIndex=0;
+  $('#talk-count').textContent=visible.length+' 句对话';const rendered=new Set();let renderedIndex=0,parentCounts=null;
   function card(id,depth=0){if(!S.doc.talks[id]||rendered.has(id)||!allowed.has(id))return '';rendered.add(id);const t=S.doc.talks[id],restoreScene=Number(t.screenEffect?.[0])===4017&&!Remote.hasText(t),name=restoreScene?'恢复场景':Number(t.screenEffect?.[0])===4015?'CG · '+assetName(S.doc.cgs[t.screenEffect[1]]||{name:'插画'},'cg'):speaker(t),index=renderedIndex++;
-    const descriptions=ids(t.option).map(oid=>Branches.describe(S.doc,S.branchFolders,id,oid));
+    const descriptions=ids(t.option).map(oid=>Branches.describe(S.doc,S.branchFolders,id,oid,parentCounts??=Branches.optionParentCounts(S.doc)));
     descriptions.push(...Timeline.entries(S.branchFolders,id).map(([key])=>folderDescription(key)));
     if(t.check?.length&&!Timeline.entries(S.branchFolders,id).length)descriptions.push({key:id+':legacy',legacy:true,parentTalkId:id,option:{content:'分支1'},talkIds:[],references:[...new Set([...ids(t.nextTalk),...ids(t.nextTalk2)])]});
     const folders=descriptions.map(d=>renderFolder(d,depth,card)).join('');const personId=ids(t.roleIds).find(id=>id>=0),person=S.doc.persons[personId],gender=personId===0?S.doc.protagonistGender:Number(person?.gender),avatar=personId!==undefined?`<img loading="lazy" alt="${h(name)}" src="/api/talk-head?${new URLSearchParams({projectId:S.project.id,roleId:personId,grade:currentEventGrade()+1,gender:S.doc.protagonistGender,token})}">`:h(name.slice(0,1));
@@ -2009,7 +2019,7 @@ function openAssetPicker(kind,options={}) {
   return window.STUDIO_ASSET_PICKER.open(kind,{...(kind==='background'&&!phoneEvent()?{selectDialogues:selectBackgroundDialogues}:{}),...options,selected:S.selected,event:S.event,folderKey:options.folderKey??S.activeFolder});
 }
 async function selectBackgroundDialogues(previous=[]){
- const project=S.project.id,scope=externalSession?externalScope():S.order.filter(id=>shownWith(S.event).has(id)),hidden=Timeline.internals(S.branchFolders),allowed=scope.filter(id=>!hidden.has(id)&&S.doc.talks[id]),chosen=new Set(previous.filter(id=>allowed.includes(id)));
+ const project=S.project.id,scope=externalSession?externalScope():(shown=>S.order.filter(id=>shown.has(id)))(shownWith(S.event)),hidden=Timeline.internals(S.branchFolders),allowed=scope.filter(id=>!hidden.has(id)&&S.doc.talks[id]),chosen=new Set(previous.filter(id=>allowed.includes(id)));
  if(!allowed.length)return null;
  const panel=document.createElement('dialog');panel.className='background-dialogue-picker';panel.innerHTML=`<header><h2>选择要换背景的对话</h2><button data-bg-cancel>关闭</button></header><p>${externalSession?'当前对话夹':'当前事件'} · 共 ${allowed.length} 句。选好后返回场景目录，再点击背景。</p><div class="bg-selection-tools"><button data-bg-all>全选</button><button data-bg-clear>清空</button><span data-bg-count></span></div><div class="bg-dialogue-list"></div><footer><button data-bg-prev>上一页</button><span data-bg-page></span><button data-bg-next>下一页</button><button class="primary" data-bg-confirm>选择背景</button></footer>`;document.body.append(panel);panel.showModal();let page=0,seq=0;
  const count=()=>{panel.querySelector('[data-bg-count]').textContent=`已选 ${chosen.size} 句`;panel.querySelector('[data-bg-confirm]').disabled=!chosen.size;};
@@ -2043,7 +2053,7 @@ window.STUDIO_USE_PICKED_ASSET=async(result,options={})=>{
     S.previewRole=id;enterSceneRole(id,{cloth:result.cloth==null?undefined:Number(result.cloth)});syncFaceFromTalk();
   }else if(kind==='background'){
     if(!S.doc.backgrounds[id])throw Error('场景尚未载入，请重新打开素材目录。');
-    if(options.backgroundTalkIds?.length){const targets=[...new Set(options.backgroundTalkIds)],allowed=new Set(externalSession?externalScope():S.order.filter(t=>shownWith(S.event).has(t)));if(targets.some(t=>!allowed.has(t)||!S.doc.talks[t]))throw Error('所选对话已变化，请重新选择。');await Remote.ensure(S.doc.talks,targets);mutate('批量更换背景',()=>{for(const t of targets)S.doc.talks[t].bg=id;});return true;}
+    if(options.backgroundTalkIds?.length){const targets=[...new Set(options.backgroundTalkIds)],allowed=new Set(externalSession?externalScope():(shown=>S.order.filter(t=>shown.has(t)))(shownWith(S.event)));if(targets.some(t=>!allowed.has(t)||!S.doc.talks[t]))throw Error('所选对话已变化，请重新选择。');await Remote.ensure(S.doc.talks,targets);mutate('批量更换背景',()=>{for(const t of targets)S.doc.talks[t].bg=id;});return true;}
     mutate('设置场景',()=>{if(phoneEvent())configurePhone(phoneEvent(),Number(phoneEvent().npc)||0,id);else talk().bg=id;});
   }else if(kind==='cg'){
     if(!S.doc.cgs[id])throw Error('CG 尚未载入，请重新打开素材目录。');
@@ -2077,10 +2087,30 @@ window.STUDIO_STORY_NAV={
 };
 // Exposed pure/data operations make graph integrity checkable without a running game.
 const jsonStoryKeys={TalkCfg:'talks',EvtCfg:'events',OptionCfg:'options',PersonCfg:'persons',ModFaceCfg:'faces',BgCfg:'backgrounds',CGCfg:'cgs',PaperCfg:'papers',ActionCfg:'actions',ActionEvtCfg:'actionEvents',InteractCfg:'interactions',GiftEvtCfg:'giftEvents',MinigameActionCfg:'minigameActions'};
+// Segmented (disk-backed) talk tables are shown in the JSON drawer one scope at a time: the lines of the
+// event being edited, or pages of the whole table. Only that scope is read from disk.
+const jsonSegmentState={page:0,scope:null,size:200};
+function jsonSegment(name){
+ if(name!=='TalkCfg'||!S.doc?.talks||!Remote.info(S.doc.talks)||S.deferredProject)return null;
+ let all,label;
+ if(externalSession){all=externalScope().filter(id=>S.doc.talks[id]);label='当前对话文件夹';}
+ else if(S.event!=='all'&&S.doc.events[S.event]){const shown=shownWith(S.event);all=S.order.filter(id=>shown.has(id)&&S.doc.talks[id]);label='事件 '+S.event+' 的对话';}
+ else{all=Object.keys(S.doc.talks).map(Number).sort((a,b)=>a-b);label='全部对话';}
+ const scope=S.project?.id+'|'+(externalSession?'external:'+externalSession.folder:S.event);
+ if(scope!==jsonSegmentState.scope){jsonSegmentState.scope=scope;jsonSegmentState.page=0;}
+ const size=jsonSegmentState.size,pages=Math.max(1,Math.ceil(all.length/size)),page=Math.min(Math.max(0,jsonSegmentState.page),pages-1);jsonSegmentState.page=page;
+ return {ids:all.slice(page*size,page*size+size).map(String),label,page,pages,total:all.length,key:scope+'|'+page};
+}
 window.STUDIO_STORY_JSON={
- async prepare(){if(S.doc?.talks){const info=Remote.info(S.doc.talks);if(info)info.base.compatibility=true;try{await Remote.ensure(S.doc.talks);}catch(error){if(info)info.base.compatibility=false;throw error;}}},
+ segment:name=>jsonSegment(name),
+ segmentKey:()=>jsonSegment('TalkCfg')?.key||'',
+ setSegmentPage(page){jsonSegmentState.page=Math.max(0,Number(page)||0);},
+ // Whole-table reads stay available for small, fully loaded tables; segmented tables load only the visible scope.
+ async prepare(name='TalkCfg'){if(!S.doc?.talks)return;const info=Remote.info(S.doc.talks);if(!info)return;info.base.compatibility=true;const segment=jsonSegment(name);try{await Remote.ensure(S.doc.talks,segment?segment.ids:[]);}catch(error){info.base.compatibility=false;throw error;}},
  finish(){const info=Remote.info(S.doc?.talks);if(info){info.base.compatibility=false;Remote.pin(S.doc.talks,S.selected);}},
- read(name,disk={}){const key=jsonStoryKeys[name];if(!key||!S.doc?.[key]||S.deferredProject)return null;const baseline=S.saved?IndexedTalks.parse(S.saved)[0]?.[key]||{}:{},rows=S.doc[key],keys=new Set([...Object.keys(disk),...(S.localIds[key]||[]).map(String)]);for(const [id,row]of Object.entries(rows))if(JSON.stringify(row)!==JSON.stringify(baseline[id]))keys.add(id);return Object.fromEntries([...keys].filter(id=>rows[id]).map(id=>[id,clone(rows[id])]));},
+ read(name,disk={}){const key=jsonStoryKeys[name];if(!key||!S.doc?.[key]||S.deferredProject)return null;
+  const segment=jsonSegment(name);if(segment){const present=segment.ids.filter(id=>S.doc.talks[id]);if(present.some(id=>!Remote.ready(S.doc.talks,id)))return null;return Object.fromEntries(present.map(id=>[id,clone(S.doc.talks[id])]));}
+  const baseline=S.saved?IndexedTalks.parse(S.saved)[0]?.[key]||{}:{},rows=S.doc[key],keys=new Set([...Object.keys(disk),...(S.localIds[key]||[]).map(String)]);for(const [id,row]of Object.entries(rows))if(JSON.stringify(row)!==JSON.stringify(baseline[id]))keys.add(id);return Object.fromEntries([...keys].filter(id=>rows[id]).map(id=>[id,clone(rows[id])]));},
  async write(name,rows,disk={}){const key=jsonStoryKeys[name];if(!key||!S.doc?.[key]||S.deferredProject)return false;if(!editable())throw Error('当前模组不可编辑。');const previous=this.read(name,disk);if(JSON.stringify(previous)===JSON.stringify(rows))return true;
   rows=clone(rows);const map={};if(['talks','options','events'].includes(key))for(const [id,row]of Object.entries(rows)){const next=Number(row?.id);if(Number.isInteger(next)&&next>0&&next<=2147483647&&String(next)!==id){map[id]=next;row.id=Number(id);}}
   for(const [id,next]of Object.entries({...map}))if((rows[next]||S.doc[key][next])&&localStoryIds(key).has(Number(next))&&map[next]===undefined)map[next]=Number(id);

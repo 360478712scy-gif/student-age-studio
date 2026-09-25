@@ -1,11 +1,11 @@
 /* Color and material are independent durable preferences. */
 (()=>{'use strict';
 function apply(value,material=window.STUDIO_GLASS_MATERIAL){
- const theme=['classic','glass','glass-dusk','glass-moon'].includes(value)?value:'glass';
+ const theme=['classic','glass','glass-dusk','glass-moon','glass-atelier'].includes(value)?value:'glass';
  window.STUDIO_THEME=theme;window.STUDIO_GLASS_MATERIAL=material==='frosted'?'frosted':'liquid';
  document.documentElement.dataset.theme=theme;document.documentElement.dataset.glassMaterial=window.STUDIO_GLASS_MATERIAL;
  for(const name of ['glass-palette.css','glass-theme.css']){const link=document.querySelector(`link[href="/${name}"]`);if(link)link.media=theme!=='classic'?'all':'not all';}
- const meta=document.querySelector('meta[name="color-scheme"]');if(meta)meta.content=theme==='glass'?'light':'dark';
+ const meta=document.querySelector('meta[name="color-scheme"]');if(meta)meta.content=theme==='glass'||theme==='glass-atelier'?'light':'dark';
  window.dispatchEvent(new Event('studio-theme-change'));
 }
 let pending=Promise.resolve();

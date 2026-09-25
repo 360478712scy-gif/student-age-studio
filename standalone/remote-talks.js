@@ -8,6 +8,12 @@ const own=(v,k)=>Object.prototype.hasOwnProperty.call(v,k),copy=v=>v===undefined
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 function create(descriptor,request,revision){
  if(descriptor?.version!==1||!descriptor.generation||!Array.isArray(descriptor.ids)||!descriptor.summaries)throw Error('对话目录不完整。');
+ // The server sends each distinct field list once; lines reference it by index. Shared lists are read-only.
+ // Records omit values equal to recordDefaults; restore them with per-record copies so no value is shared.
+ if(Array.isArray(descriptor.fieldSets)){const sets=descriptor.fieldSets.map(list=>Object.freeze(list.slice())),defaults=descriptor.recordDefaults||{};
+  const fresh=v=>v===null||typeof v!=='object'?v:Array.isArray(v)&&!v.length?[]:JSON.parse(JSON.stringify(v));
+  for(const summary of Object.values(descriptor.summaries)){if(!summary||summary.fields!==undefined)continue;const set=sets[summary.fieldSet];if(!set||!summary.record)throw Error('对话目录不完整。');summary.fields=set;
+   if(descriptor.recordDefaults){const sparse=summary.record,record={};for(const field of set){if(field==='content')continue;if(own(sparse,field))record[field]=sparse[field];else if(own(defaults,field))record[field]=fresh(defaults[field]);}summary.record=record;}}}
  const base={id:'remote-'+(++serial),token:descriptor.generation,revision,request,ids:new Set(descriptor.ids),summaries:descriptor.summaries,cache:new Map(),kept:new Map(),loading:new Map(),failures:new Map(),size:0,budget:4*1024*1024,pinned:new Set(),closed:false};
  for(const id of base.ids)if(!base.summaries[id]||base.summaries[id].record.id!==Number(id))throw Error('对话目录编号不匹配。');
  bases.set(base.id,base);return table(base,{});
