@@ -4140,6 +4140,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                 path = self.server.store.export_file(query.get("name", [""])[0])
                 return self.send_data(path.read_bytes(), "application/json" if path.suffix == ".json" else "text/plain; charset=utf-8",
                                       extra={"Content-Disposition": "attachment; filename*=UTF-8''" + urllib.parse.quote(path.name)})
+            if route == "/api/ai-tools":
+                from studio_mcp import launch_commands
+                return self.send_json(launch_commands(self.server.web_root))
             if route == "/api/health":
                 return self.send_json({"ok": True, "pillow": Image is not None, "modsPath": str(self.server.store.mods)})
             if route == "/api/json-files":
