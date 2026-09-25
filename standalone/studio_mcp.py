@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-SERVER_INFO = {'name': 'student-age-studio', 'title': '拾光工坊 · 学生时代模组编辑器', 'version': '1.0.0'}
+SERVER_INFO = {'name': 'student-age-studio', 'title': '拾光工坊 · 学生时代模组编辑器', 'version': '1.1.0'}
 PROTOCOLS = ('2025-06-18', '2025-03-26', '2024-11-05')
 
 INSTRUCTIONS = """拾光工坊（学生时代模组编辑器）的 MCP 工具，用编辑器自身的逻辑读写模组。
@@ -24,15 +24,32 @@ INSTRUCTIONS = """拾光工坊（学生时代模组编辑器）的 MCP 工具，
 2. 修改剧情前先用 get_event / list_events / search_lines 了解现状；说话人可写人物名、编号、"旁白"(-1) 或 "主角"(0)，不确定时用 list_persons。
 3. 写入工具都支持 dry_run 预览。保存由编辑器完成：会检查版本冲突、保存前自动备份；若返回 code=save_warnings，请把警告告诉用户，确认后把 warnings 原样放进 confirm 再调用一次。
 4. 编写事件条件/效果前先用 list_commands 查模板：每条条件/效果是一个数组，按 template 与 parameters 填写。
-5. 编辑器窗口开着时也能用；若编辑器里有未保存的修改，之后编辑器保存时会提示冲突，请提醒用户先保存或刷新。"""
+5. 编辑器窗口开着时也能用；若编辑器里有未保存的修改，之后编辑器保存时会提示冲突，请提醒用户先保存或刷新。
+6. 演出（立绘站位、表情、背景、音乐、音效）写在每句对话里，素材编号先用 list_assets 查：
+   - enter 写 "左"/"中"/"右"：人物在这句登场或换位置。已经站在那里的人物不会重复登场，所以只在第一次出场或换位置时写。
+   - expression 写表情名（如 "害羞"）或编号；exit 写要退场的人物。
+   - background 换背景。按游戏规则，换背景会让所有人物退场，换背景后的第一句要重新写 enter。
+   - music 从这句开始播放背景音乐，直到下一个写了 music 的句子；sound 在这句播放音效。
+   - 已有的句子用 edit_line 修改演出，用 set_music 给一段对话设置背景音乐。
+   - 没写任何动作的句子，游戏会让说话人自动登场；写了动作的句子只执行写出的动作，工具会自动补上说话人的登场。"""
 
+STAGE = {
+    'enter': {'type': 'string', 'description': '可选：说话人在这句登场或移动到 "左"/"中"/"右"。已站在该位置时不会重复登场'},
+    'expression': {'type': 'string', 'description': '可选：说话人的表情，写名称（如 "害羞"、"微笑"）或编号，见 list_assets(kind="expressions")'},
+    'expressions': {'type': 'object', 'description': '可选：其他在场人物的表情，如 {"小雅": "高兴"}'},
+    'exit': {'type': 'array', 'items': {'type': 'string'}, 'description': '可选：在这句退场的人物（名称或编号）'},
+    'background': {'type': 'string', 'description': '可选：从这句起换成的背景（编号或名称，见 list_assets）。换背景会让在场人物全部退场'},
+    'sound': {'type': 'string', 'description': '可选：这句播放的音效（编号或名称，见 list_assets(kind="sounds")）'},
+    'actions': {'type': 'array', 'items': {'type': 'array'}, 'description': '高级：原版动作数组，如 [["小雅", 3001, 1, 0, 1]] 表示跳跃'},
+}
 LINE_SCHEMA = {
     'type': 'object', 'required': ['text'],
     'properties': {
         'speaker': {'type': 'string', 'description': '说话人：人物名称、人物编号（如 "3"）、"旁白" 或 "主角"。省略即旁白。'},
         'text': {'type': 'string', 'description': '台词或旁白文字'},
         'displayName': {'type': 'string', 'description': '可选：覆盖显示的名字'},
-        'enter': {'type': 'integer', 'enum': [1, 2, 3], 'description': '可选：该人物在这句登场，位置 1 左 / 2 中 / 3 右'},
+        **STAGE,
+        'music': {'type': 'string', 'description': '可选：从这句开始播放的背景音乐（编号或名称，见 list_assets(kind="music")），持续到下一个写了 music 的句子'},
         'options': {'type': 'array', 'description': '可选：这句之后出现玩家选项。各分支结束后默认接回下一句主线',
                     'items': {'type': 'object', 'required': ['text'], 'properties': {
                         'text': {'type': 'string', 'description': '选项文字'},
@@ -76,9 +93,16 @@ TOOLS = [
     tool('add_lines', '在事件中插入对话（默认接在主线末尾；after 指定插在某句之后）。',
          {'mod': MOD, 'event_id': {'type': 'integer'}, 'lines': {'type': 'array', 'items': LINE_SCHEMA}, 'after': {'type': 'integer'}, **WRITE},
          ['mod', 'event_id', 'lines'], False),
-    tool('edit_line', '修改一句对话的文字、说话人或显示名。',
+    tool('edit_line', '修改一句对话：文字、说话人、显示名，以及演出（登场位置、表情、退场、背景、音效）。只改传入的项。'
+         'enter 写 "无" 取消登场；expression 写空字符串取消表情；sound 写 "无" 取消音效；actions 会整体替换这句的动作。',
          {'mod': MOD, 'talk_id': {'type': 'integer'}, 'text': {'type': 'string'}, 'speaker': {'type': 'string', 'description': '新的说话人：名称、编号、旁白或主角'},
-          'display_name': {'type': 'string'}, **WRITE}, ['mod', 'talk_id'], False),
+          'display_name': {'type': 'string'}, **{k: v for k, v in STAGE.items() if k != 'expressions'}, **WRITE}, ['mod', 'talk_id'], False),
+    tool('set_music', '给一段对话设置背景音乐（覆盖这些句子原来的音乐范围）；不写 music 则清除。通常传从开始到结束的连续对话编号。',
+         {'mod': MOD, 'line_ids': {'type': 'array', 'items': {'type': 'integer'}}, 'music': {'type': 'string', 'description': '音乐编号或名称'},
+          'loop': {'type': 'boolean', 'default': True}, 'volume': {'type': 'number', 'default': 1, 'description': '0–1'}, **WRITE}, ['mod', 'line_ids'], False),
+    tool('list_assets', '查素材编号：背景（backgrounds）、背景音乐（music）、音效（sounds）、人物表情（expressions，需 person）。',
+         {'mod': MOD, 'kind': {'type': 'string', 'enum': ['backgrounds', 'music', 'sounds', 'expressions']}, 'query': {'type': 'string'},
+          'person': {'type': 'string', 'description': '查表情时的人物名称或编号'}, 'limit': {'type': 'integer', 'default': 40}}, ['mod', 'kind']),
     tool('delete_lines', '删除对话，并把前后自动接上，事件不会断开。', {'mod': MOD, 'talk_ids': {'type': 'array', 'items': {'type': 'integer'}}, **WRITE}, ['mod', 'talk_ids'], False),
     tool('update_event', '修改事件字段：title、type、npc、mapId、rate、maxcount、condition、effect 等。',
          {'mod': MOD, 'event_id': {'type': 'integer'}, 'fields': {'type': 'object'}, **WRITE}, ['mod', 'event_id', 'fields'], False),
@@ -115,10 +139,77 @@ def launch_commands(web_root):
     if env:
         codex += '\nenv = { ' + ', '.join(f'{k} = {json.dumps(v)}' for k, v in env.items()) + ' }'
     server = {'command': mcp[0], 'args': mcp[1:], **({'env': env} if env else {})}
-    return {'mcp': mcp, 'cli': cli, 'env': env,
-            'claudeCode': 'claude mcp add student-age-studio' + env_flags + ' -- ' + shell(mcp),
-            'codex': codex, 'json': {'mcpServers': {'student-age-studio': server}},
-            'cliExample': (' '.join(f'{k}={v}' for k, v in env.items()) + ' ' if env and os.name != 'nt' else '') + shell(cli) + ' mods'}
+    env_prefix = (' '.join(f'{k}={v}' for k, v in env.items()) + ' ') if env and os.name != 'nt' else ''
+    if os.name == 'nt':  # agents on Windows usually run PowerShell; cmd needs its own form
+        check = ''.join(f"$env:{k}='{v}'; " for k, v in env.items()) + '& ' + shell(mcp + ['--check'])
+        check_cmd = ''.join(f'set {k}={v}&& ' for k, v in env.items()) + shell(mcp + ['--check'])
+    else:
+        check = check_cmd = env_prefix + shell(mcp + ['--check'])
+    result = {'mcp': mcp, 'cli': cli, 'env': env,
+              'claudeCode': 'claude mcp add student-age-studio' + env_flags + ' -- ' + shell(mcp),
+              'codex': codex, 'json': {'mcpServers': {'student-age-studio': server}},
+              'cliExample': env_prefix + shell(cli) + ' mods', 'check': check, 'checkCmd': check_cmd}
+    result['prompt'] = install_prompt(result)
+    result['promptFile'] = bool(getattr(sys, 'frozen', False) and os.name == 'nt')
+    return result
+
+
+def install_prompt(c):
+    """Step-by-step instructions an AI agent can follow to connect itself, with this computer's exact commands."""
+    server = c['json']['mcpServers']['student-age-studio']
+    yaml_env = ''.join(f"\n        env: {{ {k}: '{v}' }}" for k, v in c['env'].items())
+    yaml = ("- insert:\n    - id: student-age-studio-mcp\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        transport: stdio\n"
+            f"        serverName: student-age-studio\n        command: {json.dumps(server['command'], ensure_ascii=False)}\n"
+            f"        args: {json.dumps(server['args'], ensure_ascii=False)}{yaml_env}\n        toolCallTimeoutMs: 120000")
+    return f"""# 给 AI 助手：接入「拾光工坊」MCP（学生时代模组编辑器）
+
+请为用户接入拾光工坊的 MCP 服务。下面的命令和配置已经按这台电脑生成好，直接照做即可，一般两分钟内完成。
+
+## 不要做
+- 不要安装 Python、pip、Node 包，不要克隆仓库，也不要自己编写 MCP 服务：编辑器已经自带，下面的命令就是它。
+- 不要改动命令路径和参数，不要去掉环境变量（如果有）。
+- 不要用 npx、uvx、docker 或 HTTP/SSE 方式，它是 stdio 服务。
+- 第 1 步失败时，不要换别的方法反复尝试，把报错原文告诉用户即可。
+
+## 第 1 步：确认服务能启动
+在终端运行下面这条命令，几秒内会输出一段 JSON 并自动退出：
+
+{c['check']}
+{'''
+（上面是 PowerShell 写法；如果终端是 cmd，用这一条：）
+''' + c['checkCmd'] + '''
+''' if c['checkCmd'] != c['check'] else ''}
+输出里有 "ok": true 就说明服务正常。
+
+## 第 2 步：写进你所在客户端的 MCP 配置
+- 服务名：student-age-studio
+- 方式：stdio
+- 命令：{server['command']}
+- 参数：{json.dumps(server['args'], ensure_ascii=False)}
+- 环境变量：{json.dumps(c['env'], ensure_ascii=False) if c['env'] else '无'}
+
+按你自己是哪个客户端，只做其中一种：
+
+**Claude Code**：在终端运行
+{c['claudeCode']}
+
+**Codex**：追加到 ~/.codex/config.toml 末尾
+{c['codex']}
+
+**Cursor、Claude 桌面版、Cline、Roo Code、Windsurf、Cherry Studio、Gemini CLI 等使用 mcpServers 的客户端**：把下面的 JSON 合并进客户端的 MCP 配置文件（已有 mcpServers 时只加入 student-age-studio 这一项，不要覆盖其他服务）。Windows 路径里的反斜杠已经转义好，请原样复制：
+{json.dumps(c['json'], ensure_ascii=False, indent=2)}
+
+常见配置文件位置：Cursor 为 ~/.cursor/mcp.json；Claude 桌面版为「设置 → 开发者 → 编辑配置」打开的 claude_desktop_config.json；Gemini CLI 为 ~/.gemini/settings.json；Cline、Roo Code、Cherry Studio 在各自的 MCP 设置界面中编辑。
+
+**DeepSeek 桌面版（DSH）**：编辑 DSH 数据目录下的 harness/profiles/web/cordis.patch.yml（Mac 为 ~/Library/Application Support/dsh-desktop/，Windows 为 %APPDATA%\\dsh-desktop\\）。文件里只有 [] 时整行替换为下面内容；已有其他条目时把这一项加进列表：
+{yaml}
+
+## 第 3 步：重启客户端并验证
+重启或重新加载客户端后，调用 student-age-studio 的 list_mods 工具，能看到模组列表就完成了。告诉用户：已接入，可以让你读写模组剧情了。
+
+## 之后怎么用
+服务连接后会带使用说明，先调用 list_mods、get_event 了解模组，再修改。写入前可用 dry_run 预览；遇到 save_warnings 先把警告告诉用户，用户确认后再传 confirm。
+"""
 
 
 class Handler:
@@ -147,7 +238,11 @@ class Handler:
             'create_event': lambda: s.create_event(a['mod'], a['title'], a['lines'], a.get('type', 1), a.get('npc', 0), a.get('map_id', 0),
                                                    a.get('rate', 1), a.get('maxcount', 1), a.get('condition'), a.get('effect'), a.get('event_id'), **w),
             'add_lines': lambda: s.add_lines(a['mod'], a['event_id'], a['lines'], a.get('after'), **w),
-            'edit_line': lambda: s.edit_line(a['mod'], a['talk_id'], a.get('text'), a.get('speaker'), a.get('display_name'), **w),
+            'edit_line': lambda: s.edit_line(a['mod'], a['talk_id'], a.get('text'), a.get('speaker'), a.get('display_name'), **w,
+                                             **{k: a.get(k) for k in ('background', 'enter', 'expression', 'exit', 'sound', 'actions')}),
+            'set_music': lambda: s.set_music(a['mod'], a['line_ids'], {'id': a['music'], 'loop': a.get('loop', True), 'volume': a.get('volume', 1)}
+                                             if a.get('music') not in (None, '') else None, **w),
+            'list_assets': lambda: s.assets(a['mod'], a['kind'], a.get('query'), a.get('person'), a.get('limit', 40)),
             'delete_lines': lambda: s.delete_lines(a['mod'], a['talk_ids'], **w),
             'update_event': lambda: s.update_event(a['mod'], a['event_id'], a['fields'], **w),
             'delete_event': lambda: s.delete_event(a['mod'], a['event_id'], **w),
@@ -237,10 +332,56 @@ def respond(handler, message):
         return {'jsonrpc': '2.0', 'id': message['id'], 'error': {'code': -32603, 'message': str(error)}}
 
 
+def check(options):
+    """One-shot self test for installers: start like a client would, list mods, report, exit."""
+    real_stdout, sys.stdout = sys.stdout, sys.stderr
+    try:
+        handler = Handler(options)
+        init = handler.handle({'method': 'initialize', 'params': {'protocolVersion': PROTOCOLS[0]}})
+        mods = handler.call('list_mods', {})
+        report = {'ok': True, 'server': init['serverInfo']['version'], 'tools': len(TOOLS), 'mods': len(mods),
+                  'message': '服务正常。把启动命令写进 AI 客户端的 MCP 配置后重启客户端即可。'}
+    except Exception as error:
+        message = getattr(error, 'message', None) or f'{type(error).__name__}: {error}'
+        report = {'ok': False, 'error': message, 'message': '服务未能读取模组。请先打开一次编辑器完成设置，或用 --game/--mods 指定目录。'}
+    finally:
+        sys.stdout = real_stdout
+    for stream in (sys.stdout,):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8')
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report['ok'] else 1
+
+
+def write_install_prompt(directory, web_root):
+    """Keep an up-to-date install prompt next to the installed client, for users to hand to their AI."""
+    try:
+        target = Path(directory) / 'AI安装MCP提示词.txt'
+        text = launch_commands(web_root)['prompt'].replace('\n', '\r\n' if sys.platform == 'win32' else '\n')
+        data = text.encode('utf-8-sig')
+        if not target.exists() or target.read_bytes() != data:
+            target.write_bytes(data)
+        return target
+    except OSError:
+        return None
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description='拾光工坊 MCP 服务（stdio）')
     p.add_argument('--mods'); p.add_argument('--game'); p.add_argument('--workshop')
-    serve(p.parse_args(argv))
+    p.add_argument('--check', action='store_true', help='自检：像客户端一样启动并列出模组，输出结果后退出')
+    p.add_argument('--print-config', action='store_true', help='输出本机的接入命令与配置（JSON）')
+    p.add_argument('--print-prompt', action='store_true', help='输出给 AI 助手看的安装提示词')
+    options = p.parse_args(argv)
+    if options.check:
+        raise SystemExit(check(options))
+    if options.print_config or options.print_prompt:
+        commands = launch_commands(Path(__file__).resolve().parent)
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8')
+        print(commands['prompt'] if options.print_prompt else json.dumps(commands, ensure_ascii=False, indent=2))
+        return
+    serve(options)
 
 
 if __name__ == '__main__':

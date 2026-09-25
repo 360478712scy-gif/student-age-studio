@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 import random
 import re
+import uuid
 from pathlib import Path
 
 import server
@@ -22,6 +23,15 @@ from game_locator import GameLocations
 
 NARRATOR, PROTAGONIST = -1, 0
 MAX_ID = 2147483647
+# Native TalkAxis: Left = 1, Right = 2, Mid = 3 (the editor shows them as 左侧 / 右侧 / 中间).
+AXES = {'左': 1, '左侧': 1, '左边': 1, 'left': 1, '右': 2, '右侧': 2, '右边': 2, 'right': 2,
+        '中': 3, '中间': 3, '中央': 3, 'mid': 3, 'middle': 3, 'center': 3, 'centre': 3}
+AXIS_NAMES = {1: '左', 2: '右', 3: '中'}
+# Standard expression slots, as the editor names them. Mods may name their own in ModFaceCfg.
+FACES = ['默认', '高兴', '生气', '伤心', '害羞', '喜欢', '认真', '疑惑', '惊讶', '得意', '微笑', '坏笑', '担心', '害怕', '难过', '咆哮', '窘迫', '不满', '冷笑', '无语', '苦笑']
+ENTRY, EXIT = (1001, 1002, 1003), (2001, 2002)
+ACTION_NAMES = {1001: '直接登场', 1002: '渐显登场', 1003: '从下方登场', 2001: '滑动退场', 2002: '渐隐退场', 3000: '切换表情', 3001: '跳跃',
+                3002: '摇晃', 3003: '强调放大', 3004: '水平移动', 3005: '转身', 3006: '更换服装', 3007: '翻转', 3008: '垂直移动', 3009: '气泡表情'}
 EVENT_FIELDS = {'title', 'type', 'npc', 'mapId', 'rate', 'maxcount', 'condition', 'effect', 'displayType', 'content', 'desc'}
 TALK_FIELDS = {'content', 'roleIds', 'roleName', 'bg', 'audio', 'effect', 'effect2', 'check', 'screenEffect', 'roles', 'nextTalk', 'nextTalk2', 'option', 'showTxt'}
 
@@ -117,6 +127,202 @@ class Studio:
             raise AgentError(f'名为「{text}」的人物有多个，请用编号：' + '、'.join(map(str, matches)))
         raise AgentError(f'找不到名为「{text}」的人物。可用 persons 查看，或直接写人物编号。')
 
+    # ---------- staging: positions, expressions, backgrounds, sound ----------
+    def _axis(self, value):
+        if isinstance(value, str) and value.strip().casefold() in AXES:
+            return AXES[value.strip().casefold()]
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            number = None
+        if number not in (1, 2, 3):
+            raise AgentError(f'登场位置无效：{value!r}。请写 "左"、"中"、"右"（或原版编号 1 左 / 2 右 / 3 中）。')
+        return number
+
+    def _expression(self, doc, person, value):
+        """An expression by number (0–99) or by name: the standard names, or ones this person's faces define."""
+        if isinstance(value, int) or isinstance(value, str) and value.strip().isdigit():
+            number = int(value)
+            if not 0 <= number <= 99:
+                raise AgentError(f'表情编号应在 0–99：{number}')
+            return number
+        text = str(value or '').strip()
+        own = sorted({int(k) % 100 for k, row in doc.get('faces', {}).items()
+                      if str(k).isdigit() and int(k) // 1000 == person and (row or {}).get('name') == text})
+        if own:
+            return own[0]
+        if text in FACES:
+            return FACES.index(text)
+        raise AgentError(f'找不到表情「{text}」。可用 list_assets(kind="expressions", person=…) 查看，或直接写表情编号。')
+
+    def _audio_rows(self, project_id):
+        project = self._call(self.store.project, project_id)
+        local = server.read_json(server.safe_path(project.path, 'Cfgs/zh-cn/AudioCfg.json'), {})
+        rows = {**self.store.catalog_rows('AudioCfg'), **(local if isinstance(local, dict) else {})}
+        return {str(k): r for k, r in rows.items() if isinstance(r, dict) and str(k).isdigit()}
+
+    def _audio(self, rows, value, kind):
+        """Music (AudioCfg type 1) or a sound effect (type 2/3), by id or name."""
+        wanted = (1,) if kind == 'music' else (2, 3)
+        label = '背景音乐' if kind == 'music' else '音效'
+        if isinstance(value, int) or isinstance(value, str) and value.strip().isdigit():
+            key = str(int(value))
+            if key not in rows:
+                raise AgentError(f'找不到{label} {key}。可用 list_assets 查看。')
+            return int(key)
+        import asset_labels
+        text = str(value or '').strip()
+        matches = [k for k, r in rows.items() if r.get('type', 1) in wanted and text in (r.get('name'), asset_labels.asset_name(r, 'audio'))]
+        if not matches:
+            matches = [k for k, r in rows.items() if r.get('type', 1) in wanted and text and text.casefold() in str(r.get('url') or '').casefold()]
+        if len(matches) == 1 or matches and all(rows[m].get('url') == rows[matches[0]].get('url') for m in matches):
+            return int(matches[0])
+        if matches:
+            raise AgentError(f'名为「{text}」的{label}有多个，请用编号：' + '、'.join(matches[:10]))
+        raise AgentError(f'找不到{label}「{text}」。可用 list_assets(kind="{kind}") 查看。')
+
+    def _background(self, doc, value):
+        """A background by id or name/file name. 0 keeps the current one."""
+        if isinstance(value, int) or isinstance(value, str) and re.fullmatch(r'-?\d+', value.strip()):
+            number = int(value)
+            if number in (0, -2) or str(number) in doc.get('backgrounds', {}):
+                return number
+            raise AgentError(f'找不到背景 {number}。可用 list_assets(kind="backgrounds") 查看。')
+        import asset_labels
+        text = str(value or '').strip().casefold()
+        rows = doc.get('backgrounds', {})
+        named = [k for k, r in rows.items() if text == asset_labels.asset_name(r, 'background').casefold()]
+        files = [k for k, r in rows.items() if text and text in str((r or {}).get('url') or '').casefold()]
+        matches = named or files
+        if len(matches) == 1:
+            return int(matches[0])
+        if matches:
+            raise AgentError(f'背景「{value}」匹配多个，请用编号：' + '、'.join(matches[:10]))
+        raise AgentError(f'找不到背景「{value}」。可用 list_assets(kind="backgrounds") 查看。')
+
+    def _stage_row(self, doc, row, present, background):
+        """Follow one line the way the game's NewTalkView does: background changes clear the cast
+        (except -2), a line without actions brings its speakers in, entries/exits change the cast."""
+        if not str(row.get('content') or '').strip():
+            return background  # the game skips empty lines entirely
+        bg = int(row.get('bg') or 0) if str(row.get('bg') or 0).lstrip('-').isdigit() else 0
+        if bg in (-1, -2) or bg > 0 and bg != background and str(bg) in doc.get('backgrounds', {}):
+            if bg != -2:
+                present.clear()
+            if bg > 0:
+                background = bg
+        actions = [a for a in row.get('roles') or [] if isinstance(a, list) and a]
+        if not actions:
+            for speaker in _ids(row.get('roleIds')):
+                if speaker >= 0:
+                    present.setdefault(speaker, None)
+        for action in actions:
+            try:
+                person, code = int(action[0]), int(action[1]) if len(action) > 1 else 0
+            except (TypeError, ValueError):
+                continue
+            if code in ENTRY:
+                present[person] = int(action[3]) if len(action) > 3 and str(action[3]).isdigit() else present.get(person)
+            elif code in EXIT:
+                present.pop(person, None)
+            elif code >= 3000:
+                present.setdefault(person, None)
+        return background
+
+    def _stage_before(self, doc, event_id, anchor, include_anchor=True):
+        """Who is on stage (and where) when the line after `anchor` starts, along a path from the event start."""
+        present, background = {}, 0
+        if anchor is None:
+            return present, background
+        row = doc.get('events', {}).get(str(event_id), {})
+        starts = [*_ids(row.get('talkId'))]
+        parent, queue = {t: None for t in starts}, list(starts)
+        while queue and anchor not in parent:
+            tid = queue.pop(0)
+            talk = doc['talks'].get(str(tid))
+            if not talk:
+                continue
+            nxt = [*_ids(talk.get('nextTalk')), *_ids(talk.get('nextTalk2'))]
+            for oid in _ids(talk.get('option')):
+                nxt += _ids(doc.get('options', {}).get(str(oid), {}).get('talkId'))
+            for target in nxt:
+                if target not in parent:
+                    parent[target] = tid
+                    queue.append(target)
+        path, cursor = [], anchor if anchor in parent else None
+        while cursor is not None:
+            path.append(cursor)
+            cursor = parent[cursor]
+        path = list(reversed(path or [anchor]))
+        for tid in path if include_anchor else path[:-1]:
+            background = self._stage_row(doc, doc['talks'].get(str(tid), {}), present, background)
+        return present, background
+
+    def _persons(self, doc, value, speaker):
+        if value is True:
+            return [speaker] if speaker >= 0 else []
+        values = value if isinstance(value, list) else [value]
+        return [self._speaker(doc, v) for v in values if v not in (None, False, '')]
+
+    def _raw_actions(self, doc, value):
+        if not isinstance(value, list) or not all(isinstance(a, list) and len(a) >= 2 for a in value):
+            raise AgentError('actions 应为动作数组的列表，如 [["小雅", 3001, 1, 0, 1]]（人物, 动作编号, 参数…）。')
+        out = []
+        for action in value:
+            person = self._speaker(doc, action[0])
+            try:
+                numbers = [float(v) if isinstance(v, float) else int(v) for v in action[1:]]
+            except (TypeError, ValueError):
+                raise AgentError(f'动作参数应为数字：{action!r}')
+            out.append([person, *numbers])
+        return out
+
+    def _staging(self, doc, spec, speaker, present, background, *, audio_rows=None, project_id=None):
+        """Actions and background for one line, given who is on stage. Returns (roles, bg, background, sound)."""
+        actions, bg = [], 0
+        if spec.get('background') not in (None, ''):
+            bg = self._background(doc, spec['background'])
+            if bg == -2 or bg > 0 and bg != background:
+                if bg != -2:
+                    present.clear()  # a new background clears the cast, as in the game
+                background = bg if bg > 0 else background
+        exits = self._persons(doc, spec['exit'], speaker) if spec.get('exit') else []
+        enter = spec.get('enter')
+        if enter not in (None, False, '', 0) and speaker >= 0:
+            axis = self._axis(enter)
+            # Someone already standing there stays put: re-entering would restart their entrance.
+            if present.get(speaker, 0) != axis or speaker not in present:
+                actions.append([speaker, 1002, 1, axis, 0])
+            present[speaker] = axis
+        if spec.get('expression') not in (None, '') and speaker >= 0:
+            actions.append([speaker, 3000, self._expression(doc, speaker, spec['expression'])])
+        for person, value in (spec.get('expressions') or {}).items() if isinstance(spec.get('expressions'), dict) else ():
+            actions.append([self._speaker(doc, person), 3000, self._expression(doc, self._speaker(doc, person), value)])
+        if spec.get('actions'):
+            actions += self._raw_actions(doc, spec['actions'])
+        for person in exits:
+            if person in present or any(a[0] == person for a in actions):
+                actions.append([person, 2002, 0])
+        # Lines with actions only run those: the game no longer brings the speaker in by itself.
+        if actions and speaker >= 0 and speaker not in present and not any(a[0] == speaker for a in actions):
+            actions.insert(0, [speaker, 1001])
+        row = {'content': spec.get('text') or ' ', 'roleIds': [speaker], 'roles': actions, 'bg': bg}
+        self._stage_row(doc, {**row, 'bg': 0}, present, background)
+        sound = None
+        if spec.get('sound') not in (None, '', [], 0):
+            rows = audio_rows if audio_rows is not None else self._audio_rows(project_id)
+            sound = [self._audio(rows, v, 'sound') for v in (spec['sound'] if isinstance(spec['sound'], list) else [spec['sound']])]
+        return actions, bg, background, sound
+
+    def _music(self, rows, value):
+        """{"name"|"id", "loop", "volume"} or a bare name/id."""
+        spec = value if isinstance(value, dict) else {'id': value}
+        target = spec.get('id', spec.get('name'))
+        volume = spec.get('volume', 1)
+        if isinstance(volume, bool) or not isinstance(volume, (int, float)) or not 0 <= volume <= 1:
+            raise AgentError('音量应在 0 到 1 之间。')
+        return {'audioId': self._audio(rows, target, 'music'), 'loop': bool(spec.get('loop', True)), 'volume': volume}
+
     def _line_view(self, doc, tid):
         row = doc['talks'].get(str(tid), {})
         speaker = (_ids(row.get('roleIds')) or [NARRATOR])[0]
@@ -139,7 +345,34 @@ class Studio:
             view['nextIfFailed'] = _ids(row.get('nextTalk2'))
         if row.get('effect'):
             view['effect'] = row['effect']
+        bg = row.get('bg') or 0
+        if bg:
+            import asset_labels
+            view['background'] = {'id': bg, 'name': asset_labels.asset_name(doc.get('backgrounds', {}).get(str(bg), {}), 'background') if bg > 0 else '保留人物的黑场' if bg == -2 else '黑场'}
+        if row.get('roles'):
+            view['stage'] = self._describe_actions(doc, row['roles'])
+        cues = doc.get('audioCues') or {}
+        if cues.get('sfx', {}).get(str(tid)):
+            view['sound'] = [c.get('audioId') for c in cues['sfx'][str(tid)]]
+        music = next((g for g in cues.get('bgm', []) if int(tid) in [int(i) for i in g.get('talkIds', [])]), None)
+        if music and int(music['talkIds'][0]) == int(tid):
+            view['musicStarts'] = music.get('audioId')
         return view
+
+    def _describe_actions(self, doc, actions):
+        out = []
+        for action in actions or []:
+            if not isinstance(action, list) or len(action) < 2:
+                continue
+            person, code = action[0], int(action[1])
+            text = f'{self._person_name(doc, person)} {ACTION_NAMES.get(code, "动作 " + str(code))}'
+            if code in ENTRY and len(action) > 3:
+                text += f'（{AXIS_NAMES.get(int(action[3]), action[3])}）'
+            elif code == 3000 and len(action) > 2:
+                face = int(action[2])
+                text += f'：{FACES[face] if 0 <= face < len(FACES) else face}'
+            out.append({'text': text, 'raw': action})
+        return out
 
     def _walk(self, doc, starts):
         order, seen, stack = [], set(), list(reversed(starts))
@@ -310,8 +543,10 @@ class Studio:
                 found.append(ident)
         return found
 
-    def _build_lines(self, doc, event_id, specs, then=None):
-        """Turn line specs into talk (and option) rows chained in order. Returns (first id, rows, options, order)."""
+    def _build_lines(self, doc, event_id, specs, then=None, stage=None, project_id=None):
+        """Turn line specs into talk (and option) rows chained in order.
+
+        Returns (first id, rows, options, order, cues): cues holds the lines' sound effects and music starts."""
         if not isinstance(specs, list) or not specs:
             raise AgentError('lines 需要至少一句对话。')
         flat = self._flatten(specs)
@@ -319,10 +554,12 @@ class Studio:
         numbers = dict(zip(map(id, flat), self._free_ids(doc, 'talks', event_id, 1000, len(flat))))
         options_needed = sum(len(s.get('options') or []) for s in flat if isinstance(s, dict))
         option_ids = self._free_ids(doc, 'options', event_id, 100, options_needed) if options_needed else []
-        talks, options = {}, {}
+        talks, options, cues = {}, {}, {'sfx': {}, 'music': {}}
         order = [numbers[id(spec)] for spec in flat]
+        needs_audio = any(isinstance(s, dict) and (s.get('sound') or s.get('music')) for s in flat)
+        audio_rows = self._audio_rows(project_id) if needs_audio and project_id else {}
 
-        def chain(items, continuation):
+        def chain(items, continuation, present, background):
             ids_here = [numbers[id(spec)] for spec in items]
             for index, (spec, tid) in enumerate(zip(items, ids_here)):
                 if not isinstance(spec, dict) or not isinstance(spec.get('text', ''), str):
@@ -333,11 +570,14 @@ class Studio:
                 row.update(content=spec.get('text', ''), roleIds=[speaker])
                 if spec.get('displayName'):
                     row['roleName'] = str(spec['displayName'])
-                if spec.get('enter') and speaker not in (NARRATOR,):
-                    position = _int(spec['enter'], '登场位置')
-                    if position not in (1, 2, 3):
-                        raise AgentError('enter 登场位置只能是 1（左）、2（中）、3（右）。')
-                    row['roles'] = [[speaker, 1002, 1, position]]
+                actions, bg, background, sound = self._staging(doc, spec, speaker, present, background, audio_rows=audio_rows)
+                row['roles'] = actions
+                if bg:
+                    row['bg'] = bg
+                if sound:
+                    cues['sfx'][str(tid)] = [{'audioId': a, 'volume': 1} for a in sound]
+                if spec.get('music') not in (None, ''):
+                    cues['music'][tid] = self._music(audio_rows, spec['music'])
                 talks[str(tid)] = row
                 branches = spec.get('options') or []
                 if branches:
@@ -347,15 +587,27 @@ class Studio:
                         if not isinstance(option, dict) or not str(option.get('text', '')).strip():
                             raise AgentError('每个选项需要 text（选项文字），可选 lines（选择后的对话）。')
                         oid = option_ids.pop(0)
-                        target = chain(option['lines'], rejoin) if option.get('lines') else rejoin
+                        target = chain(option['lines'], rejoin, dict(present), background) if option.get('lines') else rejoin
                         options[str(oid)] = {'id': oid, 'content': option['text'], 'talkId': [target] if target else [],
                                              'talkId2': [], 'effect': option.get('effect', []), 'effect2': [], 'check': [],
                                              'precondition': option.get('condition', [])}
                         row['option'].append(oid)
             return ids_here[0] if ids_here else continuation
 
-        first = chain(specs, then)
-        return first, talks, options, order
+        present, background = stage if stage else ({}, 0)
+        first = chain(specs, then, dict(present), background)
+        return first, talks, options, order, cues
+
+    def _apply_cues(self, doc, order, cues):
+        """Record sound effects, and music ranges running from each music line to the next one."""
+        audio = doc.setdefault('audioCues', {'version': 1, 'sfx': {}, 'bgm': []})
+        audio.setdefault('sfx', {}); audio.setdefault('bgm', [])
+        audio['sfx'].update(cues['sfx'])
+        starts = [i for i, tid in enumerate(order) if tid in cues['music']]
+        for n, index in enumerate(starts):
+            stop = starts[n + 1] if n + 1 < len(starts) else len(order)
+            music = cues['music'][order[index]]
+            audio['bgm'].append({'id': 'ai-' + uuid.uuid4().hex[:16], **music, 'talkIds': order[index:stop]})
 
     def _flatten(self, specs):
         out = []
@@ -365,6 +617,9 @@ class Studio:
                 out += self._flatten(option.get('lines') if isinstance(option, dict) else [])
         return out
 
+    def _snapshot(self, doc):
+        return copy.deepcopy({**{k: doc.get(k) for k in server.TABLES if k != 'talks'}, 'audioCues': doc.get('audioCues')})
+
     def _save(self, project, doc, before, *, order=None, talk_rows=None, deleted_talks=None, confirm=None, dry_run=False, summary=None):
         payload = {'projectId': project['id'], 'revision': doc['revision']}
         for key in server.TABLES:
@@ -372,6 +627,8 @@ class Studio:
                 continue
             if doc.get(key) != before.get(key):
                 payload[key] = doc[key]
+        if doc.get('audioCues') != before.get('audioCues'):
+            payload['audioCues'] = doc['audioCues']
         if talk_rows or deleted_talks:
             payload['talkPatch'] = {'version': 1, 'upsert': talk_rows or {}, 'deleted': list(deleted_talks or [])}
         if order is not None:
@@ -398,14 +655,15 @@ class Studio:
             raise AgentError('订阅模组只读，不能修改。可先在编辑器中创建副本。')
         if not str(title or '').strip():
             raise AgentError('请填写事件名称。')
-        before = copy.deepcopy({k: doc.get(k) for k in server.TABLES if k != 'talks'})
+        before = self._snapshot(doc)
         ident = _int(event_id, '事件编号') if event_id else self._new_event_id(project, doc)
         if str(ident) in doc['events']:
             raise AgentError(f'事件编号 {ident} 已存在。')
         if ident * 1000 + 999 > MAX_ID:
             raise AgentError('事件编号过大，对话编号（事件号×1000+序号）会超出范围。')
         npc_id = self._speaker(doc, npc) if npc not in (None, 0, '0', '') else 0
-        first, talks, options, order = self._build_lines(doc, ident, lines)
+        first, talks, options, order, cues = self._build_lines(doc, ident, lines, project_id=project['id'])
+        self._apply_cues(doc, order, cues)
         doc['events'][str(ident)] = {'id': ident, 'title': str(title).strip(), 'type': _int(type, '事件类型'), 'talkId': [first],
                                      'rate': float(rate) if float(rate) != int(float(rate)) else int(float(rate)), 'npc': npc_id,
                                      'maxcount': _int(maxcount, '最多发生次数'), 'mapId': _int(map_id, '地点'),
@@ -422,14 +680,14 @@ class Studio:
         project, doc = self._load(mod)
         event_id = _int(event_id, '事件编号')
         row = self._event_row(doc, event_id)
-        before = copy.deepcopy({k: doc.get(k) for k in server.TABLES if k != 'talks'})
+        before = self._snapshot(doc)
         chain = self._walk(doc, _ids(row.get('talkId')))
         if after is None:
             tail = [t for t in chain if not _ids(doc['talks'][str(t)].get('nextTalk')) and not _ids(doc['talks'][str(t)].get('option'))]
             after = tail[-1] if tail else None
         changed = {}
         if after is None:
-            first, talks, options, order = self._build_lines(doc, event_id, lines)
+            first, talks, options, order, cues = self._build_lines(doc, event_id, lines, project_id=project['id'])
             row['talkId'] = [first]
         else:
             after = _int(after, '插入位置')
@@ -439,9 +697,12 @@ class Studio:
             if _ids(anchor.get('option')):
                 raise AgentError(f'对话 {after} 后面是选项分支，请在分支内的某句之后插入。')
             following = _ids(anchor.get('nextTalk'))
-            first, talks, options, order = self._build_lines(doc, event_id, lines, then=following[0] if following else None)
+            # New lines start from the stage as it stands after the anchor: characters already there keep their place.
+            first, talks, options, order, cues = self._build_lines(doc, event_id, lines, then=following[0] if following else None,
+                                                                   stage=self._stage_before(doc, event_id, after), project_id=project['id'])
             anchor['nextTalk'] = [first]
             changed[str(after)] = anchor
+        self._apply_cues(doc, order, cues)
         doc['options'].update(options)
         current = [int(v) for v in doc.get('order', [])]
         position = current.index(after) + 1 if after in current else len(current)
@@ -449,12 +710,14 @@ class Studio:
         return self._save(project, doc, before, order=new_order, talk_rows={**changed, **talks}, confirm=confirm, dry_run=dry_run,
                           summary={'eventId': event_id, 'lineIds': order})
 
-    def edit_line(self, mod, talk_id, text=None, speaker=None, display_name=None, confirm=None, dry_run=False):
+    def edit_line(self, mod, talk_id, text=None, speaker=None, display_name=None, confirm=None, dry_run=False, *,
+                  background=None, enter=None, expression=None, exit=None, sound=None, actions=None):
+        """Change a line's words or speaker, and its staging: background, entry position, expression, exits, sound."""
         project, doc = self._load(mod)
         talk_id = _int(talk_id, '对话编号')
         if str(talk_id) not in doc['talks']:
             raise AgentError(f'找不到对话 {talk_id}。')
-        before = copy.deepcopy({k: doc.get(k) for k in server.TABLES if k != 'talks'})
+        before = self._snapshot(doc)
         row = copy.deepcopy(doc['talks'][str(talk_id)])
         if text is not None:
             row['content'] = str(text)
@@ -462,8 +725,103 @@ class Studio:
             row['roleIds'] = [self._speaker(doc, speaker)]
         if display_name is not None:
             row['roleName'] = str(display_name) or None
+        who = (_ids(row.get('roleIds')) or [NARRATOR])[0]
+        staged = any(v is not None for v in (background, enter, expression, exit, actions))
+        if staged:
+            owner = next(iter(doc.get('talkOwners', {}).get(str(talk_id), [])), None)
+            present, _background = self._stage_before(doc, owner, talk_id, include_anchor=False) if owner else ({}, 0)
+            roles = self._raw_actions(doc, actions) if actions is not None else [list(a) for a in row.get('roles') or [] if isinstance(a, list)]
+            if background is not None:
+                row['bg'] = self._background(doc, background)
+            if enter is not None and who >= 0:
+                roles = [a for a in roles if not (a and a[0] == who and len(a) > 1 and a[1] in ENTRY)]
+                if enter not in (0, False, '', 'none', '无'):
+                    roles.insert(0, [who, 1002, 1, self._axis(enter), 0])
+            if expression is not None and who >= 0:
+                roles = [a for a in roles if not (a and a[0] == who and len(a) > 1 and a[1] == 3000)]
+                if expression != '':
+                    roles.append([who, 3000, self._expression(doc, who, expression)])
+            for person in self._persons(doc, exit, who) if exit else []:
+                if not any(a[0] == person and len(a) > 1 and a[1] in EXIT for a in roles):
+                    roles.append([person, 2002, 0])
+            if roles and who >= 0 and who not in present and not any(a[0] == who for a in roles):
+                roles.insert(0, [who, 1001])
+            row['roles'] = roles
+        if sound is not None:
+            cues = doc.setdefault('audioCues', {'version': 1, 'sfx': {}, 'bgm': []})
+            cues.setdefault('sfx', {})
+            values = sound if isinstance(sound, list) else [] if sound in (0, '', 'none', '无') else [sound]
+            if values:
+                rows = self._audio_rows(project['id'])
+                cues['sfx'][str(talk_id)] = [{'audioId': self._audio(rows, v, 'sound'), 'volume': 1} for v in values]
+            else:
+                cues['sfx'].pop(str(talk_id), None)
         return self._save(project, doc, before, talk_rows={str(talk_id): row}, confirm=confirm, dry_run=dry_run,
-                          summary={'lineId': talk_id})
+                          summary={'lineId': talk_id, **({'stage': self._describe_actions(doc, row.get('roles'))} if staged else {})})
+
+    def set_music(self, mod, line_ids, music=None, confirm=None, dry_run=False):
+        """Play background music over these lines (replacing their current range), or clear it with music=None."""
+        project, doc = self._load(mod)
+        chosen = [_int(t, '对话编号') for t in (line_ids or [])]
+        if not chosen:
+            raise AgentError('请指定要设置背景音乐的对话编号。')
+        for tid in chosen:
+            if str(tid) not in doc['talks']:
+                raise AgentError(f'找不到对话 {tid}。')
+        before = self._snapshot(doc)
+        cues = doc.setdefault('audioCues', {'version': 1, 'sfx': {}, 'bgm': []})
+        cues.setdefault('bgm', [])
+        wanted = set(chosen)
+        for group in cues['bgm']:
+            group['talkIds'] = [t for t in group.get('talkIds', []) if int(t) not in wanted]
+        cues['bgm'] = [g for g in cues['bgm'] if g.get('talkIds')]
+        if music not in (None, '', 0, 'none', '无'):
+            cue = self._music(self._audio_rows(project['id']), music)
+            cues['bgm'].append({'id': 'ai-' + uuid.uuid4().hex[:16], **cue, 'talkIds': list(dict.fromkeys(chosen))})
+        return self._save(project, doc, before, confirm=confirm, dry_run=dry_run, summary={'lines': chosen})
+
+    def assets(self, mod, kind, query=None, person=None, limit=40):
+        """Backgrounds, music, sound effects or a character's expressions, with the ids lines refer to."""
+        project, doc = self._load(mod)
+        import asset_labels
+        needle = str(query or '').strip().casefold()
+        match = lambda *values: not needle or any(needle in str(v or '').casefold() for v in values)
+        if kind == 'backgrounds':
+            rows = []
+            for key, row in doc.get('backgrounds', {}).items():
+                if not str(key).isdigit() or not isinstance(row, dict):
+                    continue
+                name, file = asset_labels.asset_name(row, 'background'), str(row.get('url') or '').rsplit('/', 1)[-1]
+                if match(key, name, file):
+                    rows.append({'id': int(key), 'name': name, 'file': file, 'own': self._is_local(doc, 'backgrounds', key)})
+            rows.sort(key=lambda r: (r['name'] == f"场景 {r['id']}", r['id']))  # named backgrounds first
+            for item in rows[:limit]:  # an image path lets agents that read images look at the place
+                try:
+                    item['image'] = str(self.store.asset(project['id'], doc['backgrounds'][str(item['id'])].get('url')))
+                except Exception:
+                    pass
+            return {'kind': kind, 'total': len(rows), 'items': rows[:limit],
+                    'note': '背景名称多为「场景 编号」时，可从 file（拼音文件名，如 tiantai 天台、jiaoshi 教室）判断地点；有 image 时可直接查看图片。'}
+        if kind in ('music', 'sounds'):
+            wanted = (1,) if kind == 'music' else (2, 3)
+            rows = [{'id': int(k), 'name': asset_labels.asset_name(r, 'audio'), 'file': str(r.get('url') or '').rsplit('/', 1)[-1]}
+                    for k, r in self._audio_rows(project['id']).items() if r.get('type', 1) in wanted]
+            rows = [r for r in rows if match(r['id'], r['name'], r['file'])]
+            rows.sort(key=lambda r: r['id'])
+            return {'kind': kind, 'total': len(rows), 'items': rows[:limit]}
+        if kind == 'expressions':
+            if person in (None, ''):
+                raise AgentError('查看表情需要 person（人物名称或编号）。')
+            ident = self._speaker(doc, person)
+            own = {}
+            for key, row in doc.get('faces', {}).items():
+                if str(key).isdigit() and int(key) // 1000 == ident and (row or {}).get('name'):
+                    own.setdefault(int(key) % 100, row['name'])
+            items = [{'id': n, 'name': own.get(n, name)} for n, name in enumerate(FACES)]
+            items += [{'id': n, 'name': name} for n, name in sorted(own.items()) if n >= len(FACES)]
+            return {'kind': kind, 'person': ident, 'items': [i for i in items if match(i['id'], i['name'])],
+                    'note': '表情编号对应人物模型里的表情槽，不同人物实际拥有的表情不同；不确定时优先用 0–10 的常用表情，并在编辑器预览中确认。'}
+        raise AgentError('kind 只能是 backgrounds、music、sounds 或 expressions。')
 
     def delete_lines(self, mod, talk_ids, confirm=None, dry_run=False):
         """Delete lines and reconnect the chain around them, so the event keeps playing."""
@@ -474,7 +832,7 @@ class Studio:
         for tid in doomed:
             if str(tid) not in doc['talks']:
                 raise AgentError(f'找不到对话 {tid}。')
-        before = copy.deepcopy({k: doc.get(k) for k in server.TABLES if k != 'talks'})
+        before = self._snapshot(doc)
         doomed_set = set(doomed)
 
         def resolve(target, seen=()):
@@ -512,7 +870,7 @@ class Studio:
         unknown = set(fields or {}) - EVENT_FIELDS
         if unknown:
             raise AgentError('不支持修改的事件字段：' + '、'.join(sorted(unknown)) + '。可改：' + '、'.join(sorted(EVENT_FIELDS)))
-        before = copy.deepcopy({k: doc.get(k) for k in server.TABLES if k != 'talks'})
+        before = self._snapshot(doc)
         for key, value in (fields or {}).items():
             row[key] = (self._speaker(doc, value) if value not in (0, '0', None, '') else 0) if key == 'npc' else value
         return self._save(project, doc, before, confirm=confirm, dry_run=dry_run, summary={'eventId': event_id, 'fields': sorted(fields or {})})
@@ -524,7 +882,7 @@ class Studio:
         self._event_row(doc, event_id)
         if not self._is_local(doc, 'events', event_id):
             raise AgentError(f'事件 {event_id} 是原版事件，不能删除。')
-        before = copy.deepcopy({k: doc.get(k) for k in server.TABLES if k != 'talks'})
+        before = self._snapshot(doc)
         del doc['events'][str(event_id)]
         return self._save(project, doc, before, confirm=confirm, dry_run=dry_run, summary={'deletedEvent': event_id})
 
@@ -560,6 +918,5 @@ class Studio:
 
     def backup(self, mod):
         project = self._project(mod)
-        import uuid
         result = self._call(self.store.backups.create, {'projectId': project['id'], 'kind': 'manual', 'requestId': uuid.uuid4().hex})
         return {'backup': result.get('path'), 'createdAt': result.get('createdAt')}

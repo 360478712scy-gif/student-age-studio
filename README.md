@@ -35,7 +35,7 @@ Windows 原生源码窗口：`python -B desktop/windows/main.py`。
 
 ## AI 工具（命令行与 MCP）
 
-Claude、Codex 等 AI 助手可以通过命令行或 MCP 读取和修改模组剧情，保存走编辑器自己的流程（版本冲突检查、保存前备份、警告需确认）。接入方法见「工坊设置 → 外观与偏好 → AI 工具」，完整说明见 [docs/ai-tools.md](docs/ai-tools.md)。
+Claude、Codex 等 AI 助手可以通过命令行或 MCP 读取和修改模组剧情，保存走编辑器自己的流程（版本冲突检查、保存前备份、警告需确认）。让 AI 自己安装：在「工坊设置 → 外观与偏好 → AI 工具」点「复制安装提示词」发给它，或把 [AI安装MCP提示词.md](AI安装MCP提示词.md) 发给它。完整说明见 [docs/ai-tools.md](docs/ai-tools.md)。
 
 ## 在线更新
 
