@@ -4009,6 +4009,11 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_file(self.server.store.asset(query.get("projectId", [""])[0], query.get("path", [""])[0]))
             if route == "/api/asset-folders":
                 return self.send_json(self.server.store.asset_catalog.folders())
+            if route == "/api/map-library":
+                import asset_browser
+                self.server.store.project(query.get("projectId", [""])[0])
+                with self.server.store.catalog_scope():
+                    return self.send_json(asset_browser.map_library(self.server.store))
             if route == "/api/asset-catalog":
                 self.server.media_warmup.request_scan()
                 return self.send_json(self.server.store.asset_catalog.list({key: value[0] for key, value in query.items()}))
@@ -4255,6 +4260,13 @@ class StudioHandler(BaseHTTPRequestHandler):
                 folder.mkdir(parents=True,exist_ok=True)
                 open_directory(folder)
                 return self.send_json({'ok':True})
+            if route == '/api/asset-catalog-reveal':
+                return self.send_json(self.server.store.asset_catalog.reveal({key: str(value) for key, value in payload.items()}))
+            if route == '/api/map-library-reveal':
+                import asset_browser
+                project = self.server.store.project(payload.get('projectId'))
+                with self.server.store.catalog_scope():
+                    return self.send_json(asset_browser.reveal_map(self.server.store, project))
             if route == '/api/asset-catalog-delete':
                 return self.send_json(self.server.store.asset_catalog.delete_asset(payload))
             if route == "/api/asset-library-import":
