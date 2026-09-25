@@ -174,6 +174,8 @@ class Handler:
         if method == 'tools/call':
             import studio_agent
             name, arguments = params.get('name'), params.get('arguments') or {}
+            if name not in {t['name'] for t in TOOLS}:  # before touching any mod data
+                raise JsonRpcError(-32602, f'未知工具：{name}')
             try:
                 result = self.call(name, arguments)
                 return {'content': [{'type': 'text', 'text': json.dumps(result, ensure_ascii=False)}],
