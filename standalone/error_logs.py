@@ -80,6 +80,20 @@ class ErrorLogs:
         except OSError:
             pass
 
+    def stuck(self, method, route, phase, seconds, stack):
+        """A request still unfinished after 20 s (the editor looks frozen): what it waits on and where it is."""
+        try:
+            path = self.root / 'slow-requests.log'
+            with _lock:
+                self.root.mkdir(parents=True, exist_ok=True)
+                lines = path.read_text(encoding='utf-8').splitlines(True) if path.exists() else ['拾光工坊慢请求记录（超过 2 秒的接口：排队时间 = 等待前面的请求，执行时间 = 自身耗时）\n']
+                entry = [f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\t{APP_VERSION}\t{method} {route}\t仍未完成 {seconds:.0f}s（{phase}）\n"]
+                entry += ['\t\t' + frame + '\n' for frame in stack[-14:]]
+                lines = lines[:1] + lines[1:][-(300 - len(entry)):] + entry
+                path.write_text(''.join(lines), encoding='utf-8')
+        except OSError:
+            pass
+
     def _prune(self):
         for path in self._files()[:-KEEP]:
             try: path.unlink()
