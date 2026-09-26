@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-SERVER_INFO = {'name': 'student-age-studio', 'title': '拾光工坊 · 学生时代模组编辑器', 'version': '1.1.0'}
+SERVER_INFO = {'name': 'student-age-studio', 'title': '拾光工坊 · 学生时代模组编辑器', 'version': '1.2.0'}
 PROTOCOLS = ('2025-06-18', '2025-03-26', '2024-11-05')
 
 INSTRUCTIONS = """拾光工坊（学生时代模组编辑器）的 MCP 工具，用编辑器自身的逻辑读写模组。
@@ -31,7 +31,12 @@ INSTRUCTIONS = """拾光工坊（学生时代模组编辑器）的 MCP 工具，
    - background 换背景。按游戏规则，换背景会让所有人物退场，换背景后的第一句要重新写 enter。
    - music 从这句开始播放背景音乐，直到下一个写了 music 的句子；sound 在这句播放音效。
    - 已有的句子用 edit_line 修改演出，用 set_music 给一段对话设置背景音乐。
-   - 没写任何动作的句子，游戏会让说话人自动登场；写了动作的句子只执行写出的动作，工具会自动补上说话人的登场。"""
+   - 没写任何动作的句子，游戏会让说话人自动登场；写了动作的句子只执行写出的动作，工具会自动补上说话人的登场。
+7. 分支：set_options 增删改玩家选项；edit_line 的 next 改跳转、check + next_if_failed 做条件分支、cg 显示插图、effect 写本句效果。
+8. 其他内容（物品、人物、目标、短信、企鹅动态、商店……）：describe_table 看字段含义，read_table 读，update_rows 改或删除。
+9. 事件外对话（送礼、闲聊、小游戏开场、CG 回忆等）：list_assets(kind="dialogue_uses") 查用途，create_external_dialogue 新建。
+10. 改完用 check_mod 检查断开的连接。其他工具都做不到的，最后才用 json_file 直接改 JSON 原文。
+不确定怎么做时，调用 read_guide 读完整使用说明。"""
 
 STAGE = {
     'enter': {'type': 'string', 'description': '可选：说话人在这句登场或移动到 "左"/"中"/"右"。已站在该位置时不会重复登场'},
@@ -70,6 +75,7 @@ def tool(name, description, properties, required=(), read_only=True):
 
 
 TOOLS = [
+    tool('read_guide', '读取拾光工坊 AI 使用说明：工作流程、剧情结构、演出规则、各工具用法与常见错误。第一次使用或不确定怎么做时先读。', {}),
     tool('list_mods', '列出所有模组：编号、名称、来源、是否只读。', {}),
     tool('mod_summary', '模组概况：各类自有内容数量、当前版本号、读取警告。', {'mod': MOD}, ['mod']),
     tool('list_events', '列出事件（默认只列模组自己的），含名称、类型、关联人物、地点和首句。',
@@ -93,22 +99,52 @@ TOOLS = [
     tool('add_lines', '在事件中插入对话（默认接在主线末尾；after 指定插在某句之后）。',
          {'mod': MOD, 'event_id': {'type': 'integer'}, 'lines': {'type': 'array', 'items': LINE_SCHEMA}, 'after': {'type': 'integer'}, **WRITE},
          ['mod', 'event_id', 'lines'], False),
-    tool('edit_line', '修改一句对话：文字、说话人、显示名，以及演出（登场位置、表情、退场、背景、音效）。只改传入的项。'
+    tool('edit_line', '修改一句对话：文字、说话人、显示名、演出（登场位置、表情、退场、背景、音效、CG）、跳转、条件分支和本句效果。只改传入的项。'
          'enter 写 "无" 取消登场；expression 写空字符串取消表情；sound 写 "无" 取消音效；actions 会整体替换这句的动作。',
          {'mod': MOD, 'talk_id': {'type': 'integer'}, 'text': {'type': 'string'}, 'speaker': {'type': 'string', 'description': '新的说话人：名称、编号、旁白或主角'},
-          'display_name': {'type': 'string'}, **{k: v for k, v in STAGE.items() if k != 'expressions'}, **WRITE}, ['mod', 'talk_id'], False),
+          'display_name': {'type': 'string'}, **{k: v for k, v in STAGE.items() if k != 'expressions'},
+          'cg': {'type': 'string', 'description': '从这句显示 CG（编号或名称，见 list_assets(kind="cgs")）；"end" 结束 CG；"无" 去掉'},
+          'next': {'type': 'integer', 'description': '这句之后跳到哪句（对话编号）；0 表示到此结束'},
+          'check': {'type': 'array', 'items': {'type': 'array'}, 'description': '判定条件（条件数组，见 list_commands）：显示这句后判定，满足走 next，不满足走 next_if_failed；传 [] 取消'},
+          'next_if_failed': {'type': 'integer', 'description': '判定不满足时跳到的对话编号'},
+          'effect': {'type': 'array', 'items': {'type': 'array'}, 'description': '这句执行的效果（效果数组，见 list_commands）；传 [] 清空'}, **WRITE}, ['mod', 'talk_id'], False),
+    tool('set_options', '设置一句对话之后的玩家选项（整体替换）。每个选项写 text，并用 goto 跳到已有对话，或用 lines 新写选择后的对话；'
+         '保留原有选项时带上它的 id。options 传空数组表示去掉选项。新写的分支对话结束后接到 rejoin_to（默认是这句原来的下一句）。',
+         {'mod': MOD, 'talk_id': {'type': 'integer'}, 'options': {'type': 'array', 'items': {'type': 'object', 'required': ['text'], 'properties': {
+             'id': {'type': 'integer', 'description': '已有选项编号（保留并修改）'}, 'text': {'type': 'string'},
+             'goto': {'type': 'integer', 'description': '跳到已有对话编号'}, 'lines': {'type': 'array', 'items': LINE_SCHEMA, 'description': '新写的分支对话'},
+             'condition': {'type': 'array', 'description': '选项出现条件'}, 'effect': {'type': 'array', 'description': '选择后的效果'}}}},
+          'rejoin_to': {'type': 'integer', 'description': '新分支对话结束后接到的对话编号'}, **WRITE}, ['mod', 'talk_id', 'options'], False),
     tool('set_music', '给一段对话设置背景音乐（覆盖这些句子原来的音乐范围）；不写 music 则清除。通常传从开始到结束的连续对话编号。',
          {'mod': MOD, 'line_ids': {'type': 'array', 'items': {'type': 'integer'}}, 'music': {'type': 'string', 'description': '音乐编号或名称'},
           'loop': {'type': 'boolean', 'default': True}, 'volume': {'type': 'number', 'default': 1, 'description': '0–1'}, **WRITE}, ['mod', 'line_ids'], False),
-    tool('list_assets', '查素材编号：背景（backgrounds）、背景音乐（music）、音效（sounds）、人物表情（expressions，需 person）。',
-         {'mod': MOD, 'kind': {'type': 'string', 'enum': ['backgrounds', 'music', 'sounds', 'expressions']}, 'query': {'type': 'string'},
+    tool('list_assets', '查编号：背景（backgrounds）、背景音乐（music）、音效（sounds）、人物表情（expressions，需 person）、CG（cgs）、地点（maps）、事件类型（event_types）、事件外对话用途（dialogue_uses）。',
+         {'mod': MOD, 'kind': {'type': 'string', 'enum': ['backgrounds', 'music', 'sounds', 'expressions', 'cgs', 'maps', 'event_types', 'dialogue_uses']}, 'query': {'type': 'string'},
           'person': {'type': 'string', 'description': '查表情时的人物名称或编号'}, 'limit': {'type': 'integer', 'default': 40}}, ['mod', 'kind']),
     tool('delete_lines', '删除对话，并把前后自动接上，事件不会断开。', {'mod': MOD, 'talk_ids': {'type': 'array', 'items': {'type': 'integer'}}, **WRITE}, ['mod', 'talk_ids'], False),
     tool('update_event', '修改事件字段：title、type、npc、mapId、rate、maxcount、condition、effect 等。',
          {'mod': MOD, 'event_id': {'type': 'integer'}, 'fields': {'type': 'object'}, **WRITE}, ['mod', 'event_id', 'fields'], False),
     tool('delete_event', '删除模组自己的事件；只属于它的对话由编辑器一并清理。原版事件不能删除。', {'mod': MOD, 'event_id': {'type': 'integer'}, **WRITE}, ['mod', 'event_id'], False),
-    tool('update_rows', '新增或修改配置表记录（不含对话与选项，它们请用剧情工具）。rows 为 {编号: {字段: 值}}，只需写要改的字段。',
-         {'mod': MOD, 'name': {'type': 'string'}, 'rows': {'type': 'object'}, **WRITE}, ['mod', 'name', 'rows'], False),
+    tool('update_rows', '新增、修改或删除配置表记录（对话、选项、事件请用剧情工具）。rows 为 {编号: {字段: 值}}，只需写要改的字段；'
+         'delete 为要删除的本模组记录编号。字段含义先用 describe_table 查。短信（PhoneMsgCfg）会按短信界面的规则检查。',
+         {'mod': MOD, 'name': {'type': 'string'}, 'rows': {'type': 'object'}, 'delete': {'type': 'array', 'items': {'type': 'integer'}}, **WRITE}, ['mod', 'name'], False),
+    tool('describe_table', '不写 name：列出游戏的全部配置表及中文名。写 name：每个字段的含义、类型、默认值和引用的表。', {'mod': MOD, 'name': {'type': 'string'}}, ['mod']),
+    tool('create_mod', '新建一个空的本地模组；写 copy_from 则复制已有模组（包括订阅模组）为本地副本。', {'name': {'type': 'string'}, 'copy_from': {'type': 'string', 'description': '要复制的模组编号或名称'}}, ['name'], False),
+    tool('import_asset', '把本机的图片或音频导入模组：背景（background）、CG（cg）、人物立绘（portrait）、背景音乐（music）、音效（sound）。返回新素材编号。',
+         {'mod': MOD, 'kind': {'type': 'string', 'enum': ['background', 'cg', 'portrait', 'music', 'sound']}, 'file_path': {'type': 'string', 'description': '本机文件的完整路径'},
+          'name': {'type': 'string'}, 'person': {'type': 'string', 'description': '立绘：人物名称或编号；不写则新建人物'}, 'face': {'type': 'integer', 'description': '立绘：表情编号，默认 0'},
+          'cloth': {'type': 'integer', 'description': '立绘：服装编号 0–9'}, 'grade': {'type': 'integer', 'description': '立绘：1 小学、2 中学'}}, ['mod', 'kind', 'file_path'], False),
+    tool('check_mod', '检查模组：JSON 语法错误、指向不存在对话的跳转和选项、不存在的说话人、没有首句的事件。改完后建议运行一次。', {'mod': MOD}, ['mod']),
+    tool('json_file', '最后手段：不写 path 列出模组的 JSON 文件；写 path 读取原文；再写 text 与 confirm_overwrite=true 则整体替换该文件（会备份、检查版本冲突）。',
+         {'mod': MOD, 'path': {'type': 'string', 'description': '如 Cfgs/zh-cn/ItemCfg.json'}, 'text': {'type': 'string'}, 'confirm_overwrite': {'type': 'boolean'}}, ['mod'], False),
+    tool('list_external_dialogues', '列出事件外对话夹：名称、句数、首句和绑定的用途（送礼、闲聊、小游戏开场等）。', {'mod': MOD}, ['mod']),
+    tool('create_external_dialogue', '新建事件外对话夹（不属于任何事件的连续对话），并可绑定游戏里的播放位置。用途种类与所需参数见 list_assets(kind="dialogue_uses")，'
+         '如 {"kind": "gift", "npc": "肖清雅", "item": 1000001}。',
+         {'mod': MOD, 'name': {'type': 'string'}, 'lines': {'type': 'array', 'items': LINE_SCHEMA},
+          'uses': {'type': 'array', 'items': {'type': 'object', 'required': ['kind'], 'properties': {
+              'kind': {'type': 'string'}, 'npc': {'type': 'string'}, 'item': {'type': 'integer'}, 'level': {'type': 'integer'}, 'giftMode': {'type': 'integer'},
+              'recordId': {'type': 'integer'}, 'answer': {'type': 'string'}, 'gender': {'type': 'string', 'enum': ['both', 'male', 'female']}, 'params': {'type': 'object'}}}},
+          **WRITE}, ['mod', 'name', 'lines'], False),
     tool('backup_mod', '立即完整备份模组（与编辑器“手动备份”相同）。', {'mod': MOD}, ['mod'], False),
 ]
 
@@ -223,8 +259,11 @@ class Handler:
         return self.studio
 
     def call(self, name, a):
-        s = self.get_studio()
+        s = None if name == 'read_guide' else self.get_studio()
         w = {'dry_run': bool(a.get('dry_run')), 'confirm': a.get('confirm')}
+        if name == 'read_guide':  # needs no mod data
+            import ai_guide
+            return {'guide': ai_guide.GUIDE}
         table = {
             'list_mods': lambda: s.mods(),
             'mod_summary': lambda: s.summary(a['mod']),
@@ -239,14 +278,23 @@ class Handler:
                                                    a.get('rate', 1), a.get('maxcount', 1), a.get('condition'), a.get('effect'), a.get('event_id'), **w),
             'add_lines': lambda: s.add_lines(a['mod'], a['event_id'], a['lines'], a.get('after'), **w),
             'edit_line': lambda: s.edit_line(a['mod'], a['talk_id'], a.get('text'), a.get('speaker'), a.get('display_name'), **w,
-                                             **{k: a.get(k) for k in ('background', 'enter', 'expression', 'exit', 'sound', 'actions')}),
+                                             **{k: a.get(k) for k in ('background', 'enter', 'expression', 'exit', 'sound', 'actions', 'effect', 'cg', 'check', 'next_if_failed')},
+                                             goto=a.get('next')),
+            'set_options': lambda: s.set_options(a['mod'], a['talk_id'], a['options'], a.get('rejoin_to'), **w),
+            'describe_table': lambda: s.describe_table(a['mod'], a.get('name')),
+            'create_mod': lambda: s.create_mod(a['name'], a.get('copy_from')),
+            'import_asset': lambda: s.import_asset(a['mod'], a['kind'], a['file_path'], a.get('name'), a.get('person'), a.get('face', 0), a.get('cloth', 0), a.get('grade', 1)),
+            'check_mod': lambda: s.check_mod(a['mod']),
+            'json_file': lambda: s.json_file(a['mod'], a.get('path'), a.get('text'), bool(a.get('confirm_overwrite'))),
+            'list_external_dialogues': lambda: s.external_dialogues(a['mod']),
+            'create_external_dialogue': lambda: s.create_external_dialogue(a['mod'], a['name'], a['lines'], a.get('uses'), **w),
             'set_music': lambda: s.set_music(a['mod'], a['line_ids'], {'id': a['music'], 'loop': a.get('loop', True), 'volume': a.get('volume', 1)}
                                              if a.get('music') not in (None, '') else None, **w),
             'list_assets': lambda: s.assets(a['mod'], a['kind'], a.get('query'), a.get('person'), a.get('limit', 40)),
             'delete_lines': lambda: s.delete_lines(a['mod'], a['talk_ids'], **w),
             'update_event': lambda: s.update_event(a['mod'], a['event_id'], a['fields'], **w),
             'delete_event': lambda: s.delete_event(a['mod'], a['event_id'], **w),
-            'update_rows': lambda: s.update_rows(a['mod'], a['name'], a['rows'], **w),
+            'update_rows': lambda: s.update_rows(a['mod'], a['name'], a.get('rows'), **w, delete=a.get('delete')),
             'backup_mod': lambda: s.backup(a['mod']),
         }
         if name not in table:
@@ -354,16 +402,19 @@ def check(options):
 
 
 def write_install_prompt(directory, web_root):
-    """Keep an up-to-date install prompt next to the installed client, for users to hand to their AI."""
-    try:
-        target = Path(directory) / 'AI安装MCP提示词.txt'
-        text = launch_commands(web_root)['prompt'].replace('\n', '\r\n' if sys.platform == 'win32' else '\n')
-        data = text.encode('utf-8-sig')
-        if not target.exists() or target.read_bytes() != data:
-            target.write_bytes(data)
-        return target
-    except OSError:
-        return None
+    """Keep an up-to-date install prompt and usage guide next to the installed client, for users to hand to their AI."""
+    import ai_guide
+    written = None
+    for name, text in (('AI安装MCP提示词.txt', launch_commands(web_root)['prompt']), ('AI使用说明.md', ai_guide.GUIDE)):
+        try:
+            target = Path(directory) / name
+            data = text.replace('\n', '\r\n' if sys.platform == 'win32' else '\n').encode('utf-8-sig')
+            if not target.exists() or target.read_bytes() != data:
+                target.write_bytes(data)
+            written = written or target
+        except OSError:
+            pass
+    return written
 
 
 def main(argv=None):

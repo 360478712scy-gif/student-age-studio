@@ -35,24 +35,26 @@
 
 ## MCP 工具
 
+给 AI 看的完整使用说明见仓库根目录的 [AI使用说明.md](../AI使用说明.md)；连接后 AI 也可以调用 `read_guide` 读取同样的内容。
+
 | 工具 | 作用 |
 |---|---|
-| `list_mods` | 列出模组（编号、名称、是否只读） |
-| `mod_summary` | 模组概况与当前版本 |
+| `read_guide` | 读取 AI 使用说明 |
+| `list_mods` / `mod_summary` | 模组列表与概况 |
 | `list_events` / `get_event` | 列出事件；查看事件设置与按阅读顺序排列的对话、选项 |
 | `get_line` / `search_lines` | 查看一句对话；按文字搜索 |
 | `list_persons` | 人物与编号（旁白 = -1，主角 = 0） |
+| `list_assets` | 背景、音乐、音效、表情、CG、地点、事件类型、事件外对话用途 |
 | `list_commands` | 条件/效果模板，用于编写 condition 和 effect |
-| `list_assets` | 背景、背景音乐、音效编号，人物表情 |
-| `read_table` | 读取任意配置表 |
-| `create_event` | 新建事件及全部对话，可包含选项分支 |
-| `add_lines` | 在事件中插入对话 |
-| `edit_line` | 修改台词、说话人、显示名，以及登场位置、表情、退场、背景、音效 |
-| `set_music` | 给一段对话设置或清除背景音乐 |
-| `delete_lines` | 删除对话并自动接上前后 |
+| `create_event` / `add_lines` | 新建事件及全部对话；在事件中插入对话 |
+| `edit_line` | 修改台词、说话人、演出、CG、跳转、条件分支和本句效果 |
+| `set_options` | 增删改一句对话后的玩家选项 |
+| `delete_lines` / `set_music` | 删除对话并自动接上前后；设置一段对话的背景音乐 |
 | `update_event` / `delete_event` | 修改或删除事件 |
-| `update_rows` | 新增或修改配置表记录（对话与选项请用剧情工具） |
-| `backup_mod` | 立即完整备份 |
+| `describe_table` / `read_table` / `update_rows` | 其他配置表：字段说明、读取、新增修改删除 |
+| `list_external_dialogues` / `create_external_dialogue` | 事件外对话（送礼、闲聊、小游戏开场等） |
+| `import_asset` / `create_mod` / `backup_mod` | 导入图片音频、新建或复制模组、立即备份 |
+| `check_mod` / `json_file` | 检查断开的连接；最后手段直接读写 JSON |
 
 ### 对话写法
 

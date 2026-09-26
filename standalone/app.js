@@ -74,7 +74,39 @@ function faceName(face=S.face) {const cfg=S.doc && S.doc.faces[Number(S.previewR
 window.addEventListener('studio-premise-created',e=>{const v=e.detail;if(S.project?.id!==v.projectId||S.revision!==v.previousRevision)return;S.revision=v.revision;S.premises[v.premise.id]=clone(v.premise);for(const entry of [...S.undo,...S.redo]){entry.premises??={};entry.premises[v.premise.id]=clone(v.premise);}if(S.saved){const saved=IndexedTalks.parse(S.saved);saved[4]??={};saved[4][v.premise.id]=clone(v.premise);S.saved=IndexedTalks.stringify(saved);}updateDirty();});
 function currentSignature() {return IndexedTalks.stringify([S.doc,S.order,S.deleted,S.replacements,S.premises,Object.fromEntries(Object.entries(S.branchFolders).map(([key,{collapsed,...folder}])=>[key,folder])),pinnedSnapshot()]);}
 function pinnedSnapshot(){return {talks:[...S.pinned.talks].sort((a,b)=>a-b),options:[...S.pinned.options].sort((a,b)=>a-b),events:[...S.pinned.events].sort((a,b)=>a-b)};}
-function snapshot(label) {return {label,externalFolder:externalSession?.folder,doc:clone(S.doc),order:S.order.slice(),premises:clone(S.premises),branchFolders:clone(S.branchFolders),activeFolder:S.activeFolder,selected:S.selected,event:S.event,deleted:S.deleted.slice(),replacements:clone(S.replacements),pinnedIds:pinnedSnapshot(),idMappings:clone(S.idMappings||{}),localIds:clone(S.localIds)};}
+// Undo keeps up to 60 snapshots. On large mods the ownership map, local-id lists, reading order and
+// person table are megabytes each, and one edit changes only a few entries of them. A snapshot keeps a
+// shared base copy plus just the entries (or the array segment) that differ; restoring rebuilds a copy.
+const snapshotBases=new Map(),DELTA_LIMIT=4000;
+function sameValue(a,b){if(a===b)return true;if(!a||!b||typeof a!=='object'||typeof b!=='object'||Array.isArray(a)!==Array.isArray(b))return false;
+ if(Array.isArray(a)){if(a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(!sameValue(a[i],b[i]))return false;return true;}
+ const keys=Object.keys(a);if(keys.length!==Object.keys(b).length)return false;for(const k of keys)if(!Object.hasOwn(b,k)||!sameValue(a[k],b[k]))return false;return true;}
+function plainValue(value){return !!value&&typeof value==='object'&&!IndexedTalks.stats(value);}
+function rebase(key,value){const base=Array.isArray(value)?value.slice():clone(value);snapshotBases.set(key,base);return base;}
+function objectDelta(key,value){
+ if(!plainValue(value)||Array.isArray(value))return {whole:clone(value)};
+ let base=snapshotBases.get(key);if(!base||Array.isArray(base))return {base:rebase(key,value),changed:{},removed:[]};
+ const changed={},removed=[];let count=0;
+ for(const k of Object.keys(value))if(!Object.hasOwn(base,k)||!sameValue(value[k],base[k])){changed[k]=clone(value[k]);if(++count>DELTA_LIMIT)break;}
+ if(count<=DELTA_LIMIT)for(const k of Object.keys(base))if(!Object.hasOwn(value,k)){removed.push(k);if(++count>DELTA_LIMIT)break;}
+ return count>DELTA_LIMIT?{base:rebase(key,value),changed:{},removed:[]}:{base,changed,removed};
+}
+function objectRestore(d){if(Object.hasOwn(d,'whole'))return clone(d.whole);const out=clone(d.base);for(const k of d.removed)delete out[k];for(const [k,v]of Object.entries(d.changed))out[k]=clone(v);return out;}
+function arrayDelta(key,value){
+ if(!Array.isArray(value)||value.some(v=>v&&typeof v==='object'))return {whole:clone(value)};
+ let base=snapshotBases.get(key);if(!Array.isArray(base))base=rebase(key,value);
+ const max=Math.min(base.length,value.length);let head=0;while(head<max&&base[head]===value[head])head++;
+ let tail=0;while(tail<max-head&&base[base.length-1-tail]===value[value.length-1-tail])tail++;
+ if(value.length-head-tail>DELTA_LIMIT||base.length-head-tail>DELTA_LIMIT){base=rebase(key,value);head=base.length;tail=0;}
+ return {base,head,tail,middle:value.slice(head,value.length-tail)};
+}
+function arrayRestore(d){if(Object.hasOwn(d,'whole'))return clone(d.whole);return d.base.slice(0,d.head).concat(d.middle,d.base.slice(d.base.length-d.tail));}
+function idsDelta(value){if(!plainValue(value)||Array.isArray(value))return {whole:clone(value)};return {lists:Object.fromEntries(Object.entries(value).map(([k,v])=>[k,arrayDelta('localIds.'+k,v)]))};}
+function idsRestore(d){if(Object.hasOwn(d,'whole'))return clone(d.whole);return Object.fromEntries(Object.entries(d.lists).map(([k,v])=>[k,arrayRestore(v)]));}
+// entry.doc keeps its usual shape (history scans read its tables); only the ownership map is a delta.
+function snapshotDoc(){if(!S.doc)return S.doc;const rest={...S.doc};delete rest.talkOwners;return clone(rest);}
+function restoredDoc(entry){const doc=entry.doc;if(entry.talkOwners)doc.talkOwners=objectRestore(entry.talkOwners);return doc;}
+function snapshot(label) {return {label,externalFolder:externalSession?.folder,doc:snapshotDoc(),talkOwners:S.doc&&Object.hasOwn(S.doc,'talkOwners')?objectDelta('doc.talkOwners',S.doc.talkOwners):null,order:arrayDelta('order',S.order),premises:clone(S.premises),branchFolders:clone(S.branchFolders),activeFolder:S.activeFolder,selected:S.selected,event:S.event,deleted:S.deleted.slice(),replacements:clone(S.replacements),pinnedIds:pinnedSnapshot(),idMappings:clone(S.idMappings||{}),localIds:idsDelta(S.localIds)};}
 function history(label, key) {
   invalidateStageMemo();
   stopLinePlayback(false);
@@ -125,7 +157,7 @@ function updateTextDirty(){
  textDirtyTimer=setTimeout(()=>{textDirtyTimer=null;updateDirty();},600);
 }
 function updateDirty() {clearTimeout(textDirtyTimer);textDirtyTimer=null;invalidateStageMemo();S.dirty=S.doc !== null && (currentSignature() !== S.saved||Object.values(S.idMappings||{}).some(m=>Object.keys(m).length));renderChrome();}
-function restore(entry) {if(externalSession&&entry.externalFolder!==undefined)externalSession.folder=entry.externalFolder;S.doc=entry.doc;S.order=entry.order;S.premises=entry.premises||{};S.branchFolders=entry.branchFolders||{};S.activeFolder=entry.activeFolder||null;S.selected=entry.selected;S.event=entry.event;S.deleted=entry.deleted;S.replacements=entry.replacements;S.pinned=Object.fromEntries(['talks','options','events'].map(k=>[k,new Set(entry.pinnedIds?.[k]||[])]));S.idMappings=clone(entry.idMappings||{});if(entry.localIds)S.localIds=clone(entry.localIds);clearTimeout(renumberTimer);S.coalesce=null;reconcileStoryClaims();updateDirty();render();}
+function restore(entry) {if(externalSession&&entry.externalFolder!==undefined)externalSession.folder=entry.externalFolder;S.doc=restoredDoc(entry);S.order=arrayRestore(entry.order);S.premises=entry.premises||{};S.branchFolders=entry.branchFolders||{};S.activeFolder=entry.activeFolder||null;S.selected=entry.selected;S.event=entry.event;S.deleted=entry.deleted;S.replacements=entry.replacements;S.pinned=Object.fromEntries(['talks','options','events'].map(k=>[k,new Set(entry.pinnedIds?.[k]||[])]));S.idMappings=clone(entry.idMappings||{});if(entry.localIds)S.localIds=idsRestore(entry.localIds);clearTimeout(renumberTimer);S.coalesce=null;reconcileStoryClaims();updateDirty();render();}
 function undo() {if(!S.undo.length)return;const e=S.undo.pop();S.redo.push(snapshot(e.label));restore(e);toast('已撤销：'+e.label);}
 function redo() {if(!S.redo.length)return;const e=S.redo.pop();S.undo.push(snapshot(e.label));restore(e);toast('已重做：'+e.label);}
 function links(t) {

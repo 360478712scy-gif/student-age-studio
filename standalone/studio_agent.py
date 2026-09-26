@@ -351,6 +351,11 @@ class Studio:
             view['background'] = {'id': bg, 'name': asset_labels.asset_name(doc.get('backgrounds', {}).get(str(bg), {}), 'background') if bg > 0 else '保留人物的黑场' if bg == -2 else '黑场'}
         if row.get('roles'):
             view['stage'] = self._describe_actions(doc, row['roles'])
+        screen = row.get('screenEffect') or []
+        if screen and int(screen[0]) == 4015 and len(screen) > 1:
+            view['cg'] = {'id': screen[1], 'name': (doc.get('cgs', {}).get(str(screen[1])) or {}).get('name')}
+        elif screen and int(screen[0]) == 4017:
+            view['cg'] = 'end'
         cues = doc.get('audioCues') or {}
         if cues.get('sfx', {}).get(str(tid)):
             view['sound'] = [c.get('audioId') for c in cues['sfx'][str(tid)]]
@@ -711,8 +716,10 @@ class Studio:
                           summary={'eventId': event_id, 'lineIds': order})
 
     def edit_line(self, mod, talk_id, text=None, speaker=None, display_name=None, confirm=None, dry_run=False, *,
-                  background=None, enter=None, expression=None, exit=None, sound=None, actions=None):
-        """Change a line's words or speaker, and its staging: background, entry position, expression, exits, sound."""
+                  background=None, enter=None, expression=None, exit=None, sound=None, actions=None,
+                  goto=None, effect=None, cg=None, check=None, next_if_failed=None):
+        """Change a line's words, speaker, staging (background, entry, expression, exits, sound, CG),
+        where it leads (goto / a check with next_if_failed) and the effect it runs."""
         project, doc = self._load(mod)
         talk_id = _int(talk_id, '对话编号')
         if str(talk_id) not in doc['talks']:
@@ -747,6 +754,20 @@ class Studio:
             if roles and who >= 0 and who not in present and not any(a[0] == who for a in roles):
                 roles.insert(0, [who, 1001])
             row['roles'] = roles
+        if cg is not None:
+            row['screenEffect'] = self._cg(doc, cg)
+        if effect is not None:
+            row['effect'] = self._commands(effect, '效果')
+        if goto is not None:
+            if _ids(row.get('option')):
+                raise AgentError('这句后面是玩家选项，跳转由选项决定；请用 set_options 修改。')
+            row['nextTalk'] = self._targets(doc, goto)
+        if check is not None:
+            row['check'] = self._commands(check, '判定条件')
+        if next_if_failed is not None:
+            row['nextTalk2'] = self._targets(doc, next_if_failed)
+        if row.get('check') and not _ids(row.get('nextTalk2')):
+            raise AgentError('设置了判定条件时，请同时用 next_if_failed 指定判定失败后跳到哪句。')
         if sound is not None:
             cues = doc.setdefault('audioCues', {'version': 1, 'sfx': {}, 'bgm': []})
             cues.setdefault('sfx', {})
@@ -758,6 +779,92 @@ class Studio:
                 cues['sfx'].pop(str(talk_id), None)
         return self._save(project, doc, before, talk_rows={str(talk_id): row}, confirm=confirm, dry_run=dry_run,
                           summary={'lineId': talk_id, **({'stage': self._describe_actions(doc, row.get('roles'))} if staged else {})})
+
+    def _targets(self, doc, value):
+        values = value if isinstance(value, list) else [] if value in (0, None, '', 'none', '无', 'end', '结束') else [value]
+        out = [_int(v, '跳转对话') for v in values]
+        for ident in out:
+            if str(ident) not in doc['talks']:
+                raise AgentError(f'跳转目标对话 {ident} 不存在。')
+        return out[:1]
+
+    def _commands(self, value, label):
+        if not isinstance(value, list) or not all(isinstance(r, list) and r and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in r) for r in value):
+            raise AgentError(f'{label}应为数字数组的列表，如 [[4, 1, 520, 30]]。可用 list_commands 查模板。')
+        return [list(r) for r in value]
+
+    def _cg(self, doc, value):
+        """A CG shown from this line (screen effect 4015), 'end' to close it (4017), or 'none'."""
+        if value in ('end', '结束', '关闭'):
+            return [4017]
+        if value in (0, '', 'none', '无'):
+            return []
+        cgs = doc.get('cgs', {})
+        if isinstance(value, int) or isinstance(value, str) and value.strip().isdigit():
+            if str(int(value)) not in cgs:
+                raise AgentError(f'找不到 CG {value}。可用 list_assets(kind="cgs") 查看。')
+            return [4015, int(value)]
+        matches = [k for k, r in cgs.items() if (r or {}).get('name') == str(value).strip()]
+        if len(matches) != 1:
+            raise AgentError(f'找不到唯一名为「{value}」的 CG，请用编号。')
+        return [4015, int(matches[0])]
+
+    def set_options(self, mod, talk_id, options, rejoin_to=None, confirm=None, dry_run=False):
+        """Replace the player options after a line. Each option keeps its id when given, and leads to
+        an existing line (goto) or to new lines (lines) that continue at rejoin_to."""
+        project, doc = self._load(mod)
+        talk_id = _int(talk_id, '对话编号')
+        if str(talk_id) not in doc['talks']:
+            raise AgentError(f'找不到对话 {talk_id}。')
+        if not isinstance(options, list):
+            raise AgentError('options 应为选项数组；传空数组表示去掉选项。')
+        before = self._snapshot(doc)
+        row = copy.deepcopy(doc['talks'][str(talk_id)])
+        owner = next(iter(doc.get('talkOwners', {}).get(str(talk_id), [])), None)
+        old_ids = _ids(row.get('option'))
+        continuation = rejoin_to if rejoin_to is not None else (_ids(row.get('nextTalk')) or [None])[0]
+        continuation = self._targets(doc, continuation)[0] if continuation not in (None, '', 0) else None
+        talks, order_new, kept = {}, [], []
+        block = owner or self._new_event_id(project, doc)
+        fresh = [o for o in options if isinstance(o, dict) and not o.get('id')]
+        new_ids = self._free_ids(doc, 'options', block, 100, len(fresh)) if fresh else []
+        for option in options:
+            if not isinstance(option, dict) or not str(option.get('text', '')).strip():
+                raise AgentError('每个选项需要 text（选项文字），以及 goto（跳到已有对话）或 lines（新写的对话）。')
+            oid = _int(option['id'], '选项编号') if option.get('id') else new_ids.pop(0)
+            if option.get('id') and oid not in old_ids:
+                raise AgentError(f'选项 {oid} 不属于这句对话。')
+            current = copy.deepcopy(doc.get('options', {}).get(str(oid), {}))
+            if option.get('lines'):
+                first, rows, sub_options, order, cues = self._build_lines(doc, block, option['lines'], then=continuation,
+                                                                       stage=self._stage_before(doc, owner, talk_id) if owner else None, project_id=project['id'])
+                doc['options'].update(sub_options)
+                self._apply_cues(doc, order, cues)
+                talks.update(rows); order_new += order
+                target = [first]
+            elif option.get('goto') not in (None, ''):
+                target = self._targets(doc, option['goto'])
+            elif current:
+                target = _ids(current.get('talkId'))
+            else:
+                target = [continuation] if continuation else []
+            current.update(id=oid, content=str(option['text']).strip(), talkId=target)
+            for key, field, label in (('condition', 'precondition', '选项出现条件'), ('effect', 'effect', '选项效果')):
+                if key in option:
+                    current[field] = self._commands(option[key] or [], label)
+            for field, default in (('talkId2', []), ('effect', []), ('effect2', []), ('check', []), ('precondition', [])):
+                current.setdefault(field, default)
+            doc['options'][str(oid)] = current
+            kept.append(oid)
+        for oid in old_ids:
+            if oid not in kept and not any(oid in _ids(t.get('option')) for k, t in doc['talks'].items() if k != str(talk_id)):
+                doc['options'].pop(str(oid), None)
+        row['option'] = kept
+        row['nextTalk'] = [] if kept else ([continuation] if continuation else [])
+        current_order = [int(v) for v in doc.get('order', [])]
+        at = current_order.index(talk_id) + 1 if talk_id in current_order else len(current_order)
+        return self._save(project, doc, before, order=current_order[:at] + order_new + current_order[at:], talk_rows={str(talk_id): row, **talks},
+                          confirm=confirm, dry_run=dry_run, summary={'lineId': talk_id, 'optionIds': kept, 'newLineIds': order_new})
 
     def set_music(self, mod, line_ids, music=None, confirm=None, dry_run=False):
         """Play background music over these lines (replacing their current range), or clear it with music=None."""
@@ -821,7 +928,26 @@ class Studio:
             items += [{'id': n, 'name': name} for n, name in sorted(own.items()) if n >= len(FACES)]
             return {'kind': kind, 'person': ident, 'items': [i for i in items if match(i['id'], i['name'])],
                     'note': '表情编号对应人物模型里的表情槽，不同人物实际拥有的表情不同；不确定时优先用 0–10 的常用表情，并在编辑器预览中确认。'}
-        raise AgentError('kind 只能是 backgrounds、music、sounds 或 expressions。')
+        if kind == 'cgs':
+            rows = [{'id': int(k), 'name': asset_labels.asset_name(r, 'cg')} for k, r in doc.get('cgs', {}).items() if str(k).isdigit() and isinstance(r, dict)]
+            rows = [r for r in rows if match(r['id'], r['name'])]
+            rows.sort(key=lambda r: r['id'])
+            return {'kind': kind, 'total': len(rows), 'items': rows[:limit], 'note': '在对话上用 edit_line(cg=编号) 显示，cg="end" 结束。'}
+        if kind == 'maps':
+            maps = self._call(self.store.table, project['id'], 'MapCfg').get('rows', {})
+            rows = [{'id': int(k), 'name': (r or {}).get('name') or ''} for k, r in maps.items() if str(k).isdigit()]
+            rows = [r for r in rows if match(r['id'], r['name'])]
+            rows.sort(key=lambda r: r['id'])
+            return {'kind': kind, 'total': len(rows), 'items': rows[:limit], 'note': '事件的 map_id / mapId 填这里的编号，0 为不限地点。'}
+        if kind == 'event_types':
+            import json as _json
+            text = (Path(__file__).with_name('event-types.js')).read_text(encoding='utf-8')
+            types, _end = _json.JSONDecoder().raw_decode(text, text.index('{'))
+            rows = [{'id': int(k), 'name': v.get('name')} for k, v in types.items() if match(k, v.get('name'))]
+            return {'kind': kind, 'items': rows, 'note': '常用：1 可跳过的普通事件、2 社交触发、20 关系任务、22 恋爱话题、110 送礼、520 表白、522 恋爱社交。'}
+        if kind == 'dialogue_uses':
+            return {'kind': kind, 'items': self.dialogue_uses()}
+        raise AgentError('kind 只能是 backgrounds、music、sounds、expressions、cgs、maps、event_types 或 dialogue_uses。')
 
     def delete_lines(self, mod, talk_ids, confirm=None, dry_run=False):
         """Delete lines and reconnect the chain around them, so the event keeps playing."""
@@ -886,15 +1012,21 @@ class Studio:
         del doc['events'][str(event_id)]
         return self._save(project, doc, before, confirm=confirm, dry_run=dry_run, summary={'deletedEvent': event_id})
 
-    def update_rows(self, mod, name, rows, confirm=None, dry_run=False):
-        """Upsert rows of any workshop table (items, persons' growth, shop…) through the table editor's save."""
+    def update_rows(self, mod, name, rows=None, confirm=None, dry_run=False, delete=None):
+        """Upsert rows of any workshop table (items, persons' growth, shop…) through the table editor's save,
+        and delete this mod's own rows. Phone messages go through the message editor's own checks."""
         project = self._project(mod)
-        if not isinstance(rows, dict) or not rows:
-            raise AgentError('rows 应为 {编号: 记录} 对象。')
+        rows = rows or {}
+        doomed = {str(_int(v, '要删除的编号')) for v in (delete or [])}
+        if not isinstance(rows, dict) or not rows and not doomed:
+            raise AgentError('rows 应为 {编号: 记录} 对象；删除请用 delete 传编号列表。')
         data = self._call(self.store.table, project['id'], name)
         current = data.get('rows', {})
         local = {str(v) for v in data.get('localIds', [])}
-        merged = {k: v for k, v in current.items() if k in local}
+        missing = doomed - local
+        if missing:
+            raise AgentError('只能删除本模组自己的记录：' + '、'.join(sorted(missing)) + ' 不是本模组新增或修改的记录。')
+        merged = {k: v for k, v in current.items() if k in local and k not in doomed}
         for key, row in rows.items():
             if not isinstance(row, dict):
                 raise AgentError(f'记录 {key} 应为对象。')
@@ -902,19 +1034,218 @@ class Studio:
             base.update(row)
             base['id'] = int(key) if str(key).isdigit() else key
             merged[str(key)] = base
-        payload = {'projectId': project['id'], 'name': data.get('name', name), 'revision': data.get('revision'), 'rows': merged, 'scope': 'local'}
+        table = data.get('name', name)
+        payload = {'projectId': project['id'], 'name': table, 'revision': data.get('revision'), 'rows': merged, 'scope': 'local'}
         if confirm:
             payload['_confirmedSaveWarnings'] = list(confirm)
         if dry_run:
-            return {'dryRun': True, 'table': payload['name'], 'rows': sorted(rows)}
+            return {'dryRun': True, 'table': table, 'rows': sorted(rows), 'deleted': sorted(doomed)}
+        if table == 'PhoneMsgCfg':
+            import messages
+            editor = server.read_json(server.safe_path(self._call(self.store.project, project['id']).path, messages.STATE), {'titles': {}, 'previewDelays': {}})
+            payload = {'projectId': project['id'], 'revision': data.get('revision'), 'rows': merged, 'editor': editor,
+                       **({'_confirmedSaveWarnings': list(confirm)} if confirm else {})}
+            save = lambda value: messages.save(self.store, value, server)
+        else:
+            save = self.store.table_save
         try:
-            result = save_review.perform(self.store.table_save, payload, server.ApiError)
+            result = save_review.perform(save, payload, server.ApiError)
         except server.ApiError as error:
             if error.code == 'save_warnings':
                 raise AgentError('保存前需要确认以下警告；确认无误后，把 warnings 原样传回 confirm 再执行一次。',
                                  warnings=getattr(error, 'warnings', []), code='save_warnings') from None
             raise AgentError(error.message, code=error.code) from None
-        return {'saved': True, 'table': payload['name'], 'rows': sorted(rows), 'revision': result.get('revision')}
+        return {'saved': True, 'table': table, 'rows': sorted(rows), 'deleted': sorted(doomed), 'revision': result.get('revision'),
+                'warnings': result.get('warnings', [])}
+
+    def describe_table(self, mod, name=None):
+        """Without a name: the configuration tables the game reads, with Chinese labels.
+        With a name: every field's meaning, type, default and the table its ids refer to."""
+        catalog = self.store.catalog()
+        schemas = catalog.get('schemas', {}) if isinstance(catalog.get('schemas'), dict) else {}
+        if not name:
+            rows = [{'name': k, 'label': v.get('label'), 'category': v.get('category')} for k, v in schemas.items() if isinstance(v, dict)]
+            rows.sort(key=lambda r: (str(r['category'] or ''), r['name']))
+            return {'tables': rows, 'note': '对话、选项、事件请用剧情工具；其他表用 read_table 读、update_rows 改。'}
+        project = self._project(mod)
+        data = self._call(self.store.table, project['id'], name)
+        schema = data.get('schema') or {}
+        fields = [{k: f.get(k) for k in ('name', 'label', 'type', 'description', 'default', 'required', 'range', 'editorType') if f.get(k) not in (None, '', False)}
+                  for f in schema.get('fields', []) if isinstance(f, dict) and not f.get('hidden')]
+        return {'table': data.get('name', name), 'label': schema.get('label'), 'category': schema.get('category'), 'fields': fields,
+                'ownRows': len(data.get('localIds', [])), 'totalRows': len(data.get('rows', {})),
+                'note': 'editorType 为 Condition/Effect 的字段按 list_commands 的模板填写；range 表示该字段填另一张表的编号。'}
+
+    def create_mod(self, name, copy_from=None):
+        """A new empty local mod, or a local copy of an existing one (subscribed mods included)."""
+        if not str(name or '').strip():
+            raise AgentError('请填写模组名称。')
+        if copy_from:
+            source = self._project(copy_from)
+            created = self._call(self.store.duplicate, source['id'], str(name).strip())
+        else:
+            created = self._call(self.store.create, str(name).strip())
+        return {'created': True, 'mod': {'id': created.get('id'), 'name': created.get('name')}}
+
+    def import_asset(self, mod, kind, file_path, name=None, person=None, face=0, cloth=0, grade=1):
+        """Import a local image or audio file into the mod: backgrounds, CGs, character portraits, music, sounds."""
+        import base64
+        project = self._project(mod)
+        path = Path(str(file_path or '')).expanduser()
+        if not path.is_file():
+            raise AgentError(f'找不到文件：{file_path}')
+        data = base64.b64encode(path.read_bytes()).decode('ascii')
+        revision = self._call(self.store.revision, self._call(self.store.project, project['id']))
+        label = str(name or path.stem)
+        if kind in ('music', 'sound'):
+            result = self._call(self.store.audio_import, {'projectId': project['id'], 'revision': revision, 'data': data, 'fileName': path.name,
+                                                          'name': label, 'type': 1 if kind == 'music' else 2})
+            return {'imported': True, 'kind': kind, 'id': result.get('id'), 'reused': bool(result.get('reused'))}
+        if kind not in ('background', 'cg', 'portrait'):
+            raise AgentError('kind 只能是 background、cg、portrait、music 或 sound。')
+        payload = {'projectId': project['id'], 'revision': revision, 'data': data, 'kind': kind, 'name': label}
+        if kind == 'portrait':
+            doc = self.store.load(project['id'])
+            payload.update(personId=self._speaker(doc, person) if person not in (None, '') else None, faceId=int(face or 0),
+                           cloth=int(cloth or 0), grade=int(grade or 1))
+        result = self._call(self.store.import_image, payload)
+        return {'imported': True, 'kind': kind, 'id': result.get('id'), **({'personId': result['personId']} if 'personId' in result else {}),
+                'size': [result.get('width'), result.get('height')]}
+
+    def check_mod(self, mod):
+        """JSON syntax problems and story links that lead nowhere."""
+        import config_doctor
+        project, doc = self._load(mod)
+        report, _changes = self._call(config_doctor.inspect, self.store, project['id'], server)
+        issues = [{'file': i.get('path'), 'problem': i.get('message')} for i in report.get('issues', [])]
+        talks, options, local = doc['talks'], doc.get('options', {}), {str(v) for v in doc.get('localIds', {}).get('talks', [])}
+        for key in local:
+            row = talks.get(key) or {}
+            for field in ('nextTalk', 'nextTalk2'):
+                for target in _ids(row.get(field)):
+                    if str(target) not in talks:
+                        issues.append({'line': int(key), 'problem': f'{field} 指向不存在的对话 {target}'})
+            for oid in _ids(row.get('option')):
+                if str(oid) not in options:
+                    issues.append({'line': int(key), 'problem': f'选项 {oid} 不存在'})
+                else:
+                    for target in _ids(options[str(oid)].get('talkId')):
+                        if str(target) not in talks:
+                            issues.append({'line': int(key), 'problem': f'选项 {oid} 跳到不存在的对话 {target}'})
+            for speaker in _ids(row.get('roleIds')):
+                if speaker > 0 and str(speaker) not in doc.get('persons', {}):
+                    issues.append({'line': int(key), 'problem': f'说话人 {speaker} 不存在'})
+        owners = doc.get('talkOwners', {})
+        try:
+            import external_dialogues
+            filed = {str(i) for f in external_dialogues.load(self.store, project['id'], server)['folders'].values() for i in f.get('talkIds', [])}
+        except server.ApiError:
+            filed = set()
+        orphans = sorted(int(k) for k in local if not owners.get(k) and k not in filed and str(k) in talks)
+        if orphans:
+            issues.append({'lines': orphans[:50], 'problem': f'{len(orphans)} 句对话不属于任何事件或事件外对话夹，游戏里不会播放（可能是删掉选项后留下的）'})
+        for key in {str(v) for v in doc.get('localIds', {}).get('events', [])}:
+            event = doc['events'].get(key) or {}
+            if not _ids(event.get('talkId')):
+                issues.append({'event': int(key), 'problem': '事件没有首句对话'})
+            for target in _ids(event.get('talkId')):
+                if str(target) not in talks:
+                    issues.append({'event': int(key), 'problem': f'首句对话 {target} 不存在'})
+        return {'ok': not issues and not doc.get('warnings'), 'issues': issues[:200], 'issueCount': len(issues), 'loadWarnings': doc.get('warnings', [])}
+
+    def json_file(self, mod, path=None, text=None, confirm_overwrite=False):
+        """Last resort for anything the other tools do not cover: list, read, or replace one of the mod's JSON files."""
+        project = self._project(mod)
+        if not path:
+            return self._call(self.store.json_files, project['id'])
+        if text is None:
+            source = self._call(self.store.json_source, {'projectId': project['id'], 'path': path})
+            return {'path': source['path'], 'text': source['text'], 'revision': source['revision'], 'valid': source['analysis'].get('valid')}
+        if not confirm_overwrite:
+            raise AgentError('写入会整体替换这个文件。确认内容完整无误后，传 confirm_overwrite=true 再执行。', code='confirm_required')
+        source = self._call(self.store.json_source, {'projectId': project['id'], 'path': path})
+        result = self._call(self.store.json_save, {'projectId': project['id'], 'path': path, 'text': str(text), 'revision': source['revision'], 'bom': source.get('bom')})
+        return {'saved': True, 'path': result['path'], 'valid': result['analysis'].get('valid')}
+
+    # ---------- event-less dialogue folders (gifts, idle chats, minigame openings, CG memories…) ----------
+    def external_dialogues(self, mod):
+        import external_dialogues
+        project = self._project(mod)
+        data = self._call(external_dialogues.load, self.store, project['id'], server)
+        folders = []
+        for key, folder in data['folders'].items():
+            first = next(iter(folder.get('talkIds', [])), None)
+            folders.append({'folder': key, 'name': folder.get('name'), 'lines': len(folder.get('talkIds', [])), 'firstLine': first,
+                            'firstText': (data['talks'].get(str(first)) or {}).get('content', '')[:60] if first else '',
+                            'uses': [{'kind': u.get('kind'), 'recordId': u.get('recordId'), **{k: u[k] for k in ('npc', 'item', 'level', 'answer', 'gender') if k in u}}
+                                     for u in folder.get('uses', [])]})
+        return {'folders': folders, 'unfiledLines': len(set(data['talks']) - {str(i) for f in data['folders'].values() for i in f.get('talkIds', [])})}
+
+    def dialogue_uses(self):
+        import external_usages
+        return [{'kind': d['kind'], 'label': d['label'], 'help': d.get('help'), 'needs': self._use_needs(d)}
+                for d in external_usages.DEFINITIONS if not d.get('disabled')]
+
+    @staticmethod
+    def _use_needs(d):
+        if d['shape'] == 'gift':
+            return 'npc（收礼人）、item（礼物编号）、giftMode（0 交付礼物并播放，1 仅播放）'
+        if d['shape'] == 'mini':
+            return 'npc（已绑定小游戏的人物）、level（1–5 关）'
+        if d['shape'] == 'answer':
+            return 'recordId（输入题编号）、answer（精确匹配的答案）'
+        if d.get('create'):
+            return 'recordId（已有配置编号，不填则新建）；params 可写：' + '、'.join(d['fields'])
+        return 'recordId（已有配置编号）' + ('；params 可写：' + '、'.join(d['fields']) if d['fields'] else '')
+
+    def create_external_dialogue(self, mod, name, lines, uses=None, confirm=None, dry_run=False):
+        """A dialogue folder outside events, optionally bound to where the game plays it (a gift, an idle chat…)."""
+        import external_dialogues, external_usages
+        project, doc = self._load(mod)
+        if project.get('readOnly'):
+            raise AgentError('订阅模组只读，不能修改。')
+        if not str(name or '').strip():
+            raise AgentError('请填写对话夹名称。')
+        data = self._call(external_dialogues.load, self.store, project['id'], server)
+        block = self._new_event_id(project, doc)
+        first, talks, options, order, cues = self._build_lines(doc, block, lines, project_id=project['id'])
+        if options:
+            raise AgentError('事件外对话暂不支持选项分支，请写成连续对话。')
+        folder_id = 'ai-' + uuid.uuid4().hex[:12]
+        bound = []
+        for use in uses or []:
+            if not isinstance(use, dict) or use.get('kind') not in external_usages.KINDS or external_usages.KINDS[use['kind']].get('disabled'):
+                raise AgentError('用途 kind 无效。可用 list_assets(kind="dialogue_uses") 查看。')
+            item = {'id': uuid.uuid4().hex, 'kind': use['kind'], 'entryId': first, 'gender': use.get('gender', 'both')}
+            for key in ('recordId', 'item', 'level', 'giftMode', 'answer'):
+                if use.get(key) not in (None, ''):
+                    item[key] = use[key]
+            if use.get('npc') not in (None, ''):
+                item['npc'] = self._speaker(doc, use['npc'])
+            if use.get('params'):
+                item['params'] = use['params']
+            bound.append(item)
+        folders = {**data['folders'], folder_id: {'name': str(name).strip(), 'talkIds': order, 'uses': bound, 'sequence': False}}
+        payload = {'projectId': project['id'], 'revision': data['revision'], 'talks': {**data['talks'], **talks}, 'folders': folders}
+        if confirm:
+            payload['_confirmedSaveWarnings'] = list(confirm)
+        if dry_run:
+            return {'dryRun': True, 'folder': folder_id, 'lineIds': order, 'uses': [u['kind'] for u in bound]}
+        try:
+            result = save_review.perform(lambda value: external_dialogues.save(self.store, value, server), payload, server.ApiError)
+        except server.ApiError as error:
+            if error.code == 'save_warnings':
+                raise AgentError('保存前需要确认以下警告；确认无误后，把 warnings 原样传回 confirm 再执行一次。',
+                                 warnings=getattr(error, 'warnings', []), code='save_warnings') from None
+            raise AgentError(error.message, code=error.code) from None
+        if cues['sfx'] or cues['music']:
+            project2, doc2 = self._load(mod)
+            before = self._snapshot(doc2)
+            self._apply_cues(doc2, order, cues)
+            self._save(project2, doc2, before)
+        saved = result['folders'].get(folder_id, {})
+        return {'saved': True, 'folder': folder_id, 'lineIds': order,
+                'uses': [{'kind': u.get('kind'), 'recordId': u.get('recordId')} for u in saved.get('uses', [])], 'warnings': result.get('warnings', [])}
 
     def backup(self, mod):
         project = self._project(mod)
