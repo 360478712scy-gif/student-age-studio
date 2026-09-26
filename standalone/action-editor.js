@@ -1,9 +1,11 @@
 'use strict';
 (() => {
 const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const actions={1001:'滑动登场',1002:'渐显登场',2001:'滑动退场',2002:'渐隐退场',3000:'切换表情',3001:'跳跃',3002:'摇晃',3004:'水平位移',3008:'竖直位移',3005:'有动画翻转',3007:'无动画翻转',3006:'更换服装',3009:'气泡表情'};
+const actions={1001:'滑动登场',1002:'渐显登场',2001:'滑动退场',2002:'渐隐退场',3000:'切换表情',3001:'跳跃',3002:'摇晃',3004:'水平位移',3008:'竖直位移',3005:'有动画翻转',3007:'无动画翻转',3006:'更换服装',3009:'气泡表情',3012:'黑影',3013:'取消黑影'};
 const presets={};
-const names={...actions,1003:'从下方登场',3003:'强调放大',3004:'拖动位移（水平）',3007:'无动画翻转',3008:'拖动位移（垂直）',3009:'气泡表情',3012:'剪影',3013:'取消剪影',3014:'更换发型'};
+const names={...actions,1003:'从下方登场',3003:'强调放大',3004:'拖动位移（水平）',3007:'无动画翻转',3008:'拖动位移（垂直）',3009:'气泡表情',3012:'黑影',3013:'取消黑影',3014:'更换发型'};
+// UP 非官方补丁把 3003 的参数当作倍数；只在插件编辑模式里提供，原版固定放大到 1.1 倍。
+const pluginEditing=()=>!!window.STUDIO_WORKSHOP_NAV?.pluginEditing?.();
 // Positions are native command argument indexes, excluding role and action IDs.
 const delays={1001:2,1002:2,1003:2,2001:1,2002:0,3001:1,3002:1,3003:1,3004:1,3005:0,3007:0,3008:1,3009:1};
 const glyphs=()=>window.StudentAgeSocialMedia?.glyphs||[];
@@ -19,8 +21,8 @@ function open(options){
  let code=3001,preset=null,selected=null,draft=[],timer=null,frame=null,closed=false,playing=false;
  const atlas=(()=>{try{return '/api/social-emojis?token='+encodeURIComponent(new URL(options.assetUrl(''),location.href).searchParams.get('token')||'');}catch{return '';}})();
  const context=()=>options.context(),existing=()=>selected===null?null:context()?.row.roles?.[selected],role=()=>Number(existing()?.[0]??initial.role),args=()=>existing()?.slice(2)||draft;
- const status=text=>q('[role=status]').textContent=text,name=id=>context()?.doc.persons?.[id]?.name||(Number(id)===0?'白雨':'人物 '+id),actionName=c=>names[c]||'扩展动作';
- function defaults(value){const c=context(),actor=c.after.roles[initial.role]||c.before.roles[initial.role]||{};return ({1001:[1,actor.axis||3,0],1002:[1,actor.axis||3,0],2001:[actor.x<0?1:2,0],2002:[0],3000:[actor.face||0],3001:[1,0,1],3002:[.4,0],3005:[0],3007:[0],3006:[actor.cloth||0],3004:[0,0],3008:[0,0,0],3009:[0,0]})[value]?.slice()||[];}
+ const status=text=>q('[role=status]').textContent=text,name=id=>context()?.doc.persons?.[id]?.name||(Number(id)===0?'白雨':'人物 '+id),actionName=c=>c===3003&&pluginEditing()?'调整大小（UP）':names[c]||'扩展动作';
+ function defaults(value){const c=context(),actor=c.after.roles[initial.role]||c.before.roles[initial.role]||{};return ({1001:[1,actor.axis||3,0],1002:[1,actor.axis||3,0],2001:[actor.x<0?1:2,0],2002:[0],3000:[actor.face||0],3001:[1,0,1],3002:[.4,0],3005:[0],3007:[0],3006:[actor.cloth||0],3004:[0,0],3008:[0,0,0],3009:[0,0],3003:[1.1,0],3012:[],3013:[]})[value]?.slice()||[];}
  draft=defaults(code);
  function stop(){clearTimeout(timer);clearTimeout(frame);timer=frame=null;playing=false;audio?.stop();stage.getAnimations?.({subtree:true}).forEach(a=>a.cancel());q('[data-action-play]').textContent='播放';q('[data-actions-play]').textContent='播放全部';}
  function draw(){const c=context();if(c)renderer.draw(c.doc,c.after,{edit:false});}
@@ -34,6 +36,8 @@ function open(options){
   if([1001,1002,1003,2001].includes(code)){const index=code===2001?0:1;html+=`<label class="action-param"><span>${code===2001?'退场方向':'登场位置'}</span><select data-action-arg="${index}">${(code===2001?[[1,'向左滑出'],[2,'向右滑出']]:[[1,'左侧'],[3,'中间'],[2,'右侧']]).map(([n,s])=>`<option value="${n}" ${Number(values[index])===n?'selected':''}>${s}</option>`).join('')}</select></label>`;}
   if(code===3001)html+=range(0,'跳跃次数',1,5,1,'次')+range(2,'跳跃力度',.2,5,.1,'');
   if(code===3002)html+=range(0,'摇晃时长',.1,3,.1);
+  if(code===3003)html+=pluginEditing()?range(0,'大小倍数',.1,3,.05,'倍')+'<p class="helper">在人物当前大小上乘以这个倍数，例如 0.8 缩小、1.5 放大。需要玩家安装 UP 非官方补丁；没有安装时，游戏按原版固定放大到 1.1 倍。</p>':'<p class="helper">原版强调放大：人物放大到当前的 1.1 倍。在插件编辑模式中可以设置任意倍数（需要 UP 非官方补丁）。</p>';
+  if(code===3012)html+='<p class="helper">人物变成全黑的剪影，直到对这个人物使用「取消黑影」。</p>';
   if(code===3000)html+=`<label class="action-param"><span>表情</span><select data-action-arg="0">${details.faces.map(f=>`<option value="${f.id}" ${Number(values[0])===f.id?'selected':''}>${h(f.name)}</option>`).join('')}</select></label>`;
   if(code===3006)html+=`<label class="action-param"><span>服装</span><select data-action-arg="0">${details.clothes.map(n=>`<option value="${n}" ${Number(values[0])===n?'selected':''}>${n?'服装 '+(n+1):'默认服装'}</option>`).join('')}</select></label>`;
   if(code===3004||code===3008){const v=Number(values[0])||0;html+=`<label class="action-param"><span>${code===3004?'水平位移（右为正）':'竖直位移（上为正）'}<output>${h(v)}</output></span><input type="range" data-action-arg="0" min="${Math.min(-1500,v)}" max="${Math.max(1500,v)}" step="5" value="${h(v)}" data-unit=""></label><label class="action-param action-param-number"><span>精确数值</span><input type="number" data-action-arg="0" step="1" value="${h(v)}"></label><p class="helper">也可以直接在舞台上拖动人物设置位移；点“播放”预览。</p>`;}
@@ -42,7 +46,7 @@ function open(options){
   else html+='<p class="helper">'+(names[code]?'此设置在本句开始时立即生效。':'此扩展动作的原有参数会完整保留。')+'</p>';
   if(!names[code])html+=StudentAgeConditions.parameterHTML(values,'data-action-raw','float');q('.action-settings').innerHTML=html;q('[data-action-add]').disabled=selected!==null;q('[data-action-add]').textContent=selected===null?'添加':'已添加';
  }
- function render(){const entries=[...Object.entries(actions).filter(([id])=>!options.blocked?.includes(Number(id))),...(options.blocked?.includes(3008)?[]:Object.entries(presets).map(([key,p])=>[key,p.label]))];q('nav').innerHTML=entries.map(([id,label])=>{const active=selected===null&&(presets[id]?preset===id:!preset&&Number(id)===code);return `<button data-action-code="${id}" class="${active?'active':''}" aria-pressed="${active}">${label}</button>`;}).join('');renderList();renderSettings();status('');}
+ function render(){const entries=[...Object.entries({...actions,...(pluginEditing()?{3003:'调整大小（UP）'}:{})}).filter(([id])=>!options.blocked?.includes(Number(id))),...(options.blocked?.includes(3008)?[]:Object.entries(presets).map(([key,p])=>[key,p.label]))];q('nav').innerHTML=entries.map(([id,label])=>{const active=selected===null&&(presets[id]?preset===id:!preset&&Number(id)===code);return `<button data-action-code="${id}" class="${active?'active':''}" aria-pressed="${active}">${label}</button>`;}).join('');renderList();renderSettings();status('');}
  function add(){if(selected!==null)return;stop();const label=preset?presets[preset].label:actionName(code);const index=options.add(code,draft.slice());if(!Number.isInteger(index))return;selected=index;preset=null;render();draw();status('已添加 '+label);}
  function pickEmoji(){const d=document.createElement('dialog');d.className='social-dialog social-emoji-dialog';const close=()=>{d.close();d.remove();};d.innerHTML=`<header><h2>选择气泡表情</h2><button data-emoji-close aria-label="关闭表情选择">×</button></header><div class="social-emoji-grid">${glyphs().map((g,i)=>`<button data-emoji-pick="${i}" title="表情 ${i}">${window.StudentAgeSocialMedia.renderText('<sprite='+i+'>',atlas)}</button>`).join('')||'<p class="helper">表情资源尚未读取。</p>'}</div>`;
   d.onclick=e=>{const b=e.target.closest('[data-emoji-pick]');if(b){const values=args().slice();values[0]=Number(b.dataset.emojiPick);close();stop();if(selected===null)draft=values;else options.update(selected,values);renderSettings();renderList();draw();status(selected===null?'表情已选择，点击添加写入本句。':'气泡表情已更新');}else if(e.target.closest('[data-emoji-close]'))close();};d.oncancel=e=>{e.preventDefault();close();};document.body.append(d);d.showModal();}

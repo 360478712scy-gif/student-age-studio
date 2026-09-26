@@ -38,7 +38,7 @@ def _forward(events, talks, options, edges):
     return reached
 
 
-def display_ownership(events, talks, options, folders, band=None):
+def display_ownership(events, talks, options, folders, band=None, _prepared=None):
     """Lines to show while an event is open. This does not make them members of the event.
 
     A line that runs into the event, continues out of it, or sits in the event's number
@@ -48,8 +48,9 @@ def display_ownership(events, talks, options, folders, band=None):
     """
     event_ids=set(events)
     band_ids=event_ids if band is None else {str(v) for v in band if str(v) in event_ids}
-    edges, reverse=_links(talks, options, folders)
-    reached=_forward(events, talks, options, edges)
+    # ownership() already has the links and forward walk; reuse them (the walk is copied, it is extended here).
+    edges, reverse, forward_walk=_prepared if _prepared else (*_links(talks, options, folders), None)
+    reached={t:set(v) for t,v in forward_walk.items()} if forward_walk is not None else _forward(events, talks, options, edges)
     forward=set(reached)
     by_event={}
     for talk,evs in reached.items():
@@ -97,11 +98,11 @@ def ownership(events, talks, options, folders, previous=None, band=None, anchor=
     """
     event_ids=set(events)
     anchored={str(v) for v in (anchor or []) if str(v) in talks}
-    edges,_reverse=_links(talks, options, folders)
+    edges,reverse=_links(talks, options, folders)
     forward=_forward(events, talks, options, edges)
     # A saved owner that exists only because an older build treated display lines as
     # members is dropped, otherwise the external list stays empty after one save.
-    shown=set(display_ownership(events, talks, options, folders, band))
+    shown=set(display_ownership(events, talks, options, folders, band, _prepared=(edges, reverse, forward)))
     extra=shown-set(forward)-anchored
     retained={}
     for t,v in (previous or {}).items():

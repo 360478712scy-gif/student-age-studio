@@ -4505,10 +4505,17 @@ class StudioHandler(BaseHTTPRequestHandler):
                 (not route.startswith('/api/') and route not in ('/', '/index.html'))
                 or route in {'/api/assets', '/api/talk-head', '/api/editor-music-file', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui'})
             independent = independent or method == 'POST' and route == '/api/portrait-dimensions'
+            started = time.monotonic()
             with self.server.project_request_gate.access(exclusive=method == "POST" and route == "/api/project-preferences"):
                 with nullcontext() if independent else self.server.location_lock:
-                    with original_mode.scope(self.headers.get("X-Studio-Original-Project")):
-                        self.dispatch(method)
+                    acquired = time.monotonic()
+                    try:
+                        with original_mode.scope(self.headers.get("X-Studio-Original-Project")):
+                            self.dispatch(method)
+                    finally:
+                        finished = time.monotonic()
+                        if finished - started > 2 and route.startswith('/api/'):
+                            self.server.error_logs.slow(method, route, acquired - started, finished - acquired)
         except ProjectSettingsBusy as exc:
             self.send_json({"error": str(exc), "code": "busy"}, 409)
         except (ApiError, workshop_publish.PublishError) as exc:
@@ -4587,6 +4594,15 @@ def create_server(args):
                         args.game or (active["game"] if active else fallback / "Game" if locations else DEFAULT_GAME),
                         active.get('extraMods', []) if active else (), migrate_cache=False)
     server = StudioServer(("127.0.0.1", args.port), store, args.web_root, locations)
+    def warm_record_ids():
+        # The first save that creates lines checks other mods for the same ids. Reading every mod's
+        # story tables then made that save wait; read them once in the background after startup.
+        time.sleep(20)
+        try:
+            store.record_ids.occupied(tables={'TalkCfg', 'OptionCfg', 'EvtCfg'}, include_catalog=False)
+        except Exception:
+            pass
+    threading.Thread(target=warm_record_ids, daemon=True).start()
     if getattr(sys, "frozen", False) and os.name == "nt":
         # Windows package root (next to 拾光工坊.exe): an install prompt users can hand to their AI assistant.
         import studio_mcp

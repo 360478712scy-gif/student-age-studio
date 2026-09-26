@@ -127,3 +127,4 @@ html body.json-drawer-open dialog[data-studio-layered]:not(.uc-popup){inset:0 va
 .project-ignore-list [hidden]{display:none!important}
 .project-ignore-list span{overflow-wrap:anywhere}
 #default-project-choice{width:100%}
+#expression-grid button.pending{opacity:.6}#expression-grid button.pending span:after{content:'…'}

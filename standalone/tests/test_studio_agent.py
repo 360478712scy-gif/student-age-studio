@@ -125,6 +125,42 @@ class StudioAgentTests(unittest.TestCase):
         self.assertEqual([i['name'] for i in s.assets(mod, 'music')['items']], ['心动足迹'])
         self.assertEqual(s.assets(mod, 'expressions', person='主角')['items'][4]['name'], '害羞')
 
+    def test_options_branches_and_other_tables(self):
+        s, mod = self.studio, self.mod
+        created = s.create_event(mod, '分支', [{'text': '一'}, {'speaker': '主角', 'text': '二'}, {'text': '三'}, {'text': '四'}], event_id=1700000)
+        one, two, three, four = created['lineIds']
+        result = s.set_options(mod, two, [{'text': '去三', 'goto': three}, {'text': '新写', 'lines': [{'text': '分支句'}]}], rejoin_to=four)
+        options = {o['text']: o for o in s.line(mod, two)['options']}
+        self.assertEqual(options['去三']['goto'], [three])
+        branch = options['新写']['goto'][0]
+        self.assertEqual(s.line(mod, branch)['next'], [four])
+        self.assertEqual(result['newLineIds'], [branch])
+        kept = options['去三']['id']
+        s.set_options(mod, two, [{'id': kept, 'text': '去三（改）'}])
+        self.assertEqual([o['text'] for o in s.line(mod, two)['options']], ['去三（改）'])
+        self.assertTrue(any(i.get('lines') and branch in i['lines'] for i in s.check_mod(mod)['issues']), '去掉的分支句应被报告为孤立对话')
+        s.set_options(mod, two, [])
+        s.edit_line(mod, two, goto=four, check=[[4, 1, 101, 10]], next_if_failed=three, effect=[[20, 1, 3, 5]])
+        row = self.store.load(mod)['talks'][str(two)]
+        self.assertEqual((row['nextTalk'], row['nextTalk2'], row['check'], row['effect']), ([four], [three], [[4, 1, 101, 10]], [[20, 1, 3, 5]]))
+        with self.assertRaises(studio_agent.AgentError):
+            s.edit_line(mod, one, check=[[4, 1, 101, 10]])  # a check needs a failure branch
+        with self.assertRaises(studio_agent.AgentError):
+            s.edit_line(mod, one, goto=999)
+        with self.assertRaises(studio_agent.AgentError) as overwrite:
+            s.json_file(mod, 'Cfgs/zh-cn/TalkCfg.json', '{}')
+        self.assertEqual(overwrite.exception.code, 'confirm_required')
+        self.assertIn('Cfgs/zh-cn/TalkCfg.json', [f['path'] for f in s.json_file(mod)['files']])
+        self.assertTrue(s.create_mod('新模组')['created'])
+
+    def test_guide_matches_repository_copy(self):
+        import ai_guide
+        root = Path(__file__).resolve().parents[2] / 'AI使用说明.md'
+        self.assertEqual(root.read_text(encoding='utf-8'), ai_guide.GUIDE, '修改 AI使用说明.md 后请同步 standalone/ai_guide.py')
+        names = {t['name'] for t in studio_mcp.TOOLS}
+        for name in sorted(names):
+            self.assertIn(name, ai_guide.GUIDE, f'使用说明缺少工具 {name}')
+
     def test_errors_are_explained(self):
         with self.assertRaises(studio_agent.AgentError) as missing:
             self.studio.event(self.mod, 1)
