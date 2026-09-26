@@ -228,7 +228,8 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
     else if(code===3006){role.cloth=Number(row[2])||0;role.manualCloth=true;state.roleCloths[id]=role.cloth;}
     else if(code===3014){role.hair=Number(row[2])||0;state.warnings.push(label(doc,id)+' 的发型变更需在游戏中确认，截图缓存可能不含该发型。');}
     else if(code===3004||code===3008){role[code===3004?'x':'y']+=Number(row[2])||0;state.motions.push({id,code,delay:Number(row[3])||0,duration:code===3004&&Number(row[5])>0?Number(row[5]):.4,shake:Number(row[4])||0});}
-    else if(code===3003){role.scale*=row.length>2&&Number(row[2])===0?0:1.1;state.motions.push({id,code,delay:Number(row[3])||0});}
+    // Native: 0 hides, anything else is 1.1×. The UP patch (plugin editing mode) multiplies by the parameter.
+    else if(code===3003){const x=row.length>2?Number(row[2]):NaN;role.scale*=window.STUDIO_WORKSHOP_NAV?.pluginEditing?.()&&Number.isFinite(x)?Math.max(0,x):x===0?0:1.1;state.motions.push({id,code,delay:Number(row[3])||0});}
     else if(code===3005||code===3007){role.flip=!role.flip;state.motions.push({id,code,delay:Number(row[2])||0});}
     else if(code===3012)role.shadow=true;
     else if(code===3013)role.shadow=false;

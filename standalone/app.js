@@ -1764,9 +1764,13 @@ function renderInspector() {
   else if(largeScene)largeScene.image(inspector,[],'','',empty);else empty();
   const availability=portraitAvailability.get(portraitMetadataKey(S.previewRole,S.grade,S.cloth));
   const choices=window.StudentAgeExpressions.choices({person:p,faces:S.doc.faces,roleId:S.previewRole,grade:S.grade,cloth:S.cloth,metadata:availability});
-  $('#expression-grid').innerHTML=choices.map(({id,name})=>`<button class="${id===S.face?'active':''}" data-action="set-face" data-value="${id}" title="${h(name)}"><span>${h(name)}</span></button>`).join('');
+  // Model expressions are drawn from the game files on first use; until a face is drawn the stage keeps the previous one.
+  const drawn=new Set((availability?.available||[]).map(Number)),drawing=!!(p&&(S.grade===0?p.l2d:p.l2d2)?.length&&availability&&(availability.active||availability.status==='queued'));
+  const pending=({id,path})=>drawing&&!path&&!drawn.has(id);
+  $('#expression-grid').innerHTML=choices.map(c=>`<button class="${c.id===S.face?'active':''}${pending(c)?' pending':''}" data-action="set-face" data-value="${c.id}" title="${h(c.name)}${pending(c)?'（正在从游戏模型生成，稍等几秒会自动显示）':''}"><span>${h(c.name)}</span></button>`).join('');
   prepareOriginalExpressions();
-  $('#expression-current').textContent=p?faceName():'';$$('#expression-grid button').forEach(b=>b.disabled=!p||S.previewRole===null);
+  const current=choices.find(c=>c.id===S.face);
+  $('#expression-current').textContent=p?faceName()+(current&&pending(current)?' · 生成中…':''):'';$$('#expression-grid button').forEach(b=>b.disabled=!p||S.previewRole===null);
 }
 function updatePreviewText() {
   const t=talk();if(!t)return;const name=speaker(t),content=t.content||'';

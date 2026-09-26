@@ -40,7 +40,7 @@ STAGE = {
     'exit': {'type': 'array', 'items': {'type': 'string'}, 'description': '可选：在这句退场的人物（名称或编号）'},
     'background': {'type': 'string', 'description': '可选：从这句起换成的背景（编号或名称，见 list_assets）。换背景会让在场人物全部退场'},
     'sound': {'type': 'string', 'description': '可选：这句播放的音效（编号或名称，见 list_assets(kind="sounds")）'},
-    'actions': {'type': 'array', 'items': {'type': 'array'}, 'description': '高级：原版动作数组，如 [["小雅", 3001, 1, 0, 1]] 表示跳跃'},
+    'actions': {'type': 'array', 'items': {'type': 'array'}, 'description': '高级：原版动作数组 [人物, 动作编号, 参数…]。如 [["小雅", 3001, 1, 0, 1]] 跳跃；[["小雅", 3012]] 变成黑影、[["小雅", 3013]] 取消黑影；[["小雅", 3003, 1.5, 0]] 调整为当前的 1.5 倍大小（需玩家安装 UP 非官方补丁，否则原版固定放大 1.1 倍）'},
 }
 LINE_SCHEMA = {
     'type': 'object', 'required': ['text'],
