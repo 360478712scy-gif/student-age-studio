@@ -3493,6 +3493,44 @@ def normalize_image(raw, maximum=MAX_IMAGE):
 
 
 
+class RequestWatchdog:
+    """Writes requests unfinished after 20 s to slow-requests.log with the code they are stuck in,
+    so a frozen editor (nothing saves, everything greyed out) can be diagnosed from a user's log."""
+    LIMIT = 20
+
+    def __init__(self, error_logs):
+        self.error_logs, self.lock, self.active = error_logs, threading.Lock(), {}
+        threading.Thread(target=self.watch, daemon=True).start()
+
+    def begin(self, method, route):
+        with self.lock:
+            self.active[threading.get_ident()] = {'method': method, 'route': route, 'since': time.monotonic(), 'phase': '排队等待前面的请求', 'reported': False}
+
+    def running(self):
+        with self.lock:
+            entry = self.active.get(threading.get_ident())
+            if entry: entry['phase'] = '执行中'
+
+    def end(self):
+        with self.lock:
+            self.active.pop(threading.get_ident(), None)
+
+    def watch(self):
+        import traceback
+        while True:
+            time.sleep(5)
+            now = time.monotonic()
+            with self.lock:
+                late = [(ident, dict(entry)) for ident, entry in self.active.items() if not entry['reported'] and now - entry['since'] > self.LIMIT]
+                for ident, _ in late: self.active[ident]['reported'] = True
+            if not late: continue
+            frames = sys._current_frames()
+            for ident, entry in late:
+                frame = frames.get(ident)
+                stack = [f'{Path(f.filename).name}:{f.lineno} {f.name}' for f in traceback.extract_stack(frame)] if frame else []
+                self.error_logs.stuck(entry['method'], entry['route'], entry['phase'], now - entry['since'], stack)
+
+
 class ResourceJobs:
     """Run the installed local bundle reader in a separate process, keeping the editing UI responsive."""
     def __init__(self, store, script):
@@ -3603,6 +3641,7 @@ class StudioServer(ThreadingHTTPServer):
         super().__init__(address, StudioHandler)
         self.locations = locations
         self.error_logs = ErrorLogs()
+        self.watchdog = RequestWatchdog(self.error_logs)
         self.location_lock = threading.RLock()
         from project_preferences import RequestGate
         self.project_request_gate = RequestGate()
@@ -4506,16 +4545,22 @@ class StudioHandler(BaseHTTPRequestHandler):
                 or route in {'/api/assets', '/api/talk-head', '/api/editor-music-file', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui'})
             independent = independent or method == 'POST' and route == '/api/portrait-dimensions'
             started = time.monotonic()
-            with self.server.project_request_gate.access(exclusive=method == "POST" and route == "/api/project-preferences"):
-                with nullcontext() if independent else self.server.location_lock:
-                    acquired = time.monotonic()
-                    try:
-                        with original_mode.scope(self.headers.get("X-Studio-Original-Project")):
-                            self.dispatch(method)
-                    finally:
-                        finished = time.monotonic()
-                        if finished - started > 2 and route.startswith('/api/'):
-                            self.server.error_logs.slow(method, route, acquired - started, finished - acquired)
+            tracked = route.startswith('/api/')
+            if tracked: self.server.watchdog.begin(method, route)
+            try:
+                with self.server.project_request_gate.access(exclusive=method == "POST" and route == "/api/project-preferences"):
+                    with nullcontext() if independent else self.server.location_lock:
+                        acquired = time.monotonic()
+                        if tracked: self.server.watchdog.running()
+                        try:
+                            with original_mode.scope(self.headers.get("X-Studio-Original-Project")):
+                                self.dispatch(method)
+                        finally:
+                            finished = time.monotonic()
+                            if finished - started > 2 and tracked:
+                                self.server.error_logs.slow(method, route, acquired - started, finished - acquired)
+            finally:
+                if tracked: self.server.watchdog.end()
         except ProjectSettingsBusy as exc:
             self.send_json({"error": str(exc), "code": "busy"}, 409)
         except (ApiError, workshop_publish.PublishError) as exc:

@@ -12,7 +12,7 @@ import traceback
 from game_locator import settings_path
 from platform_support import lock_file, unlock_file
 
-APP_VERSION = '1.4.5'
+APP_VERSION = '1.4.6'
 
 def display_version(value):
     return {'1.4.0': '1.4', '1.3.12-beta.12': '1.3.11.12', '1.3.12-beta.11': '1.3.11.11', '1.3.12-beta.10': '1.3.11.10', '1.3.12-beta.9': '1.3.11.9', '1.3.12-beta.8': '1.3.11.8', '1.3.12-beta.7': '1.3.11.7', '1.3.12-beta.6': '1.3.11.6', '1.3.12-beta.5': '1.3.11.5', '1.3.12-beta.4': '1.3.11.4', '1.3.12-beta.3': '1.3.11.3', '1.3.12-beta.2': '1.3.11.2', '1.3.12-beta.1': '1.3.11.1', '1.3.10-beta.2': '1.3.9.2', '1.3.10-beta.1': '1.3.9.1', '1.3.7-beta.2': '1.3.7.1', '1.3.7-beta.3': '1.3.7.2', '1.3.7-beta.4': '1.3.7.3', '1.3.7-beta.5': '1.3.7.4', '1.3.7-beta.6': '1.3.7.5', '1.3.7-beta.7': '1.3.7.6', '1.3.7-beta.8': '1.3.7.7', '1.3.7-beta.9': '1.3.7.8', '1.3.7-beta.10': '1.3.7.9'}.get(str(value).removeprefix('v'), value)
@@ -76,6 +76,20 @@ class ErrorLogs:
                 self.root.mkdir(parents=True, exist_ok=True)
                 lines = path.read_text(encoding='utf-8').splitlines(True) if path.exists() else ['拾光工坊慢请求记录（超过 2 秒的接口：排队时间 = 等待前面的请求，执行时间 = 自身耗时）\n']
                 lines = lines[:1] + lines[1:][-299:] + [line]
+                path.write_text(''.join(lines), encoding='utf-8')
+        except OSError:
+            pass
+
+    def stuck(self, method, route, phase, seconds, stack):
+        """A request still unfinished after 20 s (the editor looks frozen): what it waits on and where it is."""
+        try:
+            path = self.root / 'slow-requests.log'
+            with _lock:
+                self.root.mkdir(parents=True, exist_ok=True)
+                lines = path.read_text(encoding='utf-8').splitlines(True) if path.exists() else ['拾光工坊慢请求记录（超过 2 秒的接口：排队时间 = 等待前面的请求，执行时间 = 自身耗时）\n']
+                entry = [f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\t{APP_VERSION}\t{method} {route}\t仍未完成 {seconds:.0f}s（{phase}）\n"]
+                entry += ['\t\t' + frame + '\n' for frame in stack[-14:]]
+                lines = lines[:1] + lines[1:][-(300 - len(entry)):] + entry
                 path.write_text(''.join(lines), encoding='utf-8')
         except OSError:
             pass
