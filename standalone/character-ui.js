@@ -38,12 +38,11 @@ async function media(options){const p=panel(options.title||(options.mode==='expr
  p.body.oncontextmenu=e=>{const card=e.target.closest('[data-media-item]'),item=card&&items[Number(card.dataset.mediaItem)];if(source==='custom'&&item)window.StudentAgeContextMenu(e,item.origin==='imported'?'删除该自定义人物':'删除自定义素材',async()=>{if(await window.STUDIO_DELETE_CUSTOM_ASSET(item,params()))await reload();});};
  p.body.querySelector('input').oninput=e=>{query=e.target.value;clearTimeout(timer);sequence++;items=[];observer?.disconnect();p.body.querySelector('.character-media-grid').innerHTML='<p>正在搜索…</p>';timer=setTimeout(()=>reload(),180);};p.body.querySelector('[data-media-project]').onchange=e=>{sourceProjectId=e.target.value;reload();};
  try{const result=await api('projects');projects=Array.isArray(result)?result:result.projects||[];p.body.querySelector('[data-media-project]').innerHTML='<option value="">全部模组</option>'+projects.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');}catch(e){p.error(e);}reload();return p.promise;}
-async function outfitLocations(places,current=[],name='服装',isDefault=false){
- places=places.filter(r=>String(r.name||'').trim()&&!/^(?:场景|地点|背景)?\s*#?\d+$/.test(String(r.name).trim())).map(r=>({...r,id:Number(r.id)}));
- const p=panel('设置穿着地点'),chosen=new Set(current.map(Number));let group='全部';p.d.classList.add('outfit-location-picker');
- p.body.innerHTML=`<label>服装名称<input data-outfit-name value="${esc(name)}" maxlength="120"></label><nav class="character-filters">${['全部',...new Set(places.map(x=>x.group))].map(g=>`<button data-place-group="${esc(g)}">${esc(g)}</button>`).join('')}</nav><input data-place-search placeholder="搜索地点"><p>${isDefault?'未单独指定服装的地点，与该人物互动时使用这套默认服装。剧情对话里的服装不受影响。':'选中的地点：在游戏地图上与该人物互动时穿这套服装（游戏内换装需要游戏内工作台）。剧情对话里的服装不受影响，按剧情里的「更换服装」和原版规则显示。未选择地点时仅供手动换装。'}</p><button data-place-all>全选当前分类</button><div class="character-choice-grid"></div>`;const footer=document.createElement('footer');footer.className='outfit-location-footer';footer.innerHTML='<button data-outfit-confirm class="primary">确定</button>';p.d.append(footer);
- const paint=()=>{const q=p.body.querySelector('[data-place-search]').value,rows=places.filter(r=>group==='全部'||r.group===group);p.body.querySelector('[data-place-all]').textContent=rows.length&&rows.every(r=>chosen.has(r.id))?'取消全选当前分类':'全选当前分类';p.body.querySelectorAll('[data-place-group]').forEach(b=>b.classList.toggle('active',b.dataset.placeGroup===group));p.body.querySelector('.character-choice-grid').innerHTML=places.filter(r=>(group==='全部'||r.group===group)&&StudentAgeSearch.matches(q,r.name,r.id)).map(r=>`<button data-place-id="${r.id}" class="${chosen.has(r.id)?'active':''}" aria-pressed="${chosen.has(r.id)}">${chosen.has(r.id)?'✓ ':''}${esc(r.name)} <small>${r.id}</small></button>`).join('');};
- p.body.querySelector('[data-place-search]').oninput=paint;p.d.onclick=e=>{const b=e.target.closest('[data-place-id]'),g=e.target.closest('[data-place-group]');if(b){const id=Number(b.dataset.placeId);chosen.has(id)?chosen.delete(id):chosen.add(id);paint();}if(g){group=g.dataset.placeGroup;paint();}if(e.target.closest('[data-place-all]')){const rows=places.filter(r=>group==='全部'||r.group===group),all=rows.length&&rows.every(r=>chosen.has(r.id));for(const r of rows)all?chosen.delete(r.id):chosen.add(r.id);paint();}if(e.target.closest('[data-outfit-confirm]')){const name=p.body.querySelector('[data-outfit-name]').value.trim();if(!name){p.error('请填写服装名称。');return;}p.end({name,places:[...chosen]});}};paint();return p.promise;
+async function outfitName(name='服装',slot=0){
+ const p=panel(slot?'服装名称':'默认服装名称');p.d.classList.add('outfit-location-picker');
+ p.body.innerHTML=`<label>服装名称<input data-outfit-name value="${esc(name)}" maxlength="120"></label><p>${slot===1?'游戏里在学校教学楼、学校操场与人物互动时穿这套服装（原版规则）。':slot===0?'游戏里在学校以外的地点与人物互动时穿这套服装（原版规则）。':'原版不会在地图互动时自动穿这套服装；可在剧情里用「更换服装」换上。'}</p>`;
+ const footer=document.createElement('footer');footer.className='outfit-location-footer';footer.innerHTML='<button data-outfit-confirm class="primary">确定</button>';p.d.append(footer);
+ p.d.onclick=e=>{if(e.target.closest('[data-outfit-confirm]')){const value=p.body.querySelector('[data-outfit-name]').value.trim();if(!value){p.error('请填写服装名称。');return;}p.end({name:value});}};return p.promise;
 }
 function contextMenu(event,label,action){
  event.preventDefault();event.stopPropagation();document.querySelectorAll('.studio-delete-menu').forEach(n=>n._dismiss?n._dismiss():n.remove());
@@ -62,5 +61,5 @@ async function deleteCustomAsset(item,params){
 }
 window.STUDIO_DELETE_CUSTOM_ASSET=deleteCustomAsset;
 window.StudentAgeContextMenu=contextMenu;
-window.StudentAgeCharacterUI={esc,api,choices,calendar,media,outfitLocations,eventType,eventName,eventDescription,eventParameter};
+window.StudentAgeCharacterUI={esc,api,choices,calendar,media,outfitName,eventType,eventName,eventDescription,eventParameter};
 })();

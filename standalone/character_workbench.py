@@ -6,21 +6,16 @@ from pathlib import Path
 
 TABLES=('PersonCfg','PersonGrowCfg','ModFaceCfg','KZoneAvatarCfg','KZoneProfileCfg')
 
-def migrate_outfits(outfits, maps):
-    """Wearing places are game map locations (where the player meets the character), not dialogue
-    backgrounds. Older files stored background ids under 'backgrounds'; keep the locations whose
-    scene is one of them and drop the rest, so no dialogue background ever switches an outfit."""
+def migrate_outfits(outfits):
+    """Outfits keep only their names. The game picks the outfit worn on the map by its own rule (school
+    building and sports field: outfit 2, elsewhere: default), the same for every character, so earlier
+    per-outfit 'backgrounds'/'places' could never take effect and are dropped."""
     outfits = {k: copy.deepcopy(v) for k, v in outfits.items() if str(k).lstrip('-').isdigit()} if isinstance(outfits, dict) else {}
-    by_bg = {}
-    for ident, row in maps.items():
-        for field in ('bg', 'bg2'):
-            if isinstance(row, dict) and row.get(field): by_bg.setdefault(int(row[field]), []).append(int(ident))
-    for person in outfits.values() if isinstance(outfits, dict) else ():
+    for person in outfits.values():
         for outfit in person.values() if isinstance(person, dict) else ():
-            if isinstance(outfit, dict) and 'backgrounds' in outfit:
-                old = outfit.pop('backgrounds')
-                if 'places' not in outfit:
-                    outfit['places'] = list(dict.fromkeys(m for b in old if type(b) is int for m in by_bg.get(b, [])))
+            if isinstance(outfit, dict):
+                outfit.pop('backgrounds', None)
+                outfit.pop('places', None)
     return outfits
 
 
@@ -30,17 +25,13 @@ def load(store, project_id):
         project=store.project(project_id)
         from asset_labels import asset_name
         from headshots import scene_location
-        maps=store.table(project_id,'MapCfg')['rows']
         outfits=json.loads((project.path/'StudentAgeStudio/character-outfits.json').read_text(encoding='utf-8-sig')) if (project.path/'StudentAgeStudio/character-outfits.json').exists() else {}
-        outfits=migrate_outfits(outfits,maps)
-        # Places the player meets characters on the game map; sub-areas (type 2) sit inside a main place.
-        places=[{'id':int(k),'name':r.get('name') or '地点 '+str(k),'group':'地点内区域' if r.get('type')==2 else '地点'}
-                for k,r in sorted(maps.items(),key=lambda kv:int(kv[0])) if isinstance(r,dict) and str(k).isdigit() and int(k)>0 and r.get('type') in (0,2)]
+        outfits=migrate_outfits(outfits)
         from goal_workbench import IMAGE_META
         image_path = project.path / IMAGE_META
         image_ids = list(json.loads(image_path.read_text(encoding='utf-8-sig'))) if image_path.is_file() else []
         from character_rules import references
-        return {'tables':result,'outfits':outfits,'places':places,'rules':references(store, project),'goalImageIds':image_ids,'revision':result['PersonCfg']['revision'],'romance':store.api_romance(project)}
+        return {'tables':result,'outfits':outfits,'rules':references(store, project),'goalImageIds':image_ids,'revision':result['PersonCfg']['revision'],'romance':store.api_romance(project)}
 
 def save(store, payload, api):
     with store.lock:
@@ -93,21 +84,15 @@ def save(store, payload, api):
         outfit_path='StudentAgeStudio/character-outfits.json'
         old_outfits=api.read_json(api.safe_path(project.path,outfit_path),{})
         outfits=copy.deepcopy(payload.get('outfits',old_outfits))
-        maps=store.table(project.id,'MapCfg')['rows']
-        outfits=migrate_outfits(outfits,maps)
+        outfits=migrate_outfits(outfits)
         if not isinstance(outfits,dict): raise api.ApiError('服装配置无效。')
         for key in list(outfits):
             if key in removed: del outfits[key];continue
             if not isinstance(outfits[key],dict): raise api.ApiError('服装配置必须是对象。')
             if key not in rows['PersonCfg']: save_review.warn(api.ApiError, '服装必须关联模组内的人物。')
-            used=set()
             for slot,outfit in outfits[key].items():
                 if slot not in map(str,range(10)) or not isinstance(outfit,dict): raise api.ApiError('每个角色最多支持默认服装和九套其他服装。')
                 if not isinstance(outfit.get('name'),str) or len(outfit['name'])>120: raise api.ApiError('请填写有效的服装名称。')
-                places=outfit.get('places',[])
-                if not isinstance(places,list) or any(type(n)!=int or str(n) not in maps for n in places): raise api.ApiError('服装地点无效，请重新选择游戏地点。')
-                if used.intersection(places): save_review.warn(api.ApiError, '一个地点指定了多套服装，游戏可能只采用其中一套。')
-                used.update(places);outfit['places']=list(dict.fromkeys(places))
                 if int(slot)>0 and str(int(key)*1000+int(slot)*100) not in rows['ModFaceCfg']: save_review.warn(api.ApiError, '新增服装尚未选择立绘。')
         # nicknames[0]/[1] mean normal/lover names. Empty and duplicate slots
         # are meaningful; never split, compact or deduplicate the user's array.
