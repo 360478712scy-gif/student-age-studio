@@ -938,7 +938,6 @@ class StudioStore:
             result["premises"] = copy.deepcopy(premises)
             result["pinnedIds"] = self.clean_pinned(editor_state.get("pinnedIds") if isinstance(editor_state, dict) else None)
             result["goalImageIds"] = list(read_json(project.path/"StudentAgeStudio/goal-images.json", {}))
-            result["characterOutfits"] = read_json(safe_path(project.path, "StudentAgeStudio/character-outfits.json"), {})
             result["audioCues"] = self.audio_cues(project, result["talks"])
             if revision != self.revision(project):
                 raise ApiError("读取时模组发生了变化，请重新打开。", 409, "conflict")

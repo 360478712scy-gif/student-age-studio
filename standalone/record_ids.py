@@ -291,7 +291,7 @@ class RecordIds:
                 data={str(m('PersonCfg',int(k))):v for k,v in data.items()}
                 for outfits in data.values():
                     for outfit in outfits.values():
-                        outfit['backgrounds']=m('BgCfg',outfit.get('backgrounds',[]))
+                        if 'backgrounds' in outfit:outfit['backgrounds']=m('BgCfg',outfit.get('backgrounds',[]))  # older files, dropped when next saved
             elif filename=='editor-state.json':
                 if 'externalDialogueIds' in data:data['externalDialogueIds']=m('TalkCfg',data['externalDialogueIds'])
                 for folder in data.get('externalDialogueFolders',{}).values():

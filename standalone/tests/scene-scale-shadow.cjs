@@ -24,3 +24,15 @@ test('3012 变黑影，3013 恢复',()=>{
   assert.equal(role([1,2,3]).shadow,false);
 });
 console.log(checks+' checks passed');
+// 右侧选择服装写入 3006：之后的句子和换背景后都保持，并记为“已明确设置”（下拉框不再显示“自动”）。
+{
+  const d={persons:{3:{id:3,name:'小明',gender:1}},faces:{},cgs:{},papers:{},backgrounds:{1:{id:1,url:'bg/a',cloth:[1]},2:{id:2,url:'bg/b',cloth:[0]}},events:{1:{id:1,talkId:[1]}},options:{},branchFolders:{},protagonistGender:1,
+    talks:{1:{id:1,content:'一',bg:1,roleIds:[3],roles:[[3,1002,1,3,0]],nextTalk:[2]},2:{id:2,content:'二',roleIds:[3],roles:[[3,3006,0]],nextTalk:[3]},3:{id:3,content:'三',bg:2,roleIds:[3],roles:[],nextTalk:[]}}};
+  const at=trace=>Scene.reconstruct(d,trace[trace.length-1],{trace,roots:[1],grade:1,reference:[2560,1440]});
+  assert.equal(at([1]).roles[3].cloth,1,'未设置时按背景的默认服装');
+  assert.deepEqual([...(at([1]).explicitCloths||[])],[]);
+  assert.equal(at([1,2]).roles[3].cloth,0);
+  assert.deepEqual([...at([1,2]).explicitCloths],[3]);
+  assert.equal(at([1,2,3]).roles[3].cloth,0,'换背景后保持右侧选择的服装');
+  console.log('PASS 右侧服装选择在后续句子和换背景后保持');
+}
