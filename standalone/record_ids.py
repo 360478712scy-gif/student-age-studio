@@ -288,13 +288,10 @@ class RecordIds:
                     for key,row in data.items():
                         if 'conditions' in row:row['conditions']=self.rewrite('EvtCfg',{'0':{'id':0,'condition':row['conditions']}},mappings)['0']['condition']
             elif filename=='character-outfits.json':
-                # Version 2 nests persons under 'characters' and stores map places; version 1 kept background ids.
-                nested=data.get('version')==2 and isinstance(data.get('characters'),dict)
-                people={str(m('PersonCfg',int(k))):v for k,v in (data['characters'] if nested else data).items() if str(k).lstrip('-').isdigit()}
-                for outfits in people.values():
+                data={str(m('PersonCfg',int(k))):v for k,v in data.items()}
+                for outfits in data.values():
                     for outfit in outfits.values():
-                        if 'backgrounds' in outfit:outfit['backgrounds']=m('BgCfg',outfit.get('backgrounds',[]))
-                data={**data,'characters':people} if nested else people
+                        if 'backgrounds' in outfit:outfit['backgrounds']=m('BgCfg',outfit.get('backgrounds',[]))  # older files
             elif filename=='editor-state.json':
                 if 'externalDialogueIds' in data:data['externalDialogueIds']=m('TalkCfg',data['externalDialogueIds'])
                 for folder in data.get('externalDialogueFolders',{}).values():
