@@ -1786,7 +1786,7 @@ function renderInspector() {
   const p=S.doc?.persons[S.previewRole],t=talk();
   for(const button of $$('[data-action=set-grade]')){button.classList.toggle('active',Number(button.dataset.value)===S.grade);button.setAttribute('aria-pressed',String(Number(button.dataset.value)===S.grade));}
   for(const button of $$('[data-action=set-protagonist-gender]')){button.classList.toggle('active',Number(button.dataset.value)===protagonistGender());button.setAttribute('aria-pressed',String(Number(button.dataset.value)===protagonistGender()));}
-  $('#preview-controls').innerHTML=S.doc?`<select data-reference-table="PersonCfg" id="preview-person" data-no-search="true" aria-label="预览人物">${personOptions(S.previewRole)}</select><div class="row"><select id="preview-cloth" aria-label="预览服装">${Array.from({length:10},(_,n)=>`<option value="${n}" ${n===S.cloth?'selected':''}>${n===0?'默认服装':'服装 '+(n+1)}</option>`).join('')}</select></div>`:'';
+  $('#preview-controls').innerHTML=S.doc?`<select data-reference-table="PersonCfg" id="preview-person" data-no-search="true" aria-label="预览人物">${personOptions(S.previewRole)}</select><div class="row"><select id="preview-cloth" aria-label="预览服装">${(()=>{const explicit=(currentStage().explicitCloths||[]).includes(Number(S.previewRole));return (explicit?'':`<option value="" selected>自动 · 预览为${S.cloth===0?'默认服装':'服装 '+(S.cloth+1)}（游戏里按触发地点）</option>`)+Array.from({length:10},(_,n)=>`<option value="${n}" ${explicit&&n===S.cloth?'selected':''}>${n===0?'默认服装':'服装 '+(n+1)}</option>`).join('');})()}</select></div>`:'';
   if(!S.doc){$('#expression-grid').innerHTML='';return;}
   const asset=portraitPath();
   const previewPaths=p?StudentAgeScene.portraitCandidates(S.doc,{id:Number(S.previewRole),grade:S.grade,cloth:S.cloth,face:S.face}):[];
@@ -1914,7 +1914,7 @@ document.addEventListener('change',event=>{
   if(e.id==='event-select'){if(S.doc?.events[e.value])enterEvent(e.value);return;}
   if(['preview-person','scene-person-select'].includes(e.id)){selectStageRole(e.value);return;}
   if(e.id==='scene-quick-action'){if(e.value!=='')quickApplyAction(e.value);return;}
-  if(e.id==='preview-cloth'){S.cloth=Number(e.value);if(S.project?.readOnly){renderInspector();return;}if(S.previewRole!==null)mutate('更换服装',()=>setRoleCommand(talk(),Number(S.previewRole),3006,[S.cloth]));return;}
+  if(e.id==='preview-cloth'){if(e.value===''){renderInspector();return;}S.cloth=Number(e.value);if(S.project?.readOnly){renderInspector();return;}if(S.previewRole!==null)mutate('更换服装',()=>setRoleCommand(talk(),Number(S.previewRole),3006,[S.cloth]));return;}
   if(e.dataset.edit&&e.tagName==='SELECT'&&talk()){
     mutate(e.dataset.edit==='speaker'?'设置说话人物':'设置下一句',()=>{const t=talk();if(e.dataset.edit==='speaker'){t.roleIds=e.value==='narrator'?[]:[Number(e.value)];t.roleName='';if(e.value!=='narrator')S.previewRole=Number(e.value);}else {const field=e.dataset.edit;if(e.dataset.targetSex!==undefined){t[field]=ids(t[field]);t[field][Number(e.dataset.targetSex)]=Number(e.value);}else t[field]=Number(e.value)?[Number(e.value)]:[];const folder=S.branchFolders[Branches.ownedBy(S.branchFolders,t.id)];if(field==='nextTalk'&&folder&&ids(folder.talkIds).at(-1)===t.id)folder.continuation=Number(e.value)?{kind:'talk',talkId:Number(e.value)}:{kind:'end'};}});return;
   }

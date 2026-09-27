@@ -148,9 +148,9 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
   if(!state.speakerIds.length)state.talkingAxis=2;
   const defaultAxis=state.talkingAxis===3?1:(state.talkingAxis%2+1);
   if(Number(talk.bg)>0){state.background=Number(talk.bg);if(!state.useCloth?.length){state.useCloth=list(doc.backgrounds?.[state.background]?.cloth);if(!state.useCloth.length)state.useCloth=[0];}}
-  const outfitCloth=id=>{const outfits=doc.characterOutfits?.[id];if(!outfits)return null;return Number(Object.entries(outfits).find(([slot,o])=>(o.backgrounds||[]).includes(state.background))?.[0]||0);};
-  for(const role of Object.values(state.roles)){const cloth=outfitCloth(role.id);if(cloth!==null&&state.background!==prior.background){role.cloth=cloth;delete role.manualCloth;}}
-  const defaultCloth=id=>{if(state.roleCloths[id]!=null)return state.roleCloths[id];const outfit=outfitCloth(id);if(outfit!==null)return outfit;if(!state.useCloth?.length)state.useCloth=[0];const special=id===1?1:id===5?2:0;if(special&&doc.backgrounds?.[state.background])return list(doc.backgrounds[state.background].cloth)[special]||0;return state.useCloth[0]||0;};
+  // Character-page outfits are chosen by the map place where the player meets a character, never by a dialogue background:
+  // in dialogue the game only follows explicit outfit changes and the event's own background rules, so the preview does too.
+  const defaultCloth=id=>{if(state.roleCloths[id]!=null)return state.roleCloths[id];if(!state.useCloth?.length)state.useCloth=[0];const special=id===1?1:id===5?2:0;if(special&&doc.backgrounds?.[state.background])return list(doc.backgrounds[state.background].cloth)[special]||0;return state.useCloth[0]||0;};
   const screen=talk.screenEffect||[];
   if(screen.length){const code=Number(screen[0]);if(code===4015)state.cg=Number(screen[1]);else if(code===4017){state.cg=0;state.nativeComic=false;}else if(code===4016){state.nativeComic=true;state.warnings.push('漫画画面需在游戏中预演。');}else if(code===4007&&!(talk.roleIds||[]).length){state.warnings.push('本句没有说话人，原版不会启动电话。');}else if(code===4007){state.phone={left:Number(screen[1])||100,right:state.background||201011,caller:Number(screen[2])||0,remote:screen.slice(2).map(Number),local:[...new Set([...(talk.highlights||[]),...(talk.roleIds||[])].map(Number))]};}else if(code===4008){for(const id of state.phone?.remote||[state.phone?.caller])if(state.roles[id])state.roles[id].visible=false;state.phone=null;}else if(!window.StudentAgeScreenEffects?.entries.some(e=>e.id===code))state.warnings.push('这段包含额外屏幕效果，最终效果请在游戏中确认。');}
   if(talk.effect?.length||talk.effect2?.length||talk.miniGame?.length)state.warnings.push('此段的数值变化、奖励或小游戏交由游戏执行。');
@@ -180,7 +180,7 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
   for(const row of actions){const id=Number(row[0]),code=Number(row[1]);
     if(code>=1001&&code<=1003)entered.add(id);
     if(!state.roles[id]?.visible&&[3006,3007,3012,3013,3014].includes(code)){
-      const data=initial.get(id)||{};if(code===3006)data.cloth=Number(row[2])||0;if(code===3007)data.flip=true;if(code===3012||code===3013)data.shadow=code===3012;if(code===3014)data.hair=Number(row[2])||0;initial.set(id,data);
+      const data=initial.get(id)||{};if(code===3006){data.cloth=Number(row[2])||0;state.explicitCloths=[...new Set([...(state.explicitCloths||[]),id])];}if(code===3007)data.flip=true;if(code===3012||code===3013)data.shadow=code===3012;if(code===3014)data.hair=Number(row[2])||0;initial.set(id,data);
       if(!entered.has(id)){entered.add(id);const implicit=[id,1001,1,declaredAxes.get(id)||defaultAxis];implicitRows.add(implicit);prepared.push(implicit);}continue;
     }prepared.push(row);
   }
@@ -225,7 +225,7 @@ function apply(doc,prior,talk,grade=1,recordTrace=true) {
       state.motions.push({id,code,delay:Number(row[code===2001?3:2])||0,toAxis});
     }
     else if(code===3000)role.face=Number(row[2])||0;
-    else if(code===3006){role.cloth=Number(row[2])||0;role.manualCloth=true;state.roleCloths[id]=role.cloth;}
+    else if(code===3006){role.cloth=Number(row[2])||0;role.manualCloth=true;state.roleCloths[id]=role.cloth;state.explicitCloths=[...new Set([...(state.explicitCloths||[]),id])];}
     else if(code===3014){role.hair=Number(row[2])||0;state.warnings.push(label(doc,id)+' 的发型变更需在游戏中确认，截图缓存可能不含该发型。');}
     else if(code===3004||code===3008){role[code===3004?'x':'y']+=Number(row[2])||0;state.motions.push({id,code,delay:Number(row[3])||0,duration:code===3004&&Number(row[5])>0?Number(row[5]):.4,shake:Number(row[4])||0});}
     // Native: 0 hides, anything else is 1.1×. The UP patch (plugin editing mode) multiplies by the parameter.
