@@ -15,6 +15,7 @@ jobs:
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
+      mac: ${{ steps.version.outputs.mac }}
     steps:
       - uses: actions/checkout@v4
       - id: version
@@ -24,6 +25,8 @@ jobs:
           requested="$(python -c 'import json;print(json.load(open(".github/desktop-release.json"))["version"])')"
           test "$requested" = "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          # "platforms" in desktop-release.json picks the clients to build; both when it is absent.
+          echo "mac=$(python -c 'import json;print(str("mac" in json.load(open(".github/desktop-release.json")).get("platforms",["windows","mac"])).lower())')" >> "$GITHUB_OUTPUT"
           if [[ "$version" == beta-* ]]; then tag="v${version#beta-}-beta.0"; else tag="v$version"; fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
   windows:
@@ -65,6 +68,7 @@ jobs:
           if-no-files-found: error
   mac:
     needs: version
+    if: needs.version.outputs.mac == 'true'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -101,6 +105,7 @@ jobs:
           if-no-files-found: error
   publish:
     needs: [version, windows, mac]
+    if: ${{ !cancelled() && needs.windows.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.mac.result) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -126,16 +131,20 @@ jobs:
           from pathlib import Path
           version=os.environ['VERSION'];tag=os.environ['TAG'];repo=os.environ['GITHUB_REPOSITORY']
           base=f'https://github.com/{repo}/releases/download/{tag}/'
+          downloads=[f'- **[Windows 64 位客户端]({base}StudentAgeStudio-Windows-x64-{version}.zip)**：完整解压后打开“拾光工坊.exe”。需要 WebView2 Runtime。']
+          if Path(f'release/StudentAgeStudio-Mac-arm64-{version}.zip').exists():
+              downloads.append(f'- **[Mac Apple Silicon 客户端（M1/M2/M3/M4 等）]({base}StudentAgeStudio-Mac-arm64-{version}.zip)**：macOS 14 或以上，解压后把“拾光工坊.app”拖入“应用程序”。当前未做 Apple 公证。')
+          notes=Path('docs/releases/v'+version.replace('.','')+'.md').read_text(encoding='utf-8')
+          download_list='\n'.join(downloads)
           text=f'''## 下载客户端
 
-          - **[Windows 64 位客户端]({base}StudentAgeStudio-Windows-x64-{version}.zip)**：完整解压后打开“拾光工坊.exe”。需要 WebView2 Runtime。
-          - **[Mac Apple Silicon 客户端（M1/M2/M3/M4 等）]({base}StudentAgeStudio-Mac-arm64-{version}.zip)**：macOS 14 或以上，解压后把“拾光工坊.app”拖入“应用程序”。当前未做 Apple 公证。
+          {download_list}
 
           客户端自带 Python，无需自行安装开发环境。首次打开请选择自己的《学生时代》游戏目录；所需游戏界面素材在本机准备。公开版本不附带原游戏数据。Live2D 动态预览暂时停用，保留静态立绘和原有模型配置，并修复关闭预览后的资源回调残留。
 
           ## 本版更新
 
-          {Path('docs/releases/v141.md').read_text(encoding='utf-8')}
+          {notes}
 
           ## 应用内更新
 
