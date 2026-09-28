@@ -1,13 +1,12 @@
 /* Color and material are independent durable preferences. */
 (()=>{'use strict';
 function apply(value,material=window.STUDIO_GLASS_MATERIAL){
- if(value==='glass-atelier')value='glass-noir'; // 纸本 · 工作室 was replaced by 夜幕 · 剧场
- const theme=['classic','glass','glass-dusk','glass-moon','glass-noir'].includes(value)?value:'glass';
+ const theme=['classic','glass','glass-dusk','glass-moon','glass-atelier','glass-noir'].includes(value)?value:'glass';
  window.STUDIO_THEME=theme;window.STUDIO_GLASS_MATERIAL=material==='frosted'?'frosted':'liquid';
  document.documentElement.dataset.theme=theme;document.documentElement.dataset.glassMaterial=window.STUDIO_GLASS_MATERIAL;
  for(const name of ['glass-palette.css','glass-theme.css']){const link=document.querySelector(`link[href="/${name}"]`);if(link)link.media=theme!=='classic'?'all':'not all';}
  for(const name of ['noir-tones.css','noir.css']){const link=document.querySelector(`link[href="/${name}"]`);if(link)link.media=theme==='glass-noir'?'all':'not all';}
- const meta=document.querySelector('meta[name="color-scheme"]');if(meta)meta.content=theme==='glass'?'light':'dark';
+ const meta=document.querySelector('meta[name="color-scheme"]');if(meta)meta.content=theme==='glass'||theme==='glass-atelier'?'light':'dark';
  window.dispatchEvent(new Event('studio-theme-change'));
 }
 let pending=Promise.resolve();
