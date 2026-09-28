@@ -51,6 +51,12 @@ class UpdatesTest(unittest.TestCase):
             time.sleep(.01)
         self.assertEqual(status['status'],'ready',status)
 
+    def test_1491_is_a_patch_after_149_and_before_1410(self):
+        from error_logs import display_version
+        self.assertGreater(version_key('v1.4.10-beta.1'), version_key('1.4.9'))
+        self.assertLess(version_key('v1.4.10-beta.1'), version_key('1.4.10'))
+        self.assertEqual(display_version('v1.4.10-beta.1'), '1.4.9.1')
+
     def test_13111_uses_legacy_compatible_version_order_and_display(self):
         from error_logs import display_version
         self.assertGreater(version_key('v1.3.12-beta.1'), version_key('1.3.11'))
