@@ -38,7 +38,9 @@ function validateSocial(doc,event,state,refs){const r=state.social;if(!r)return;
 }
 // Talk-based native events execute TalkCfg effects, not EvtCfg.effect.
 // Keep owned native links current, including when dialogue roots change outside the event form.
-function canEditEventEffects(event){return !event.studioGiftBindings?.length&&Number(event.type)!==110&&(!!event.content||[50,51,60].includes(Number(event.type))||Number(event.displayType)===1||(!event.talkId?.length&&!event.studioSocial));}
+// The game runs an event's own effect when it has no dialogue, for notices (50/51) and state events (60 or displayType 1),
+// and when the 漫展 (36), 生日派对 (37) or 上海世博会 (38) page opens the event, with or without dialogue.
+function canEditEventEffects(event){return !event.studioGiftBindings?.length&&Number(event.type)!==110&&(!!event.content||[36,37,38,50,51,60].includes(Number(event.type))||Number(event.displayType)===1||(!event.talkId?.length&&!event.studioSocial));}
 function syncSocialEffects(doc){
  for(const event of Object.values(doc.events||{})){
   if(event.studioSocial?.kind==='favor')syncSocialEntry(event);
