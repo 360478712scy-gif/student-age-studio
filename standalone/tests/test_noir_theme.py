@@ -1,4 +1,4 @@
-"""夜幕 · 剧场 replaced 纸本 · 工作室: an old saved choice opens the new theme, and its files are served."""
+"""夜幕 · 剧场 sits next to 纸本 · 工作室: both can be chosen, and the theatre's files only act in its own theme."""
 import json
 import re
 import sys
@@ -20,17 +20,22 @@ class NoirThemeTests(unittest.TestCase):
         app.display_path = file
         return app
 
-    def test_saved_atelier_opens_noir_and_noir_can_be_chosen(self):
+    def test_paper_and_theatre_are_both_kept(self):
+        # 纸本 · 工作室 stays next to 夜幕 · 剧场: a saved choice of either is kept, and either can be chosen.
         with tempfile.TemporaryDirectory() as folder:
             file = Path(folder) / 'display.json'
-            file.write_text(json.dumps({'theme': 'glass-atelier'}))
-            self.assertEqual(self.app(file).display_settings()['theme'], 'glass-noir')
-            self.assertEqual(self.app(file).display_settings({'theme': 'glass-noir'})['theme'], 'glass-noir')
-            with self.assertRaises(server.ApiError):
-                self.app(file).display_settings({'theme': 'glass-atelier'})
+            for theme in ('glass-atelier', 'glass-noir'):
+                file.write_text(json.dumps({'theme': theme}))
+                self.assertEqual(self.app(file).display_settings()['theme'], theme)
+                self.assertEqual(self.app(file).display_settings({'theme': theme})['theme'], theme)
+        script = (ROOT / 'theme.js').read_text(encoding='utf-8')
+        self.assertIn("'glass-atelier','glass-noir'", script)
+        self.assertIn('value="glass-atelier"', (ROOT / 'locations.js').read_text(encoding='utf-8'))
 
     def test_noir_stylesheets_exist_are_scoped_and_linked(self):
         index = (ROOT / 'index.html').read_text(encoding='utf-8')
+        for name in ('atelier-tones.css', 'atelier.css'):
+            self.assertIn(f'href="/{name}"', index)
         for name in ('noir-tones.css', 'noir.css'):
             self.assertIn(f'href="/{name}"', index)
             css = (ROOT / name).read_text(encoding='utf-8')
@@ -39,7 +44,6 @@ class NoirThemeTests(unittest.TestCase):
             rules = [sel.strip() for sel in re.findall(r'(?:^|[{};])\s*([^{};@\s][^{};]*)\{', css) if sel.strip()]
             unscoped = [part for sel in rules for part in self.selectors(sel) if not part.startswith('html[data-theme="glass-noir"]')]
             self.assertEqual(unscoped, [], f'{name} must only style the noir theme')
-        self.assertNotIn('atelier', index)
 
     @staticmethod
     def selectors(rule):
