@@ -2162,7 +2162,8 @@ class StudioStore:
         schemas = catalog.get("schemas", catalog.get("tableSchemas", {}))
         schema = schemas.get(name, {}) if isinstance(schemas, dict) else {}
         schema = copy.deepcopy(schema) if isinstance(schema, dict) else {}
-        if name in ('MinigameCfg', 'MinigameActionCfg', 'LovePhotoboothCfg', 'NegotiationChatCfg') or name == 'GiftEvtCfg' and not schema:
+        # Ending tables carry the game's playing rules (stage/type choices), newer than an older extracted catalog.
+        if name in ('MinigameCfg', 'MinigameActionCfg', 'LovePhotoboothCfg', 'NegotiationChatCfg', 'EndingPartCfg', 'EndingOptionCfg') or name == 'GiftEvtCfg' and not schema:
             schema = copy.deepcopy(json.loads((Path(__file__).parent / 'catalog-schema.json').read_text(encoding='utf-8'))['schemas'][name])
         if name in gameplay_features.schemas():
             schema = copy.deepcopy(gameplay_features.schemas()[name])
@@ -4468,6 +4469,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(save_review.perform(self.server.store.table_save, payload, ApiError))
             if route == "/api/manifest":
                 return self.send_json(save_review.perform(self.server.store.manifest_save, payload, ApiError))
+            if route == "/api/ending-notes":
+                import ending_rules
+                return self.send_json(ending_rules.check(self.server.store, payload, sys.modules[__name__]))
             if route in ('/api/config-check','/api/config-repair'):
                 import config_doctor
                 operation = config_doctor.check if route == '/api/config-check' else config_doctor.repair

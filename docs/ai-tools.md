@@ -54,7 +54,7 @@
 | `describe_table` / `read_table` / `update_rows` | 其他配置表：字段说明、读取、新增修改删除 |
 | `list_external_dialogues` / `create_external_dialogue` | 事件外对话（送礼、闲聊、小游戏开场等） |
 | `import_asset` / `create_mod` / `backup_mod` | 导入图片音频、新建或复制模组、立即备份 |
-| `check_mod` / `json_file` | 检查断开的连接；最后手段直接读写 JSON |
+| `check_mod` / `json_file` | 检查断开的连接和不会出现的结局段落；最后手段直接读写 JSON |
 
 ### 对话写法
 
