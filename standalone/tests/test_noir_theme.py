@@ -50,6 +50,15 @@ class NoirThemeTests(unittest.TestCase):
                 parts.append(rule[start:at].strip()); start = at + 1
         return parts + [rule[start:].strip()]
 
+    def test_noir_keeps_the_editor_in_charge_of_the_tool_dock(self):
+        # The dock sits in the top layer above every window: the theme must not force it open, and hides it
+        # while the editor boots, during onboarding and while a window is open.
+        css = (ROOT / 'noir.css').read_text(encoding='utf-8')
+        self.assertNotRegex(css, r'#studio-corner-items\{[^}]*visibility:visible')
+        self.assertNotRegex(css, r'#studio-corner-toggle\{[^}]*display:none')
+        for state in ('[data-booting] body #studio-corner-tools', '#studio-onboarding:not([hidden])', 'dialog[data-studio-layered][open]:not(.uc-popup)) #studio-corner-tools'):
+            self.assertIn(state, css)
+
     def test_noir_script_is_served_and_only_acts_in_its_theme(self):
         index = (ROOT / 'index.html').read_text(encoding='utf-8')
         self.assertIn('<script src="/noir.js" defer></script>', index)

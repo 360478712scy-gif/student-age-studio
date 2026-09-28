@@ -1,7 +1,7 @@
 /* 夜幕 · 剧场: the theatre's moving parts. Only active while this theme is chosen; all decoration is
    pointer-transparent and removed when another theme is picked. Motion runs on transform and opacity so the
    compositor carries it.
-   - the house curtain gathers into the wings when the show starts and whenever the scene changes;
+   - the house curtain gathers into the wings when the show starts and when the workshop home comes on;
    - a follow spot glides after the pointer;
    - tickets and playbills lean toward the pointer, with a glare that follows it;
    - the story stage is dressed with its own drapes, valance, tie-backs and footlights (beside the stage element,
@@ -21,7 +21,7 @@ function build(){
  house.innerHTML='<div class="noir-beam noir-beam-l"></div><div class="noir-beam noir-beam-r"></div><div class="noir-spot"></div><div class="noir-dust"></div>';
  curtain=document.createElement('div');curtain.id='noir-curtain';curtain.setAttribute('aria-hidden','true');
  curtain.innerHTML='<div class="noir-curtain-dim"></div><div class="noir-curtain-glow"></div><div class="noir-curtain-half noir-curtain-l"></div><div class="noir-curtain-half noir-curtain-r"></div><div class="noir-curtain-valance"></div>';
- curtain.addEventListener('animationend',event=>{if(event.target.classList.contains('noir-curtain-dim'))curtain.classList.remove('noir-raise','noir-front');});
+ curtain.addEventListener('animationend',event=>{if(event.target.classList.contains('noir-curtain-dim'))curtain.classList.remove('noir-raise');});
  document.body.append(house,curtain);spot=house.querySelector('.noir-spot');follow();
  observer=new MutationObserver(schedule);
  observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','class','open']});
@@ -55,10 +55,10 @@ function scene(){
  if(workshop&&!workshop.hidden)return 'workshop:'+[...workshop.classList].filter(c=>c.startsWith('wk-')).sort().join('.')+':'+(document.querySelector('#wk-main>*')?.className||'');
  return 'story';
 }
-function raise(front){
+function raise(){
  if(!curtain||calm.matches)return;
  const now=performance.now();if(now-lastRaise<700)return;lastRaise=now;
- curtain.classList.remove('noir-raise');curtain.classList.toggle('noir-front',!!front);void curtain.offsetWidth;curtain.classList.add('noir-raise');
+ curtain.classList.remove('noir-raise');void curtain.offsetWidth;curtain.classList.add('noir-raise');
 }
 let pending=0;
 function schedule(){if(!pending)pending=requestAnimationFrame(check);}
@@ -66,7 +66,9 @@ function check(){
  pending=0;if(!active()||document.documentElement.hasAttribute('data-booting'))return;
  const next=scene();
  dressStage();
- if(next!==view){view=next;raise(next==='preview');if(next==='story')openStage(true);}
+ // The house curtain belongs to the main stage: it opens the show and the workshop home. Secondary pages
+ // (features, the event list, help, fullscreen preview) change without it; the story stage opens its own drapes.
+ if(next!==view){const opening=!view;view=next;if(opening||next.includes('wk-home'))raise();if(next==='story')openStage(opening);}
  const event=document.querySelector('#event-select')?.value??null;
  if(view==='story'&&shownEvent!==null&&event!==shownEvent)openStage(false);
  shownEvent=view==='story'?event:null;
