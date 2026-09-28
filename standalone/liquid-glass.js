@@ -2,8 +2,8 @@
    wallpaper, not a stale screenshot of editable data. Native previews are excluded.
    Rendering is invalidation-driven: no idle RAF loop and only one GPU context. */
 (()=>{'use strict';
-// The atelier theme is flat paper: no optical renderer.
-const enabled=()=>window.STUDIO_THEME!=='classic'&&window.STUDIO_THEME!=='glass-atelier'&&window.STUDIO_GLASS_MATERIAL!=='frosted';
+// 夜幕 · 剧场 is a matte theme: no optical renderer.
+const enabled=()=>window.STUDIO_THEME!=='classic'&&window.STUDIO_THEME!=='glass-noir'&&window.STUDIO_GLASS_MATERIAL!=='frosted';
 function start(){if(!enabled()||window.STUDIO_GLASS)return;
 const reduce=matchMedia('(prefers-reduced-motion: reduce)'),opaque=matchMedia('(prefers-reduced-transparency: reduce)');
 const source=document.createElement('canvas'),ink=source.getContext('2d'),gpu=document.createElement('canvas');
