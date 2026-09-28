@@ -634,8 +634,11 @@ class StudioStore:
         if not folder.exists():
             return {}
         result = {}
+        # safe_path resolved the folder inside the mod, so a file in it that is not a link is inside as well.
+        # Resolving every file again cost tens of thousands of disk lookups per scan across all mods, which
+        # stalled the editor while the game cache was being written.
         for path in sorted(folder.glob("*.json")):
-            if path.is_symlink() or not inside(path, project.path):
+            if path.is_symlink():
                 raise ApiError("配置中存在越界文件链接，请先移除。", 403)
             result[path.name] = path
         return result
@@ -2978,17 +2981,20 @@ class StudioStore:
         rows = {**self.catalog_rows("AudioCfg"), **local}
         metadata = self.catalog().get("audioMetadata", {})
         audios = []
-        for ident, row in rows.items():
-            if not isinstance(row, dict): continue
-            resource = str(row.get("url") or "")
-            try:
-                self.asset(project_id, resource); available = True
-            except ApiError:
-                available = False
-            info = metadata.get(resource.replace("\\", "/").lower(), {})
-            audios.append({"id": int(ident), "name": row.get("name") or resource or ("声音 " + ident), "type": row.get("type", 1),
-                           "url": resource, "assetPath": resource, "available": available, "source": "local" if ident in local else "game",
-                           "volume": row.get("volumn") or 1, **info})
+        # One project and one catalog for the whole list: looking both up again for each of the hundreds of rows
+        # cost ~90k disk lookups, which stalled the editor while the game cache was being written.
+        with self.catalog_scope():
+            for ident, row in rows.items():
+                if not isinstance(row, dict): continue
+                resource = str(row.get("url") or "")
+                try:
+                    self.project_asset(project, resource); available = True
+                except ApiError:
+                    available = False
+                info = metadata.get(resource.replace("\\", "/").lower(), {})
+                audios.append({"id": int(ident), "name": row.get("name") or resource or ("声音 " + ident), "type": row.get("type", 1),
+                               "url": resource, "assetPath": resource, "available": available, "source": "local" if ident in local else "game",
+                               "volume": row.get("volumn") or 1, **info})
         # AudioMgrEx.PlayBgm uses AudioCfg 4 outside an active game save.
         # Resolve it from the original catalogue, even if a mod overrides ID 4.
         default_bgm = self.catalog_rows("AudioCfg").get("4")
@@ -4545,7 +4551,10 @@ class StudioHandler(BaseHTTPRequestHandler):
             route = urllib.parse.urlsplit(self.path).path
             independent = method == 'GET' and (
                 (not route.startswith('/api/') and route not in ('/', '/index.html'))
-                or route in {'/api/assets', '/api/talk-head', '/api/editor-music-file', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui'})
+                or route in {'/api/assets', '/api/talk-head', '/api/editor-music-file', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui',
+                             # Read-only listings that scan the disk: slow while the game cache is being written,
+                             # they must not hold every other request (opening dialogue, saving) behind them.
+                             '/api/ids', '/api/audio'})
             independent = independent or method == 'POST' and route == '/api/portrait-dimensions'
             started = time.monotonic()
             tracked = route.startswith('/api/')

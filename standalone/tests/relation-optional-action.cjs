@@ -25,6 +25,9 @@ assert.equal(B.canEditEventEffects({talkId:[1],content:''}),false);
 assert.equal(B.canEditEventEffects({talkId:[],effect:[[1,1,2]]}),true);
 assert.equal(B.canEditEventEffects({type:50,talkId:[1]}),true);
 assert.equal(B.canEditEventEffects({content:'旧式事件正文',talkId:[1]}),true);
+// 漫展、生日派对、上海世博会的页面打开事件时执行事件效果，即使事件有对话。
+for(const type of [36,37,38])assert.equal(B.canEditEventEffects({type,talkId:[1]}),true);
+assert.equal(B.canEditEventEffects({type:39,talkId:[1]}),false);
 const legacy=plain(doc);legacy.talks[1].effect.push([1,1,8]);legacy.talks[1].studioSocialEffects={20:[[1,1,8]]};
 B.syncSocialEffects(legacy);assert.deepEqual(plain(legacy.talks[1].effect),[[1,1,7],[1,1,8]]);
 legacy.talks[2]={id:2,effect:[],nextTalk:[]};legacy.talks[1].nextTalk=[2];B.syncSocialEffects(legacy);
