@@ -37,9 +37,27 @@ class NoirThemeTests(unittest.TestCase):
             css = re.sub(r'/\*.*?\*/', '', css, flags=re.S)
             css = re.sub(r'@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}', '', css)   # animation steps are not selectors
             rules = [sel.strip() for sel in re.findall(r'(?:^|[{};])\s*([^{};@\s][^{};]*)\{', css) if sel.strip()]
-            unscoped = [sel for sel in rules if 'html[data-theme="glass-noir"]' not in sel]
+            unscoped = [part for sel in rules for part in self.selectors(sel) if not part.startswith('html[data-theme="glass-noir"]')]
             self.assertEqual(unscoped, [], f'{name} must only style the noir theme')
         self.assertNotIn('atelier', index)
+
+    @staticmethod
+    def selectors(rule):
+        parts, depth, start = [], 0, 0
+        for at, char in enumerate(rule):
+            depth += char in '([' and 1 or char in ')]' and -1 or 0
+            if char == ',' and depth == 0:
+                parts.append(rule[start:at].strip()); start = at + 1
+        return parts + [rule[start:].strip()]
+
+    def test_noir_script_is_served_and_only_acts_in_its_theme(self):
+        index = (ROOT / 'index.html').read_text(encoding='utf-8')
+        self.assertIn('<script src="/noir.js" defer></script>', index)
+        self.assertIn('"/noir.js"', (ROOT / 'server.py').read_text(encoding='utf-8'))
+        script = (ROOT / 'noir.js').read_text(encoding='utf-8')
+        self.assertIn("const THEME='glass-noir'", script)
+        self.assertIn("addEventListener('studio-theme-change',sync)", script)
+        self.assertIn('function teardown()', script)
 
 
 if __name__ == '__main__':
