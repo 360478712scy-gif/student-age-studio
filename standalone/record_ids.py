@@ -69,13 +69,24 @@ class RecordIds:
         return occupied
 
     def public(self, project_id):
-        with self.store.lock, self.store.catalog_scope():
-            project = self.store.project(project_id)
-            used = self.occupied()
+        # Scanning every mod's tables reads the disk and is slow while the game cache is being written, so it
+        # runs outside the store lock (which dialogue loading and saving also need). The project's revision,
+        # read before and after, shows whether a save landed during the scan; then the scan runs again.
+        for _ in range(3):
+            with self.store.lock:
+                before = self.store.revision(self.store.project(project_id))
+            with self.store.catalog_scope():
+                used = self.occupied()
+            with self.store.lock:
+                project = self.store.project(project_id)
+                revision = self.store.revision(project)
+                if revision == before:
+                    break
+        with self.store.lock:
             # IDs allocated server-side since startup (e.g. by another window's
             # asset import) are not on disk yet; publish them so scaffolds in
             # this window never claim them.
-            return {'projectId': project.id, 'revision': self.store.revision(project),
+            return {'projectId': project.id, 'revision': revision,
                     'tables': {n: sorted(v) for n, v in used.items() if v}, 'linked': LINKED,
                     'rules': {n: rule(n) for n in used if n not in DERIVED},
                     'reservedIds': sorted(self.reserved)}
