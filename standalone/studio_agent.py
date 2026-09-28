@@ -1070,7 +1070,7 @@ class Studio:
         project = self._project(mod)
         data = self._call(self.store.table, project['id'], name)
         schema = data.get('schema') or {}
-        fields = [{k: f.get(k) for k in ('name', 'label', 'type', 'description', 'default', 'required', 'range', 'editorType') if f.get(k) not in (None, '', False)}
+        fields = [{k: f.get(k) for k in ('name', 'label', 'type', 'description', 'default', 'required', 'range', 'choices', 'editorType') if f.get(k) not in (None, '', False)}
                   for f in schema.get('fields', []) if isinstance(f, dict) and not f.get('hidden')]
         return {'table': data.get('name', name), 'label': schema.get('label'), 'category': schema.get('category'), 'fields': fields,
                 'ownRows': len(data.get('localIds', [])), 'totalRows': len(data.get('rows', {})),
@@ -1113,7 +1113,7 @@ class Studio:
                 'size': [result.get('width'), result.get('height')]}
 
     def check_mod(self, mod):
-        """JSON syntax problems and story links that lead nowhere."""
+        """JSON syntax problems, story links that lead nowhere and ending parts the game never shows."""
         import config_doctor
         project, doc = self._load(mod)
         report, _changes = self._call(config_doctor.inspect, self.store, project['id'], server)
@@ -1151,6 +1151,9 @@ class Studio:
             for target in _ids(event.get('talkId')):
                 if str(target) not in talks:
                     issues.append({'event': int(key), 'problem': f'首句对话 {target} 不存在'})
+        import ending_rules
+        for note in self._call(ending_rules.check, self.store, {'projectId': project['id']}, server)['notes']:
+            issues.append({'ending': note['id'], 'problem': note['problem'], **({'fix': note['fix']} if 'fix' in note else {})})
         return {'ok': not issues and not doc.get('warnings'), 'issues': issues[:200], 'issueCount': len(issues), 'loadWarnings': doc.get('warnings', [])}
 
     def json_file(self, mod, path=None, text=None, confirm_overwrite=False):

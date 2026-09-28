@@ -134,7 +134,7 @@ TOOLS = [
          {'mod': MOD, 'kind': {'type': 'string', 'enum': ['background', 'cg', 'portrait', 'music', 'sound']}, 'file_path': {'type': 'string', 'description': '本机文件的完整路径'},
           'name': {'type': 'string'}, 'person': {'type': 'string', 'description': '立绘：人物名称或编号；不写则新建人物'}, 'face': {'type': 'integer', 'description': '立绘：表情编号，默认 0'},
           'cloth': {'type': 'integer', 'description': '立绘：服装编号 0–9'}, 'grade': {'type': 'integer', 'description': '立绘：1 小学、2 中学'}}, ['mod', 'kind', 'file_path'], False),
-    tool('check_mod', '检查模组：JSON 语法错误、指向不存在对话的跳转和选项、不存在的说话人、没有首句的事件。改完后建议运行一次。', {'mod': MOD}, ['mod']),
+    tool('check_mod', '检查模组：JSON 语法错误、指向不存在对话的跳转和选项、不存在的说话人、没有首句的事件、游戏里不会出现的结局段落。改完后建议运行一次。', {'mod': MOD}, ['mod']),
     tool('json_file', '最后手段：不写 path 列出模组的 JSON 文件；写 path 读取原文；再写 text 与 confirm_overwrite=true 则整体替换该文件（会备份、检查版本冲突）。',
          {'mod': MOD, 'path': {'type': 'string', 'description': '如 Cfgs/zh-cn/ItemCfg.json'}, 'text': {'type': 'string'}, 'confirm_overwrite': {'type': 'boolean'}}, ['mod'], False),
     tool('list_external_dialogues', '列出事件外对话夹：名称、句数、首句和绑定的用途（送礼、闲聊、小游戏开场等）。', {'mod': MOD}, ['mod']),

@@ -111,8 +111,13 @@
    - 新编号一般是 7 位、以 1 开头，并且随机一些，避免和别的模组冲突。
    - 短信（PhoneMsgCfg）按短信界面的规则检查：首条由联系人发送、编号以 001 结尾，白雨每次最多两个回复选项。
    - 对话、选项和事件不要用这个工具，请用上面的剧情工具。
+   - 结局段落（EndingPartCfg）按游戏的播放顺序写，否则游戏里不会出现：
+     - 一段结局故事的第一段写 `step`（阶段：2 大学与职业、3 婚姻、5 35 岁之后；4、45、6、8 这几个阶段只播放第一个满足前提的段落，原版段落排在前面）和 `type: 1`（人物结局），前提写在 `cond`。
+     - 后面每一段的编号是上一段 +1，`step` 写 0，`type` 也写 1。游戏播完一段就找编号 +1 的段落。
+     - 结局选项（EndingOptionCfg）的 `part` 写选择后跳到的段落，之后同样按编号 +1 继续。
+     - 写完用 `check_mod` 查看哪些段落不会出现。
 
-常用表：PersonCfg 人物、PersonGrowCfg 人物成长、ItemCfg 物品、BookCfg 书籍、ShopCfg 商店、IntentCfg 目标、PhoneMsgCfg 短信、KZoneContentCfg 企鹅动态、KZoneCommentCfg 动态评论、InteractCfg 闲聊、ActionCfg 行动、GiftEvtCfg 送礼、CGCfg CG、BgCfg 背景、MapCfg 地点。
+常用表：EndingPartCfg 结局段落、EndingOptionCfg 结局选项、PersonCfg 人物、PersonGrowCfg 人物成长、ItemCfg 物品、BookCfg 书籍、ShopCfg 商店、IntentCfg 目标、PhoneMsgCfg 短信、KZoneContentCfg 企鹅动态、KZoneCommentCfg 动态评论、InteractCfg 闲聊、ActionCfg 行动、GiftEvtCfg 送礼、CGCfg CG、BgCfg 背景、MapCfg 地点。
 
 ## 七、事件外对话（送礼、闲聊、小游戏开场、CG 回忆……）
 有些对话不属于事件，而是在别的地方播放，比如送某件礼物时、闲聊进度条走完时、小游戏开场或胜负时、从回忆画廊打开 CG 时。
@@ -127,7 +132,7 @@
   - 音频：背景音乐、音效。
 - **`create_mod`**：新建空模组；写 `copy_from` 则复制一个已有模组。
 - **`backup_mod`**：立即完整备份。
-- **`check_mod`**：检查 JSON 语法、断开的跳转和选项、不存在的说话人、没有首句的事件、孤立对话。
+- **`check_mod`**：检查 JSON 语法、断开的跳转和选项、不存在的说话人、没有首句的事件、孤立对话，以及游戏里不会出现的结局段落。
 - **`json_file`**：最后手段，列出、读取或整体替换模组的 JSON 文件。只在其他工具都做不到时才用；写入必须传 `confirm_overwrite: true`，并且先告诉用户。
 
 ## 九、写作建议

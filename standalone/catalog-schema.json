@@ -743,7 +743,7 @@
           "label": "段落ID",
           "type": "int",
           "editorType": "Default",
-          "description": "ID由7位数字组成，\n左边第一位固定为1\n例如：1XXXXXX\n建议设置一个随机的数字，避免和其他mod重复",
+          "description": "ID由7位数字组成，\n左边第一位固定为1\n例如：1XXXXXX\n建议设置一个随机的数字，避免和其他mod重复\n同一段结局故事按编号连续排列：游戏播放完一段后，接着播放编号 +1 的段落。选中一段后点「接续下一段」会自动使用下一个编号。",
           "required": true,
           "nullable": false,
           "hidden": false,
@@ -808,13 +808,55 @@
           "label": "阶段",
           "type": "int",
           "editorType": "Default",
-          "description": "填写以下数字\n0：沿用上一段落的阶段\n2：大学阶段&职业选择\n3：婚姻阶段\n5：35岁之后的职业故事或婚姻故事",
+          "description": "结局按阶段依次播放：2 → 3 → 4 → 45 → 5 → 6 → 7 → 8。\n一段结局故事的第一段选择所在阶段；后面接续的段落选 0，编号为上一段 +1。",
           "required": false,
           "nullable": false,
           "hidden": false,
           "advanced": false,
           "default": 0,
-          "listDepth": 0
+          "listDepth": 0,
+          "choices": [
+            {
+              "id": 0,
+              "label": "0 · 接在上一段后面（编号为上一段 +1）"
+            },
+            {
+              "id": 2,
+              "label": "2 · 大学阶段与职业选择"
+            },
+            {
+              "id": 3,
+              "label": "3 · 婚姻阶段"
+            },
+            {
+              "id": 4,
+              "label": "4 · 职业故事中段"
+            },
+            {
+              "id": 45,
+              "label": "45 · 三十岁催婚"
+            },
+            {
+              "id": 5,
+              "label": "5 · 35 岁之后的职业或婚姻故事"
+            },
+            {
+              "id": 6,
+              "label": "6 · 职业故事后段"
+            },
+            {
+              "id": 7,
+              "label": "7 · 阶段 7"
+            },
+            {
+              "id": 8,
+              "label": "8 · 人生尾声"
+            },
+            {
+              "id": 1,
+              "label": "1 · 毕业后的职业开头（只由职业结果决定）"
+            }
+          ]
         },
         {
           "name": "effect",
@@ -834,13 +876,16 @@
           "label": "选项ID",
           "type": "list<int>",
           "editorType": "Default",
-          "description": "填写NPC结局选项ID，用逗号分隔",
+          "description": "这段显示的结局选项。玩家选择后跳到选项设置的段落。",
           "required": false,
           "nullable": false,
           "hidden": false,
           "advanced": false,
           "default": [],
-          "listDepth": 1
+          "listDepth": 1,
+          "range": {
+            "table": "EndingOptionCfg"
+          }
         },
         {
           "name": "evt",
@@ -857,10 +902,10 @@
         },
         {
           "name": "date",
-          "label": "date",
+          "label": "时间",
           "type": "list<float>",
           "editorType": "List",
-          "description": "",
+          "description": "标题为空时，结局时间轴上显示这里的第一个数字。",
           "required": false,
           "nullable": false,
           "hidden": false,
@@ -870,29 +915,42 @@
         },
         {
           "name": "job",
-          "label": "job",
+          "label": "限定职业",
           "type": "int",
           "editorType": "Default",
-          "description": "",
+          "description": "不设置表示不限职业。只在进入新阶段挑选第一段时检查。",
           "required": false,
           "nullable": false,
           "hidden": false,
           "advanced": true,
           "default": 0,
-          "listDepth": 0
+          "listDepth": 0,
+          "range": {
+            "table": "JobCfg"
+          }
         },
         {
           "name": "type",
-          "label": "type",
+          "label": "类型",
           "type": "int",
           "editorType": "Default",
-          "description": "",
+          "description": "游戏在每个阶段先播放第一个满足前提的段落。人物结局（1）播放完后，会继续播放同阶段其他满足前提、还没播放过的人物结局；普通段落（0）播放完后直接进入下一阶段。\n游戏自带编辑器新建的段落都是人物结局（1）。",
           "required": false,
           "nullable": false,
           "hidden": false,
-          "advanced": true,
-          "default": 0,
-          "listDepth": 0
+          "advanced": false,
+          "default": 1,
+          "listDepth": 0,
+          "choices": [
+            {
+              "id": 1,
+              "label": "1 · 人物结局：与同阶段其他人物结局依次出现"
+            },
+            {
+              "id": 0,
+              "label": "0 · 普通：只有同阶段没有其他段落满足前提时才出现"
+            }
+          ]
         }
       ],
       "baseCount": 1241
@@ -908,7 +966,7 @@
       "fields": [
         {
           "name": "id",
-          "label": "段落ID",
+          "label": "选项ID",
           "type": "int",
           "editorType": "Default",
           "description": "ID由7位数字组成，\n左边第一位固定为1\n例如：1XXXXXX\n建议设置一个随机的数字，避免和其他mod重复",
@@ -934,16 +992,19 @@
         },
         {
           "name": "part",
-          "label": "段落ID",
+          "label": "跳转段落",
           "type": "int",
           "editorType": "Effect",
-          "description": "填写跳转的NPC结局段落ID",
+          "description": "填写跳转的NPC结局段落ID\n选择后播放的段落；之后按编号 +1 继续播放。",
           "required": true,
           "nullable": false,
           "hidden": false,
           "advanced": false,
           "default": 0,
-          "listDepth": 0
+          "listDepth": 0,
+          "range": {
+            "table": "EndingPartCfg"
+          }
         },
         {
           "name": "effect",
