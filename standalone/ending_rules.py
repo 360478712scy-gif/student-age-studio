@@ -1,8 +1,8 @@
 """Where the game shows an ending part (EndingData.GetNextPart, SelectJob and the ending view's jumps).
 
 After a part the game shows part id+1 when that row's stage is 0 or the current stage and its conditions pass
-(otherwise it tries id+2, id+3 ... while the ids stay consecutive). When no consecutive part follows, a part of
-type 1 continues with another unshown type-1 part of the same stage; any other part moves on to the next stage,
+(otherwise it tries id+2, id+3 ... while the ids stay consecutive). When no consecutive part follows, a part with
+a nonzero type continues with another unshown part of the same type and stage (the game's own stories use type 1); any other part moves on to the next stage,
 where the first matching part in table order is shown, original parts before mod parts. Stages run
 2 → 3 → 4 → 45 → 5 → 6 → 7 → 8. Stage 1 starts from the job result, and the game also jumps straight to the
 parts named by an ending option (EndingOptionCfg.part) or a blind-date profile (EndingDatingCfg.jump).
@@ -85,7 +85,7 @@ def problems(local_ids, rows, targets=(), originals=(), places=None):
         if start in targets:
             return None
         if stage == 0:
-            return f'阶段为 0（接在上一段后面），但没有编号为 {start - 1} 的上一段，游戏里不会出现。请选择这段结局所在的阶段；如果它是某段结局的后续，把编号改成上一段编号 +1。'
+            return f'阶段为 0（接在上一段后面），但没有编号为 {start - 1} 的上一段，游戏里不会出现。请在「阶段」里选择这段结局所在的阶段；如果它是某段结局的后续，编号要是上一段编号 +1（选中上一段后点「接续下一段」即可新建）。'
         if stage == 1:
             return '阶段 1 是毕业后职业故事的开头，只由职业结果决定，这段不会被选中。请选择其他阶段。'
         if stage not in STAGES:
