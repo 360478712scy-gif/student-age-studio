@@ -186,7 +186,8 @@ function createPopup(){
 }
 function readRows(){
  const {select}=active.info;
- active.rows=Array.from(select.options,(option,index)=>({option,index,label:optionText(option),hidden:option.hidden||option.parentElement.hidden,group:option.parentElement instanceof HTMLOptGroupElement?option.parentElement.label:'',disabled:option.disabled||(option.parentElement instanceof HTMLOptGroupElement&&option.parentElement.disabled)}));
+ const provided=window.STUDIO_SELECT_ROWS?.(select);
+ active.rows=provided?provided.map((row,index)=>{const option={value:String(row.value),label:row.label,selected:select.value===String(row.value),dataset:{...(row.labelId!=null?{labelId:row.labelId}:{}),...(row.hoverTip?{hoverTip:row.hoverTip}:{})}};return {option,index,label:optionText(option),rawLabel:row.label,provided:true,hidden:!!row.hidden,group:row.group||'',disabled:!!row.disabled};}):Array.from(select.options,(option,index)=>({option,index,label:optionText(option),hidden:option.hidden||option.parentElement.hidden,group:option.parentElement instanceof HTMLOptGroupElement?option.parentElement.label:'',disabled:option.disabled||(option.parentElement instanceof HTMLOptGroupElement&&option.parentElement.disabled)}));
  search.hidden=select.dataset.search==='always'?false:(select.dataset.noSearch==='true'||active.rows.filter(row=>!row.hidden).length<10);if(search.hidden)search.value='';
 }
 function filterRows(initial){
@@ -257,9 +258,14 @@ function close(restoreFocus=true){
 }
 function choose(row){
  if(!active||row.disabled||!connected(active.info)||isDisabled(active.info.select))return;
- const info=active.info,select=info.select;if(row.option.parentElement?.closest('select')!==select)return;
- const changed=select.multiple||select.selectedIndex!==row.index;
- if(select.multiple)row.option.selected=!row.option.selected;else select.selectedIndex=row.index;
+ const info=active.info,select=info.select;if(!row.provided&&row.option.parentElement?.closest('select')!==select)return;
+ const changed=select.multiple||(row.provided?select.value!==row.option.value:select.selectedIndex!==row.index);
+ if(row.provided){
+  let option=Array.from(select.options).find(o=>o.value===row.option.value);
+  if(!select.multiple)for(const old of select.querySelectorAll('option[data-uc-choice]'))if(old!==option)old.remove();
+  if(!option){option=new Option(row.rawLabel,row.option.value);option.dataset.ucChoice='true';if(row.option.dataset.labelId!=null)option.dataset.labelId=row.option.dataset.labelId;let group=row.group&&Array.from(select.querySelectorAll('optgroup')).find(g=>g.label===row.group);if(row.group&&!group){group=document.createElement('optgroup');group.label=row.group;select.append(group);}(group||select).append(option);}
+  if(select.multiple)option.selected=!option.selected;else select.value=row.option.value;
+ }else if(select.multiple)row.option.selected=!row.option.selected;else select.selectedIndex=row.index;
  const multiple=select.multiple;if(!multiple)close(false);sync(info);
  if(changed){select.dispatchEvent(new Event('input',{bubbles:true}));select.dispatchEvent(new Event('change',{bubbles:true}))}
  if(multiple&&active){if(connected(info)){readRows();filterRows(false);search.focus({preventScroll:true})}else close(false)}else focusBack(info);

@@ -149,7 +149,7 @@ async function deletePremise(rowOrId){
 }
 window.STUDIO_DELETE_PREMISE=deletePremise;
 function eventRoots(e){return [...ids(e.talkId),...ids(e.options).flatMap(id=>[...ids(S.doc.options[id]?.talkId),...ids(S.doc.options[id]?.talkId2)])];}
-function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);displayMemo=null;const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));const entryBefore=talk()&&!talk().roles?.length?{...talk(),roles:[],roleIds:[...(talk().roleIds||[])]}:null;fn();displayMemo=null;if(entryBefore&&talk()?.id===entryBefore.id&&talk().roles?.length){const beforeDoc={...S.doc,talks:{...S.doc.talks,[entryBefore.id]:entryBefore}};StudentAgeScene.preserveImplicitEntries(entryBefore,talk(),currentStage(false,beforeDoc));}StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds);syncExternal(beforeIds);cleanLostPremises(writers);reconcileStoryClaims();updateDirty();if(redraw)render();scheduleRenumber();return true;}
+function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);displayMemo=null;const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));const entryBefore=talk()&&!talk().roles?.length?{...talk(),roles:[],roleIds:[...(talk().roleIds||[])]}:null;fn();displayMemo=null;if(entryBefore&&talk()?.id===entryBefore.id&&talk().roles?.length){const beforeDoc={...S.doc,talks:{...S.doc.talks,[entryBefore.id]:entryBefore}};StudentAgeScene.preserveImplicitEntries(entryBefore,talk(),currentStage(false,beforeDoc));}cacheEventDisplay(StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds));syncExternal(beforeIds);cleanLostPremises(writers);reconcileStoryClaims();updateDirty();if(redraw)render();scheduleRenumber();return true;}
 let textDirtyTimer=null,textSearchTimer=null;
 function updateTextDirty(){
  // Input changes the live row immediately. Full-document comparison waits for a pause.
@@ -178,10 +178,13 @@ function initialOrder() {
 }
 // One render pass asks for the same ownership map several times; reuse it until the current task ends.
 let displayMemo=null;
+function cacheEventDisplay(value){
+  const memo={doc:S.doc,folders:S.branchFolders,value};displayMemo=memo;
+  queueMicrotask(()=>{if(displayMemo===memo)displayMemo=null;});return value;
+}
 function eventDisplay(){
   if(displayMemo?.doc===S.doc&&displayMemo.folders===S.branchFolders)return displayMemo.value;
-  const value=StudentAgeEventOwnership.display(S.doc,S.branchFolders),memo={doc:S.doc,folders:S.branchFolders,value};displayMemo=memo;
-  queueMicrotask(()=>{if(displayMemo===memo)displayMemo=null;});return value;
+  return cacheEventDisplay(StudentAgeEventOwnership.display(S.doc,S.branchFolders));
 }
 function shownWith(eventId){
   const display=eventDisplay(),want=eventId==='all'?null:Number(eventId),memo=displayMemo,owners=S.doc.talkOwners,key=String(want);
@@ -195,8 +198,7 @@ function shownWith(eventId){
 }
 function visibleIds() {
   if(externalSession){const hidden=Timeline.internals(S.branchFolders);return externalScope().filter(id=>!hidden.has(id)&&(!S.search||StudentAgeSearch.matches(S.search,id,speaker(S.doc.talks[id]),talkText(S.doc.talks[id]))));}
-  const hidden=Timeline.internals(S.branchFolders);let list=S.order.filter(id=>S.doc && S.doc.talks[id]&&!hidden.has(id));
-  const allowed=shownWith(S.event);list=list.filter(id=>allowed.has(id));
+  const hidden=Timeline.internals(S.branchFolders),allowed=shownWith(S.event);let list=S.order.filter(id=>allowed.has(id)&&!hidden.has(id)&&S.doc?.talks[id]);
   if(S.search){if(Remote.info(S.doc.talks)){requestTalkSearch();list=list.filter(id=>S.segmentSearch?.has(String(id)));}else{const q=S.search.toLocaleLowerCase();list=list.filter(id=>{const t=S.doc.talks[id];return StudentAgeSearch.matches(q,id,speaker(t),t.content);});}}
   return list;
 }
@@ -222,7 +224,7 @@ function reconcileStoryClaims(){
  for(const [id,claim]of storyClaims){if(claim.project!==S.project?.id){STUDIO_IDS.release([id]);storyClaims.delete(id);}else if(!S.doc?.[claim.key]?.[id]){STUDIO_IDS.release([id]);if(claim.key==='talks'){S.deleted=S.deleted.filter(v=>Number(v)!==id);delete S.replacements[id];}}}
 }
 function trackStoryClaim(id,key){storyClaims.set(id,{project:S.project?.id,key});return id;}
-function nextId(map, base) {const table=map===S.doc.events?'EvtCfg':map===S.doc.options?'OptionCfg':'TalkCfg';return trackStoryClaim(STUDIO_IDS.allocate(table,{...map,...Object.fromEntries(S.deleted.map(id=>[id,true]))},table==='EvtCfg'?undefined:Math.floor(base/(table==='TalkCfg'?1000:100))),table==='EvtCfg'?'events':table==='OptionCfg'?'options':'talks');}
+function nextId(map, base) {const table=map===S.doc.events?'EvtCfg':map===S.doc.options?'OptionCfg':'TalkCfg',deleted=new Set(S.deleted),occupied=new Proxy(map,{get:(rows,id)=>deleted.has(Number(id))||Reflect.get(rows,id)});return trackStoryClaim(STUDIO_IDS.allocate(table,occupied,table==='EvtCfg'?undefined:Math.floor(base/(table==='TalkCfg'?1000:100))),table==='EvtCfg'?'events':table==='OptionCfg'?'options':'talks');}
 function eventForTalk() {if(externalSession)return 900000;if(S.event!=='all')return Number(S.event);const e=values(S.doc.events).find(x=>graphOrder(ids(x.talkId)).includes(S.selected));return e?e.id:900000;}
 function newTalkId() {let base=eventForTalk()*1000+1;if(base>2147483000)base=900000001;return nextId(S.doc.talks,base);}
 function normalizeTalk(t) {for(const k of ['nextTalk','nextTalk2','roleIds','roles','option','check','effect','effect2','highlights','replace','screenEffect'])if(!Array.isArray(t[k]))t[k]=[];return t;}
@@ -272,14 +274,18 @@ function addTalk(duplicate=false,options={}) {
   setTimeout(()=>$('#scene-dialogue-content')?.focus(),0);
 }
 // Every line reached through a talk's option folders and condition branches (recursively), in reading order.
-function branchBlock(parent,seen=new Set()){
+function conditionFolderIndex(){
+ const index=new Map();for(const entry of Object.entries(S.branchFolders))if(entry[1].kind==='condition'){const id=Number(entry[1].parentTalkId);if(!index.has(id))index.set(id,[]);index.get(id).push(entry);}
+ for(const rows of index.values())rows.sort((a,b)=>a[1].branchId-b[1].branchId);return index;
+}
+function branchBlock(parent,seen=new Set(),conditionsByParent=conditionFolderIndex()){
   const out=[];const visit=id=>{if(seen.has(id)||!S.doc.talks[id])return;seen.add(id);out.push(id);
-    const conditions=Timeline.entries(S.branchFolders,id);
+    const conditions=(conditionsByParent.get(Number(id))||[]);
     for(const [,f]of conditions){for(const g of [f.routerId])if(S.doc.talks[g]&&!seen.has(g)){seen.add(g);out.push(g);}for(const t of ids(f.talkIds))visit(t);if(S.doc.talks[f.exitId]&&!seen.has(f.exitId)){seen.add(f.exitId);out.push(f.exitId);}}
     if(conditions.length){const end=conditions[0][1].endId;if(S.doc.talks[end]&&!seen.has(end)){seen.add(end);out.push(end);}}
     for(const oid of ids(S.doc.talks[id].option)){const f=S.branchFolders[id+':'+oid];for(const t of ids(f?.talkIds))visit(t);}};
   seen.add(Number(parent));
-  const conditions=Timeline.entries(S.branchFolders,parent);
+  const conditions=(conditionsByParent.get(Number(parent))||[]);
   for(const [,f]of conditions){if(S.doc.talks[f.routerId]&&!seen.has(f.routerId)){seen.add(f.routerId);out.push(f.routerId);}for(const t of ids(f.talkIds))visit(t);if(S.doc.talks[f.exitId]&&!seen.has(f.exitId)){seen.add(f.exitId);out.push(f.exitId);}}
   if(conditions.length){const end=conditions[0][1].endId;if(S.doc.talks[end]&&!seen.has(end)){seen.add(end);out.push(end);}}
   for(const oid of ids(S.doc.talks[parent]?.option)){const f=S.branchFolders[parent+':'+oid];for(const t of ids(f?.talkIds))visit(t);}
@@ -331,8 +337,8 @@ function composeMappings(base,next){
 }
 function eventTraversal(eventId){
   const owners=S.doc.talkOwners||{},owned=id=>{const o=ids(owners[id]);return o.length===1&&o[0]===eventId&&!S.catalogTalkIds?.has(Number(id));};
-  const hidden=Timeline.internals(S.branchFolders),seen=new Set(),out=[];
-  for(const id of S.order){if(seen.has(id)||Timeline.owner(S.branchFolders,id)||hidden.has(id)||!S.doc.talks[id])continue;seen.add(id);out.push(id);for(const t of branchBlock(id,seen))out.push(t);}
+  const hidden=Timeline.internals(S.branchFolders),folderTalks=new Set(values(S.branchFolders).flatMap(f=>ids(f.talkIds))),conditionsByParent=conditionFolderIndex(),seen=new Set(),out=[];
+  for(const id of S.order){if(seen.has(id)||folderTalks.has(Number(id))||hidden.has(id)||!S.doc.talks[id])continue;seen.add(id);out.push(id);for(const t of branchBlock(id,seen,conditionsByParent))out.push(t);}
   for(const id of S.order)if(!seen.has(id)&&S.doc.talks[id]){seen.add(id);out.push(id);}
   return out.filter(owned);
 }
@@ -536,7 +542,7 @@ async function openJumpPicker(fromId){
 function addOptionWithSettings(){
   const t=talk();if(!t||!editable())return;
   if(Timeline.entries(S.branchFolders,t.id).length){toast('这句已有条件分支，请在分支内的对话上添加玩家选项。','note');return;}
-  modal('添加选项',`<label class="field-label">选项文字</label><input id="new-option-content" value="新的选择"><p class="helper">创建后可继续设置可用条件与成功判定；左侧会出现该选项的对话夹。</p>`,[{label:'取消',run:closeModal},{label:'创建并设置条件',run:()=>{const content=$('#new-option-content').value;closeModal();addOption();const oid=ids(talk()?.option).at(-1);if(oid&&S.doc.options[oid]){mutate('设置选项文字',()=>{S.doc.options[oid].content=content;},null,false);render();openConditionSettings('options',oid,'precondition','选项「'+content+'」· 可用条件');}}},{label:'创建',primary:true,run:()=>{const content=$('#new-option-content').value;closeModal();addOption();const oid=ids(talk()?.option).at(-1);if(oid&&S.doc.options[oid])mutate('设置选项文字',()=>{S.doc.options[oid].content=content;});}}]);
+  modal('添加选项',`<label class="field-label">选项文字</label><input id="new-option-content" value="新的选择"><p class="helper">创建后可继续设置可用条件与成功判定；左侧会出现该选项的对话夹。</p>`,[{label:'取消',run:closeModal},{label:'创建并设置条件',run:()=>{const content=$('#new-option-content').value;closeModal();const oid=addOption(content);if(oid&&S.doc.options[oid])openConditionSettings('options',oid,'precondition','选项「'+content+'」· 可用条件');}},{label:'创建',primary:true,run:()=>{const content=$('#new-option-content').value;closeModal();addOption(content);}}]);
   setTimeout(()=>$('#new-option-content')?.select(),0);
 }
 function replaceEdges(target,replacements,except=null) {Timeline.replace(S.doc,S.branchFolders,target,replacements,new Set(except===null?[]:[except]));}
@@ -620,8 +626,8 @@ function openConditionSettings(scope,id,field,title){
  modal(title,`<div id="route-condition-editor"></div>`,[{label:'完成',primary:true,run:closeModal}]);
  Conditions.mount($('#route-condition-editor'),{rows:row[field]||[],templates:allConditionTemplates(),refs:{...S.conditionRefs,PersonCfg:S.doc.persons,EvtCfg:{...S.conditionRefs.EvtCfg,...S.doc.events}},localIds:S.conditionLocalIds,readOnly:S.project?.readOnly||S.conditionsLoading,description:field==='precondition'?'必须满足全部限制，玩家才能点击这个选项。':scope==='options'?'全部满足时走成功去向，否则走失败去向。未设置判定时直接成功。':'按左侧顺序判断，进入首个满足条件的分支；判定失败时按分支的失败去向继续，默认判断后续分支或继续下面的对话。未设置条件时直接进入。',onChange:rows=>{mutate('修改分支限制',()=>row[field]=rows,null,false);renderList();renderEditor();scenePlayer?.refresh();}});
 }
-function addOption() {
-  const t=talk();if(!t)return;if(Timeline.entries(S.branchFolders,t.id).length){toast('这句已有条件分支，请在分支内的对话上添加玩家选项。','note');return;}mutate('添加对话选项',()=>{const id=nextId(S.doc.options,eventForTalk()*100+1);S.doc.options[id]={id,content:'新的选择',talkId:[],talkId2:[],effect:[],effect2:[],check:[],precondition:[]};t.option=[...ids(t.option),id];Branches.create(S.doc,S.branchFolders,t.id,id);S.folderOpen[Branches.key(t.id,id)]=true;});
+function addOption(content='新的选择') {
+  const t=talk();if(!t)return;if(Timeline.entries(S.branchFolders,t.id).length){toast('这句已有条件分支，请在分支内的对话上添加玩家选项。','note');return;}let created=null;mutate('添加对话选项',()=>{const id=nextId(S.doc.options,eventForTalk()*100+1);S.doc.options[id]={id,content:typeof content==='string'?content:'新的选择',talkId:[],talkId2:[],effect:[],effect2:[],check:[],precondition:[]};t.option=[...ids(t.option),id];Branches.create(S.doc,S.branchFolders,t.id,id);S.folderOpen[Branches.key(t.id,id)]=true;created=id;});return created;
 }
 function deleteOption(oid) {
   const t=talk();if(!t)return;mutate('删除对话选项',()=>{t.option=ids(t.option).filter(x=>x!==oid);if(!values(S.doc.talks).some(x=>ids(x.option).includes(oid))&&!values(S.doc.events).some(x=>ids(x.options).includes(oid)))delete S.doc.options[oid];S.branchFolders=Branches.cleanup(S.doc,S.branchFolders);if(S.activeFolder&&!S.branchFolders[S.activeFolder])S.activeFolder=null;});
@@ -714,7 +720,7 @@ function importDialogueRows(rows){
   let previous=talk(),insertion=S.selected;
   if(folder&&!ids(folder.talkIds).includes(insertion)){insertion=ids(folder.talkIds).at(-1)||null;previous=S.doc.talks[insertion||folder.parentTalkId];state=stageAt(previous.id);}
   const mainPrevious=previous,states=new Map(),made=new Map(),sectionFolders=new Map();
-  const sections=rows.sections||[];
+  const sections=rows.sections||[],sectionParents=new Set(sections.map(s=>s.parent));
   function ensureSection(index){
    if(sectionFolders.has(index))return sectionFolders.get(index);
    const spec=sections[index],parent=spec.parent<0?mainPrevious:S.doc.talks[created[spec.parent]];
@@ -743,7 +749,7 @@ function importDialogueRows(rows){
    else if(folder)insertInto(folder,insertion);
    else{row.nextTalk=previous?Timeline.next(S.doc,S.branchFolders,previous.id):[];if(previous)Timeline.setNext(S.doc,S.branchFolders,previous.id,[id]);else if(!externalSession)S.doc.events[S.event].talkId=[id];S.doc.talks[id]=row;}
    const index=S.order.indexOf(rowPrevious?.id);S.order.splice(index<0?S.order.length:index+1,0,id);created.push(id);
-   const nextState=StudentAgeScene.apply(S.doc,rowState,row,S.grade);states.set('row:'+rowIndex,nextState);
+   const nextState=StudentAgeScene.apply(S.doc,rowState,row,S.grade,false);if(sectionParents.has(rowIndex))states.set('row:'+rowIndex,nextState);
    if(branch){made.set(section,id);states.set(section,nextState);}else{state=nextState;previous=row;insertion=id;}
   }
   sections.forEach((_,i)=>ensureSection(i));
@@ -753,10 +759,10 @@ function importDialogueRows(rows){
   }
   // An outer folder can set the continuation of a nested option's parent.
   for(const f of [...sectionFolders.values()].reverse())if(f.kind!=='condition'&&f.talkIds.length)Timeline.setNext(S.doc,S.branchFolders,f.talkIds.at(-1),Timeline.next(S.doc,S.branchFolders,f.parentTalkId));
-  if(folder){folder.collapsed=false;S.folderOpen[S.activeFolder]=true;}S.search='';$('#talk-search').value='';
- });
+  if(folder){folder.collapsed=false;S.folderOpen[S.activeFolder]=true;}S.search='';$('#talk-search').value='';S.selected=created.at(-1);
+ },null,false);
  }catch(error){S.undo=undoBefore;S.redo=redoBefore;restore(prior);throw error;}
- S.selected=created.at(-1);scenePlayer?.dispose();scenePlayer=null;render();return created;
+ scenePlayer?.dispose();scenePlayer=null;render();return created;
 }
 function showDialogueImport(){
  if(!editable())return;stopLinePlayback();const project=S.project.id,anchor=S.selected,folder=S.activeFolder,bindings={};let parsed={rows:[],errors:[],unmatched:[]};
@@ -849,15 +855,14 @@ function addFolderTalk(key,duplicate=false,after=null,options={}){
   setTimeout(()=>$('#scene-dialogue-content')?.focus(),0);
 }
 function continuationOptions(folder){
-  const c=folder?.continuation||{kind:'end'},excluded=new Set([folder?.parentTalkId,...ids(folder?.talkIds)]);
+  const c=folder?.continuation||{kind:'end'},excluded=new Set([folder?.parentTalkId,...ids(folder?.talkIds)]),hidden=Timeline.internals(S.branchFolders);
   let result=folder?.kind==='condition'?`<option value="following" ${c.kind==='following'?'selected':''}>继续下面的对话</option>`:'';if(c.kind==='targets')result+='<option selected disabled>保留原有出口</option>';result+=`<option value="end" ${c.kind==='end'?'selected':''}>直接结束</option>`;
-  const events=values(S.doc.events).filter(e=>ids(e.talkId).some(id=>S.doc.talks[id]&&!excluded.has(id)));
-  result+='<optgroup label="接续后续剧情">'+events.map(e=>`<option ${StudentAgeRecordLabels.option(e.id)} value="event:${e.id}" ${c.kind==='event'&&Number(c.eventId)===Number(e.id)?'selected':''}>${h(e.title||'未命名剧情')}</option>`).join('')+'</optgroup>';
-  result+='<optgroup label="接到指定对话">'+S.order.filter(id=>!excluded.has(id)&&!Timeline.internals(S.branchFolders).has(id)).map(id=>`<option ${StudentAgeRecordLabels.option(id)} value="talk:${id}" ${c.kind==='talk'&&Number(c.talkId)===id?'selected':''}>${h(talkLabel(id))}</option>`).join('')+'</optgroup>';return result;
+  const event=c.kind==='event'&&S.doc.events[c.eventId];if(event&&ids(event.talkId).some(id=>S.doc.talks[id]&&!excluded.has(id)))result+=`<optgroup label="接续后续剧情"><option ${StudentAgeRecordLabels.option(event.id)} value="event:${event.id}" selected>${h(event.title||'未命名剧情')}</option></optgroup>`;
+  const target=Number(c.talkId);if(c.kind==='talk'&&S.order.includes(target)&&!excluded.has(target)&&!hidden.has(target))result+=`<optgroup label="接到指定对话"><option ${StudentAgeRecordLabels.option(target)} value="talk:${target}" selected>${h(talkLabel(target))}</option></optgroup>`;return result;
 }
 function failureOptions(f,parent){
- const failure=f?.failureNext,hidden=Timeline.internals(S.branchFolders);let html=`<option value="auto" ${!Array.isArray(failure)?'selected':''}>继续判断后续分支 / 下面的对话</option>${f?.kind==='condition'?`<option value="end" ${Array.isArray(failure)&&!failure.length?'selected':''}>直接结束</option>`:''}`;
- html+=talkOptions(failure?.[0],parent,false,S.order.filter(id=>!hidden.has(id)));return html;
+ const failure=f?.failureNext;let html=`<option value="auto" ${!Array.isArray(failure)?'selected':''}>继续判断后续分支 / 下面的对话</option>${f?.kind==='condition'?`<option value="end" ${Array.isArray(failure)&&!failure.length?'selected':''}>直接结束</option>`:''}`;
+ html+=talkOptions(failure?.[0],parent,false);return html;
 }
 function setFolderFailure(key,value){
  if(!editable())return;
@@ -1141,11 +1146,25 @@ function personOptions(selected,narrator=false) {
   return out || '<option value="">先让人物登场</option>';
 }
 function talkOptions(selected=0,exclude=null,withEnd=true,restricted=null) {
-  let out=withEnd?`<option value="0" ${!selected?'selected':''}>结束这段对话</option>`:'';
-  const hidden=Timeline.internals(S.branchFolders),list=S.project?.readOnly?(selected?[Number(selected)]:[]):restricted||S.order;
-  for(const id of list){if(Number(id)===Number(exclude)||(!restricted&&!S.doc.talks[id])||(hidden.has(Number(id))&&Number(id)!==Number(selected)))continue;out+=`<option ${StudentAgeRecordLabels.option(id)} value="${id}" ${Number(selected)===Number(id)?'selected':''}>${h(talkLabel(id))}</option>`;}
-  if(selected&&!list.includes(Number(selected)))out+=`<option ${StudentAgeRecordLabels.option(selected)} value="${selected}" selected>${h(talkLabel(selected))}</option>`;return out;
+  const source=`data-story-target data-target-exclude="${exclude==null?'':h(exclude)}"`;
+  let out=withEnd?`<option ${source} value="0" ${!selected?'selected':''}>结束这段对话</option>`:'';
+  if(selected&&Number(selected)!==Number(exclude)&&(S.doc.talks[selected]||!(restricted||S.order).includes(Number(selected))))out+=`<option ${withEnd?'':source} ${StudentAgeRecordLabels.option(selected)} value="${selected}" selected>${h(talkLabel(selected))}</option>`;return out;
 }
+// Native selects retain only their current value. The existing search popup reads
+// the full set on opening and renders one page, without allocating every option.
+window.STUDIO_SELECT_ROWS=select=>{
+ const continuation=select.dataset.folderContinuation,failure=select.dataset.folderFailure,marker=select.querySelector('option[data-story-target]');
+ if(continuation===undefined&&failure===undefined&&!marker||!S.doc)return null;
+ const native=Array.from(select.options,o=>({value:o.value,label:o.label||o.textContent,labelId:o.dataset.labelId,group:o.parentElement.tagName==='OPTGROUP'?o.parentElement.label:'',disabled:o.disabled||o.parentElement.disabled,hidden:o.hidden||o.parentElement.hidden}));
+ if(S.project?.readOnly&&continuation===undefined)return native;
+ const hidden=Timeline.internals(S.branchFolders),folder=S.branchFolders[continuation??failure],excluded=new Set(folder?[Number(folder.parentTalkId),...(continuation!==undefined?ids(folder.talkIds):[])]:[Number(marker?.dataset.targetExclude||failure?.split(':')[0])]);
+ const targetValue=value=>continuation!==undefined?/^(talk|event):\d+$/.test(value):/^[1-9][0-9]*$/.test(value),rows=native.filter(o=>!targetValue(o.value)),seen=new Set(rows.map(o=>o.value));
+ const append=row=>{if(!seen.has(row.value)){rows.push(row);seen.add(row.value);}};
+ if(continuation!==undefined)for(const event of values(S.doc.events))if(ids(event.talkId).some(id=>S.doc.talks[id]&&!excluded.has(id)))append({value:'event:'+event.id,label:event.title||'未命名剧情',labelId:event.id,group:'接续后续剧情'});
+ for(const id of S.order){if(excluded.has(Number(id))||!S.doc.talks[id]||(hidden.has(Number(id))&&(continuation!==undefined||failure!==undefined||String(id)!==select.value)))continue;append({value:(continuation!==undefined?'talk:':'')+id,label:talkLabel(id),labelId:id,group:continuation!==undefined?'接到指定对话':''});}
+ // Existing external targets and retained native exits remain visible as before.
+ for(const row of native)append(row);return rows;
+};
 function targetSelect(row,field,attributes,exclude=null){
   const targets=ids(row[field]),options=value=>{let html=talkOptions(value,exclude);if(field==='nextTalk2')html=html.replace('结束这段对话','沿用普通出口');else if(field==='talkId2'&&row.nextEvtId)html=html.replace('结束这段对话','接续本选项设置的事件');return html;};if(targets.length<2)return `<select ${attributes}>${options(targets[0]||0)}</select>`;
   return `<div class="target-genders">${[0,1].map(index=>`<label><span>${index===0?'男主角去向':'女主角去向'}</span><select ${attributes} data-target-sex="${index}">${options(targets[index]||0)}</select></label>`).join('')}</div>`;

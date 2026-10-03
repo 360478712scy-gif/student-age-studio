@@ -2,10 +2,19 @@
 'use strict';
 const ids=value=>Array.isArray(value)?value.map(Number).filter(Number.isFinite):[];
 const key=(parent,option)=>Number(parent)+':'+Number(option);
-const optionParents=(doc,option)=>Object.values(doc.talks||{}).filter(t=>ids(t.option).includes(Number(option))).map(t=>Number(t.id));
+function optionParents(doc,option){
+ const rows=doc.talks||{},remote=globalThis.StudentAgeRemoteTalks?.info?.(rows);
+ if(!remote)return Object.values(rows).filter(t=>ids(t.option).includes(Number(option))).map(t=>Number(t.id));
+ // Graph fields are already present in the segmented directory. Reading them
+ // directly avoids creating a row and array Proxy for every untouched line.
+ const parents=[],wanted=Number(option);for(const id of remote.keys()){const options=remote.read(id,'option');if(Array.isArray(options)&&options.length&&ids(options).includes(wanted))parents.push(Number(remote.read(id,'id')));}return parents;
+}
 const ownedBy=(folders,talkId)=>Object.entries(folders||{}).find(([,f])=>ids(f.talkIds).includes(Number(talkId)))?.[0]||null;
 // Callers rendering many cards pass optionParentCounts(doc) so each card does not rescan every talk.
-const optionParentCounts=doc=>{const counts=new Map();for(const t of Object.values(doc.talks||{}))for(const o of new Set(ids(t.option)))counts.set(o,(counts.get(o)||0)+1);return counts;};
+const optionParentCounts=doc=>{
+ const rows=doc.talks||{},remote=globalThis.StudentAgeRemoteTalks?.info?.(rows),counts=new Map(),add=options=>{if(!Array.isArray(options)||!options.length)return;for(const o of new Set(ids(options)))counts.set(o,(counts.get(o)||0)+1);};
+ if(remote)for(const id of remote.keys())add(remote.read(id,'option'));else for(const t of Object.values(rows))add(t.option);return counts;
+};
 function describe(doc,folders,parentTalkId,optionId,counts=null){
  const id=key(parentTalkId,optionId),folder=folders?.[id],option=doc.options?.[optionId];
  return {key:id,parentTalkId:Number(parentTalkId),optionId:Number(optionId),folder,option,managed:!!folder,

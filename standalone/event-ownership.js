@@ -28,9 +28,10 @@ function display(doc,folders,graph=links(doc,folders)){
  for(const key of Object.keys(doc.events)){const id=Number(key);if(!id)continue;const seeds=(talksByEvent.get(id)||[]).slice();for(const row of optionsByEvent.get(id)||[])seeds.push(...ids(row.talkId),...ids(row.talkId2));walk(talks,edges,seeds,t=>(reached[t]??=new Set()).add(id),t=>{if(reached[t]&&!reached[t].has(id)&&entered.has(t)){reached[t].add(id);return false;}return true;});}
  return listed(reached);
 }
-function ownership(doc,folders,previous=doc.talkOwners||{},anchor=[]){
+function ownership(doc,folders,previous=doc.talkOwners||{},anchor=[],analysis=null){
  const graph=links(doc,folders),{edges,talks}=graph,reached=forward(talks,doc,edges),anchored=new Set(anchor.map(Number));
- const extra=new Set(Object.keys(display(doc,folders,graph)).map(Number).filter(t=>!reached[t]&&!anchored.has(t)));
+ const shown=display(doc,folders,graph);if(analysis)analysis.display=shown;
+ const extra=new Set(Object.keys(shown).map(Number).filter(t=>!reached[t]&&!anchored.has(t)));
  const retained={};for(const [t,v]of Object.entries(previous)){const id=Number(t);if(!doc.talks[t]||extra.has(id))continue;for(const e of ids(v))if(doc.events[e])(retained[e]??=[]).push(id);}
  const result={};for(const [t,v]of Object.entries(reached))result[t]=new Set(v);
  for(const key of Object.keys(doc.events)){const id=Number(key);walk(talks,edges,[...(retained[id]||[])],t=>{if(!reached[t])(result[t]??=new Set()).add(id);});}
@@ -38,9 +39,9 @@ function ownership(doc,folders,previous=doc.talkOwners||{},anchor=[]){
  return listed(result);
 }
 function sync(doc,folders,currentEvent,beforeIds){
- const previous={...(doc.talkOwners||{})},anchor=[];
+ const previous={...(doc.talkOwners||{})},anchor=[],analysis={};
  if(beforeIds&&doc.events[currentEvent])for(const t of Object.keys(doc.talks))if(!beforeIds.has(t)){previous[t]=[Number(currentEvent)];anchor.push(Number(t));}
- doc.talkOwners=ownership(doc,folders,previous,anchor);
+ doc.talkOwners=ownership(doc,folders,previous,anchor,analysis);return analysis.display;
 }
 function interactionTalks(doc){const found=new Set(),todo=Object.values(doc.interactions||{}).map(r=>Number(r.talkId)).filter(Boolean);while(todo.length){const id=todo.pop(),r=doc.talks[id];if(!r||found.has(id))continue;found.add(id);todo.push(...ids(r.nextTalk),...ids(r.nextTalk2),...ids(r.option).flatMap(o=>[...ids(doc.options?.[o]?.talkId),...ids(doc.options?.[o]?.talkId2)]));}return found;}
 function plan(doc,folders,eventIds,localIds){const owners=ownership(doc,folders),removed=new Set(eventIds.map(Number)),local=new Set((localIds||[]).map(Number)),idle=interactionTalks(doc);
