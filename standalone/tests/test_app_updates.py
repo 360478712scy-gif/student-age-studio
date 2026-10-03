@@ -57,6 +57,13 @@ class UpdatesTest(unittest.TestCase):
         self.assertLess(version_key('v1.4.10-beta.1'), version_key('1.4.10'))
         self.assertEqual(display_version('v1.4.10-beta.1'), '1.4.9.1')
 
+    def test_1493_preserves_order_for_existing_updaters(self):
+        from error_logs import display_version
+        version = '1.4.10-beta.3'
+        self.assertGreater(version_key(version), version_key('v1.4.10-beta.2'))
+        self.assertLess(version_key(version), version_key('1.4.10'))
+        self.assertEqual(display_version('v'+version), '1.4.9.3')
+
     def test_13111_uses_legacy_compatible_version_order_and_display(self):
         from error_logs import display_version
         self.assertGreater(version_key('v1.3.12-beta.1'), version_key('1.3.11'))

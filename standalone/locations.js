@@ -3,7 +3,7 @@
   document.querySelector('.app-header').append(button);
   document.addEventListener('click',event=>{if(event.target.closest('[data-game-location]'))button.click()});
   const dialog=document.createElement('dialog');dialog.id='game-locations';dialog.setAttribute('aria-labelledby','game-locations-title');document.body.append(dialog);
-  let current,timer,preparing=false,tab='directories',folderSaving=false;
+  let current,timer,opening=null,preparing=false,tab='directories',folderSaving=false;
   const folderDrafts={},folderKinds=[['portrait','人物立绘'],['background','场景背景'],['cg','CG 插画'],['audio','音乐与音效'],['social','动态配图'],['avatar','人物头像']];
   dialog.addEventListener('cancel',event=>{if(preparing)event.preventDefault()});
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -128,7 +128,23 @@
   async function scan(deep){try{await api('game-scan',{deep});await refresh()}catch(e){message(e.message)}}
   async function chooseGame(game){if(!canSwitch())return;if(!String(game).trim()){message('请选择或填写游戏文件夹。');return}try{busy(true);message('正在确认游戏目录…');await api('game-select',{game});await api('game-prepare',{});location.reload()}catch(e){busy(false);message(e.message)}}
   async function chooseMods(mods){if(!canSwitch())return;if(!String(mods).trim()){message('请选择或填写自己开发的模组文件夹。');return}try{busy(true);message('正在查找本地模组…');const state=await api('mods-select',{mods});if(state.selectedProjectId)localStorage.setItem('studentAgeStudio.project',state.selectedProjectId);location.reload()}catch(e){busy(false);message(e.message)}}
-  button.onclick=async()=>{try{await refresh();render();if(!dialog.open)dialog.showModal()}catch(e){window.STUDIO_REPORT_ERROR?.(e)}};
+  function openingStatus(text,failed=false){
+    if(!dialog.firstElementChild){
+      dialog.innerHTML='<div class="location-heading"><h2 id="game-locations-title">工坊设置</h2><button data-close aria-label="关闭工坊设置" title="关闭工坊设置">×</button></div><p data-notice role="status" aria-live="polite"></p>';
+      dialog.querySelector('[data-close]').onclick=()=>dialog.close();
+    }
+    let retry=dialog.querySelector('[data-settings-retry]');
+    if(!retry){retry=document.createElement('button');retry.dataset.settingsRetry='';retry.textContent='重试读取';retry.onclick=()=>button.click();dialog.querySelector('[data-notice]').after(retry);}
+    retry.hidden=!failed;message(text);
+  }
+  button.onclick=()=>{
+    if(!dialog.open){openingStatus('正在读取工坊设置…');dialog.showModal();}
+    if(opening)return opening;
+    openingStatus('正在读取工坊设置…');
+    // A late response may update the cached state, but never reopen a closed window.
+    opening=refresh().catch(e=>openingStatus('读取工坊设置失败：'+e.message,true)).finally(()=>{opening=null;});
+    return opening;
+  };
   async function prepareAssets(){for(const [status,action] of [['resource-status','resource-refresh'],['audio-status','audio-refresh']]){const state=await api(status);if(!state.available&&state.status==='idle')await api(action,{})}}
   if(!window.STUDIO_BOOTSTRAPPING)api('game-locations').then(async s=>{setCurrent(s);if(!s.managed){return}if(!s.active){render();dialog.showModal();scan(false)}else if(s.needsPreparation){render();dialog.showModal();busy(true);message('首次启动：正在读取本机游戏配置，请稍候…');try{await api('game-prepare',{});if(window.STUDIO_HAS_UNSAVED_CHANGES?.()){busy(false);message('游戏配置已准备好。请先保存当前模组，再重新打开应用。')}else location.reload()}catch(e){busy(false);message(e.message)}}else prepareAssets().catch(()=>{})}).catch(()=>{});
 })();

@@ -4549,6 +4549,11 @@ class StudioHandler(BaseHTTPRequestHandler):
             # Resolved image/audio paths remain valid during a location switch.
             # Do not hold the global location lock while streaming their bytes.
             route = urllib.parse.urlsplit(self.path).path
+            # Update checks can spend tens of seconds waiting for GitHub. They use
+            # only the updater's own state/lock, never the active game or mod store.
+            # Keep them outside both store gates so editing and settings stay usable.
+            update_independent = (method == 'GET' and route == '/api/updates'
+                                  or method == 'POST' and route in {'/api/updates/check', '/api/updates/download'})
             independent = method == 'GET' and (
                 (not route.startswith('/api/') and route not in ('/', '/index.html'))
                 or route in {'/api/assets', '/api/talk-head', '/api/editor-music-file', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui',
@@ -4556,11 +4561,12 @@ class StudioHandler(BaseHTTPRequestHandler):
                              # they must not hold every other request (opening dialogue, saving) behind them.
                              '/api/ids', '/api/audio'})
             independent = independent or method == 'POST' and route == '/api/portrait-dimensions'
+            independent = independent or update_independent
             started = time.monotonic()
             tracked = route.startswith('/api/')
             if tracked: self.server.watchdog.begin(method, route)
             try:
-                with self.server.project_request_gate.access(exclusive=method == "POST" and route == "/api/project-preferences"):
+                with nullcontext() if update_independent else self.server.project_request_gate.access(exclusive=method == "POST" and route == "/api/project-preferences"):
                     with nullcontext() if independent else self.server.location_lock:
                         acquired = time.monotonic()
                         if tracked: self.server.watchdog.running()
