@@ -48,6 +48,18 @@ jobs:
       - run: node standalone/tests/json-unrelated-save.cjs
       - run: node standalone/tests/remote-routing.cjs
       - run: node --expose-gc standalone/tests/remote-load-order.cjs
+      - name: Prepare settings browser checks
+        if: runner.os == 'Linux'
+        run: |
+          npm install --prefix "$RUNNER_TEMP/studio-browser-checks" --no-save --package-lock=false playwright@1.62.1
+          "$RUNNER_TEMP/studio-browser-checks/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Test settings update entry and polling
+        if: runner.os == 'Linux'
+        env:
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/studio-browser-checks/node_modules/playwright
+        run: |
+          node standalone/tests/settings-open.cjs
+          node standalone/tests/app-updates-poll.cjs
   publish:
     needs: validate
     outputs:
@@ -99,7 +111,7 @@ jobs:
           import hashlib,json,os
           from pathlib import Path
           p=Path('/tmp/studio-feed/student-age-studio-update.zip');data=p.read_bytes()
-          feed={'format':1,'runtimeAbi':1,'version':os.environ['RELEASE_TAG'],'commit':os.environ['PAYLOAD_COMMIT'],'sha256':hashlib.sha256(data).hexdigest(),'size':len(data),'notes':Path('docs/releases/v1497.md').read_text(encoding='utf-8')}
+          feed={'format':1,'runtimeAbi':1,'version':os.environ['RELEASE_TAG'],'commit':os.environ['PAYLOAD_COMMIT'],'sha256':hashlib.sha256(data).hexdigest(),'size':len(data),'notes':Path('docs/releases/v1411.md').read_text(encoding='utf-8')}
           Path('/tmp/studio-feed/latest.json').write_text(json.dumps(feed,ensure_ascii=False,indent=2),encoding='utf-8')
           PYFEED
           git -C /tmp/studio-feed add latest.json
