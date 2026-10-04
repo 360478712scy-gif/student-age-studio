@@ -5,7 +5,7 @@ function links(doc,folders){
  const remote=globalThis.StudentAgeRemoteTalks?.info?.(doc.talks),field=remote?(t,k)=>remote.read(t,k):(t,k)=>doc.talks[t][k];
  const edges={},talks=new Set(Object.keys(doc.talks));for(const t of talks)edges[t]=[...ids(field(t,'nextTalk')),...ids(field(t,'nextTalk2')),...ids(field(t,'option')).flatMap(o=>[...ids(doc.options[o]?.talkId),...ids(doc.options[o]?.talkId2)])];
  for(const f of Object.values(folders||{}))(edges[f.parentTalkId]??=[]).push(...ids(f.talkIds),...[f.routerId,f.exitId,f.endId].filter(v=>v!=null).map(Number));
- const reverse={};for(const [src,dests]of Object.entries(edges))for(const dest of dests)(reverse[dest]??=[]).push(Number(src));
+ const reverse={};for(const src of Object.keys(edges))for(const dest of edges[src])(reverse[dest]??=[]).push(Number(src));
  return {edges,reverse,talks};
 }
 // `talks` is the set of existing talk keys from links(); lookups through segmented-talk proxies are costly.
@@ -15,7 +15,7 @@ function forward(talks,doc,edges){
  for(const [key,e]of Object.entries(doc.events)){const id=Number(key);walk(talks,edges,[...ids(e.talkId),...ids(e.options).flatMap(o=>[...ids(doc.options[o]?.talkId),...ids(doc.options[o]?.talkId2)])],t=>(reached[t]??=new Set()).add(id));}
  return reached;
 }
-function listed(reached){return Object.fromEntries(Object.entries(reached).filter(([,v])=>v.size).map(([t,v])=>[t,[...v].sort((a,b)=>a-b)]));}
+function listed(reached){const out={};for(const t of Object.keys(reached)){const v=reached[t];if(v.size)out[t]=[...v].sort((a,b)=>a-b);}return out;}
 // Shown beside an event. Not membership: external dialogues stay in their own list.
 function display(doc,folders,graph=links(doc,folders)){
  const {edges,reverse,talks}=graph,reached=forward(talks,doc,edges),entered=new Set(Object.keys(reached).map(Number));
@@ -32,10 +32,10 @@ function ownership(doc,folders,previous=doc.talkOwners||{},anchor=[],analysis=nu
  const graph=links(doc,folders),{edges,talks}=graph,reached=forward(talks,doc,edges),anchored=new Set(anchor.map(Number));
  const shown=display(doc,folders,graph);if(analysis)analysis.display=shown;
  const extra=new Set(Object.keys(shown).map(Number).filter(t=>!reached[t]&&!anchored.has(t)));
- const retained={};for(const [t,v]of Object.entries(previous)){const id=Number(t);if(!doc.talks[t]||extra.has(id))continue;for(const e of ids(v))if(doc.events[e])(retained[e]??=[]).push(id);}
+ const retained={};for(const [t,v]of Object.entries(previous)){const id=Number(t);if(!talks.has(t)||extra.has(id))continue;for(const e of ids(v))if(doc.events[e])(retained[e]??=[]).push(id);}
  const result={};for(const [t,v]of Object.entries(reached))result[t]=new Set(v);
  for(const key of Object.keys(doc.events)){const id=Number(key);walk(talks,edges,[...(retained[id]||[])],t=>{if(!reached[t])(result[t]??=new Set()).add(id);});}
- for(const id of anchored){const key=String(id);if(!doc.talks[key])continue;const set=result[key]??=new Set();for(const e of ids(previous[key]||previous[id]))if(doc.events[e])set.add(e);}
+ for(const id of anchored){const key=String(id);if(!talks.has(key))continue;const set=result[key]??=new Set();for(const e of ids(previous[key]||previous[id]))if(doc.events[e])set.add(e);}
  return listed(result);
 }
 function sync(doc,folders,currentEvent,beforeIds){

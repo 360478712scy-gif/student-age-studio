@@ -78,7 +78,17 @@ function table(base,changes){
   }
   return Object.fromEntries([...out].sort(([a],[b])=>Number(a)-Number(b)));
  }
- tables.set(proxy,{base,state,keysWithField:field=>Reflect.ownKeys(proxy).filter(id=>!!read(id)?.[field]),stats:()=>({total:Reflect.ownKeys(proxy).length,decoded:cache.size,edited:edited.size,changes:Object.keys(state()).length}),raw});return proxy;
+ function keysWithField(field){
+  const token=JSON.stringify(String(field)),inherited=field in Object.prototype,escapedKey=/"(?:[^"\\]|\\.)*\\.(?:[^"\\]|\\.)*"\s*:/;
+  return Reflect.ownKeys(proxy).filter(id=>{
+   if(edited.has(id))return !!edited.get(id)?.[field];
+   const text=raw(id);
+   // An absent literal field cannot match unless a key uses a JSON escape.
+   // Candidates still use normal decoded values, preserving truthiness and unknown fields.
+   return (inherited||text.includes(token)||escapedKey.test(text))&&!!read(id)?.[field];
+  });
+ }
+ tables.set(proxy,{base,state,keysWithField,stats:()=>({total:Reflect.ownKeys(proxy).length,decoded:cache.size,edited:edited.size,changes:Object.keys(state()).length}),raw});return proxy;
 }
 function pack(value){const remote=Remote?.pack(value);if(remote!==value)return remote;const info=value&&tables.get(value);return info?{__studioIndexedTalks:info.base.id,changes:info.state()}:value;}
 function revive(_,value){
@@ -104,7 +114,14 @@ function delta(current,before){
 }
 function stats(value){return Remote?.stats(value)||tables.get(value)?.stats();}
 // Read-only scans need not allocate a Proxy and finalizer for every untouched row.
-function keysWithField(value,field){if(Remote?.info(value))return Object.keys(value).filter(id=>field==='content'?!!Remote.summary(value[id]):!!value[id][field]);return tables.get(value)?.keysWithField(field)??Object.keys(value||{}).filter(id=>!!value[id]?.[field]);}
+function keysWithField(value,field){
+ const remote=Remote?.info(value);
+ if(remote)return remote.keys().filter(id=>{
+  if(field!=='content')return !!remote.read(id,field);
+  const e=remote.stateFor(id);return Object.hasOwn(e.set,'content')?!!e.set.content:!e.remove.includes('content')&&!!remote.base.summaries[e.source]?.excerpt;
+ });
+ return tables.get(value)?.keysWithField(field)??Object.keys(value||{}).filter(id=>!!value[id]?.[field]);
+}
 function retain(value,related=[]){Remote?.retain(value);const keep=new Set([value,...related].map(v=>tables.get(v)?.base.id));for(const id of bases.keys())if(!keep.has(id))bases.delete(id);}
 return {create,pack,stringify,parse,clone,delta,stats,keysWithField,retain,Remote};
 });

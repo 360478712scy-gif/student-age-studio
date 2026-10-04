@@ -1,5 +1,21 @@
 [
   {
+    "id": "hakujitsu",
+    "name": "白日",
+    "artist": "King Gnu",
+    "file": "music-hakujitsu.json",
+    "sha256": "ce74cca0a6bd6b5554007e61adcc502764d96bac814927496d3f8eeca4cae66d",
+    "bytes": 9208208
+  },
+  {
+    "id": "suisei",
+    "name": "水星",
+    "artist": "Lovely Summer Chan",
+    "file": "music-suisei.json",
+    "sha256": "6ceaf9f81d2ad5eb904b9a82ba9645057823b53532cec57fdf75ef6654d12c05",
+    "bytes": 8686669
+  },
+  {
     "id": "tifa-theme",
     "name": "ティファのテーマ - セブンスヘブン- (FFVII REMAKE)",
     "artist": "SQUARE ENIX MUSIC",

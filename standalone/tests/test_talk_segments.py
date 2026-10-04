@@ -222,6 +222,44 @@ class SegmentTests(unittest.TestCase):
                              'talkGeneration': gen.generation, 'talks': {'1': self.talks['1']}})
         self.assert_source_unchanged()
 
+    def test_event_then_screen_effect_save_keeps_generation_and_original_pages(self):
+        descriptor, gen = self.open()
+        entries, summaries, packed = gen.entries, gen.summaries, gen.packed()
+        events = {**self.events, '10': {'id': 10, 'talkId': []}}
+        row = json.loads(gen.page(['5'])['rows'][0][1]); row['screenEffect'] = [4009]
+        with patch.object(self.store, 'load', side_effect=AssertionError('save must not reload generation')):
+            first = self.store.save({'projectId': self.ident, 'revision': descriptor['revision'],
+                                     'talkGeneration': gen.generation, 'events': events})
+            second = self.store.save({'projectId': self.ident, 'revision': first['revision'],
+                                      'talkGeneration': gen.generation,
+                                      'talkPatch': {'version': 1, 'upsert': {'5': row}, 'deleted': []}})
+        self.assertTrue(first['talkGenerationAdvanced'] and second['talkGenerationAdvanced'])
+        self.assertIs(gen.entries, entries); self.assertIs(gen.summaries, summaries); self.assertIs(gen.packed(), packed)
+        self.assertEqual(json.loads(gen.page(['5'])['rows'][0][1]), self.talks['5'])
+        self.assertEqual(gen.page(['6'])['revision'], second['revision'])
+        actual = b.read_json(self.cfg / 'TalkCfg.json')
+        self.assertEqual(actual['5'], row)
+        self.assertEqual(actual['6'], self.talks['6'])
+        self.assertIn('10', b.read_json(self.cfg / 'EvtCfg.json'))
+        self.assertEqual((self.cfg / 'KZoneProfileCfg.json').read_bytes(), self.before['Cfgs/zh-cn/KZoneProfileCfg.json'])
+
+    def test_other_table_save_with_active_generation_does_not_rebuild_or_read_talks(self):
+        self.write('ItemCfg', {'10': {'id': 10, 'name': '旧名称'}})
+        descriptor, gen = self.open()
+        entries, summaries, packed = gen.entries, gen.summaries, gen.packed()
+        context = self.store.talk_segments.request_context
+        context.token = gen.generation
+        self.addCleanup(delattr, context, 'token')
+        with (patch.object(self.store, 'load', side_effect=AssertionError('feature save must not reload generation')),
+              patch.object(b, 'read_json', wraps=b.read_json) as read):
+            result = self.store.table_save({'projectId': self.ident, 'revision': descriptor['revision'],
+                                           'name': 'ItemCfg', 'scope': 'local', 'rows': {'10': {'id': 10, 'name': '新名称'}}})
+        self.assertFalse(any(Path(call.args[0]).name == 'TalkCfg.json' for call in read.call_args_list))
+        self.assertIs(gen.entries, entries); self.assertIs(gen.summaries, summaries); self.assertIs(gen.packed(), packed)
+        self.assertEqual(gen.page(['5'])['revision'], result['revision'])
+        self.assertEqual(json.loads(gen.page(['5'])['rows'][0][1]), self.talks['5'])
+        self.assertEqual((self.cfg / 'TalkCfg.json').read_bytes(), self.before['Cfgs/zh-cn/TalkCfg.json'])
+
     def test_original_override_keeps_hidden_rows(self):
         import original_mode
         base = {'1': {'id': 1, 'content': '原版'}, '400': {'id': 400, 'content': '原版未覆盖'}}

@@ -15,6 +15,8 @@ StudentAge Studio's original editor code is licensed under GPL-3.0-only.
 
 The publisher supplied these recordings for the editor playlist:
 
+- 白日 — King Gnu (added 2026-10-04)
+- 水星 — Lovely Summer Chan (added 2026-10-04)
 - ティファのテーマ - セブンスヘブン- (FFVII REMAKE) — SQUARE ENIX MUSIC
 - 星の在り処 — ファルコム・サウンド・チーム・JDK
 - Gymnopedie No. 1 — Gymnopedie

@@ -213,10 +213,8 @@ def analyze_json_text(text, repair=False, max_fixes=64):
 
 def read_json(path, fallback=None):
     try:
-        try: size = path.stat().st_size
+        try: path.stat()
         except FileNotFoundError: return copy.deepcopy(fallback)
-        if size > MAX_JSON:
-            raise ApiError("配置文件过大，无法安全打开：" + str(path), 413)
         # Json.NET-written mods may contain literal control characters inside dialogue strings.
         text = ''
         text = path.read_text(encoding="utf-8-sig")
@@ -224,6 +222,8 @@ def read_json(path, fallback=None):
             return json.loads(text, strict=False, parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
         except json.JSONDecodeError:
             return load_compatible_json(text)
+    except MemoryError:
+        raise ApiError("读取配置时系统内存不足，请释放内存后重试：" + str(path), 503, "file_memory")
     except PermissionError:
         raise ApiError("无法读取配置，请检查此文件的访问权限：" + str(path), 403, "file_permission")
     except OSError:
@@ -380,7 +380,7 @@ def premise_pairs(value):
 
 
 def validate_map(value, name, allow_zero=False):
-    if not isinstance(value, dict) or len(value) > 250000:
+    if not isinstance(value, dict):
         raise ApiError(name + " 必须是以编号为键的配置表。")
     for key, row in value.items():
         if (not valid_id(key) and not (allow_zero and key == "0")) or not isinstance(row, dict) or row.get("id") != int(key) or isinstance(row.get("id"), bool):
@@ -388,9 +388,26 @@ def validate_map(value, name, allow_zero=False):
     return value
 
 
+def normalize_loaded_map(value, name):
+    """Validate once, sharing intact rows and repairing only mismatched native ids."""
+    if not isinstance(value, dict):
+        raise ApiError(name + " 必须是以编号为键的配置表。")
+    mismatches = 0
+    for key, row in value.items():
+        if (not valid_id(key) and key != "0") or not isinstance(row, dict):
+            raise ApiError(name + " 中的编号必须为正整数，并与行内 id 一致。")
+        ident = int(key)
+        if key != "0" and row.get("id") != ident:
+            value[key] = {**row, "id": ident}
+            mismatches += 1
+        elif row.get("id") != ident or isinstance(row.get("id"), bool):
+            raise ApiError(name + " 中的编号必须为正整数，并与行内 id 一致。")
+    return value, mismatches
+
+
 def repair_map(value, name, allow_zero=False, warnings=None):
     """Saving is never refused over row numbering: keys and row ids are reconciled and reported."""
-    if not isinstance(value, dict) or len(value) > 250000:
+    if not isinstance(value, dict):
         raise ApiError(name + " 必须是以编号为键的配置表。")
     result, notes = {}, []
     for key, row in value.items():
@@ -658,10 +675,14 @@ class StudioStore:
             if selected is not None and name not in selected: continue
             try:
                 rows = read_json(path, {})
-                # Validation changes only the top-level ID; nested payloads stay untouched.
-                normalized = {key: {**row, "id": int(key)} if valid_id(key) and isinstance(row, dict) else row
-                              for key, row in rows.items()} if isinstance(rows, dict) else rows
-                validate_map(normalized, name, allow_zero=True)
+                # This path validates table keys without rewriting native IDs:
+                # repair/cascade still needs the original rows, including mismatches.
+                if not isinstance(rows, dict):
+                    raise ApiError(name + " 必须是以编号为键的配置表。")
+                for key, row in rows.items():
+                    if (not valid_id(key) and key != "0") or not isinstance(row, dict) or (
+                            key == "0" and (row.get("id") != 0 or isinstance(row.get("id"), bool))):
+                        raise ApiError(name + " 中的编号必须为正整数，并与行内 id 一致。")
                 maps[name] = rows
             except ApiError as error: failures[name] = error
         return maps, failures
@@ -854,8 +875,10 @@ class StudioStore:
             project_root = project.path.resolve()
             for path in paths:
                 digest.update(str(path.relative_to(project.path)).encode()); digest.update(b'\0')
-                if versions[str(path)] is not None and (not inside(path, project.path, project_root) or versions[str(path)][2] > MAX_JSON):
-                    raise ApiError('配置文件过大或路径无效。', 413)
+                # Revision checks stream bytes, so an unrelated large table does
+                # not need the JSON parser's size limit to save a smaller table.
+                if versions[str(path)] is not None and not inside(path, project.path, project_root):
+                    raise ApiError('配置文件路径无效。', 413)
                 digest.update(content_digest(path)); digest.update(b'\0')
             if catalog_path.is_file() and inside(catalog_path, game_cache(self.game)) and catalog_path.stat().st_size <= MAX_JSON:
                 digest.update(b'game-catalog.json\0'); digest.update(content_digest(catalog_path))
@@ -879,24 +902,15 @@ class StudioStore:
             for name, filename in TABLES.items():
                 try:
                     local = read_json(safe_path(project.path, "Cfgs/zh-cn/" + filename), {})
-                    # Key/id mismatches are normalized below as before.
-                    validate_map({k: {**v, 'id': int(k)} if valid_id(k) and isinstance(v, dict) else v
-                                  for k, v in local.items()} if isinstance(local, dict) else local,
-                                 filename, allow_zero=True)
+                    local, mismatches = normalize_loaded_map(local, filename)
                 except ApiError as error:
                     if error.status not in (400, 422) or error.code != 'invalid_request': raise
                     local = {}
+                    mismatches = 0
                     result['unreadableTables'][name] = error.message
                     result['warnings'].append(error.message + '。已保留原文件并跳过该表；其他正常内容仍可编辑。')
-                if isinstance(local, dict):
-                    mismatches = 0
-                    for key, row in local.items():
-                        if valid_id(key) and isinstance(row, dict) and row.get("id") != int(key):
-                            row["id"] = int(key)
-                            mismatches += 1
-                    if mismatches:
-                        result["warnings"].append(filename + " 有 " + str(mismatches) + " 处行编号不一致，已在编辑副本中按表键修复；保存时会备份原文件。")
-                validate_map(local, filename, allow_zero=True)
+                if mismatches:
+                    result["warnings"].append(filename + " 有 " + str(mismatches) + " 处行编号不一致，已在编辑副本中按表键修复；保存时会备份原文件。")
                 inherited = self.catalog_rows(filename[:-5], catalog) if project.original_mode else catalog.get(name, {})
                 if not isinstance(inherited, dict):
                     inherited = {}
@@ -1614,6 +1628,11 @@ class StudioStore:
         selected.update(filename for name, filename in TABLES.items() if name in payload)
         if 'events' in payload:
             selected.update({'MapCfg.json', 'EvtTypeCfg.json'})
+            event_rows = payload['events'] if isinstance(payload['events'], dict) else {}
+            groups = state.get('externalDialogueFolders', {})
+            if any(isinstance(row, dict) and row.get('studioGiftBindings') for row in event_rows.values()) or (
+                    isinstance(groups, dict) and any(isinstance(folder, dict) and folder.get('giftEventId') for folder in groups.values())):
+                selected.add('GiftEvtCfg.json')
         if 'externalDialogueFolders' in payload:
             from external_usages import KINDS
             for groups in (state.get('externalDialogueFolders', {}), payload['externalDialogueFolders']):
@@ -1635,11 +1654,175 @@ class StudioStore:
             old = maps.get(filename, {})
             if not isinstance(rows, dict) or not partial and set(old) - set(rows):
                 return self.readable_maps(project)
+            if any(not isinstance(row, dict) or type(row.get('id')) is not int or str(row['id']) != str(key)
+                   for key, row in rows.items()):
+                # Native-id repair can delete an old key and cascade into tables
+                # beyond the ordinary story dependencies.
+                return self.readable_maps(project)
             if state.get('premises'):
                 for key, row in rows.items():
                     if premise_writers(row) != premise_writers(old.get(key, {})):
                         return self.readable_maps(project)
         return maps, unreadable
+
+    def _simple_story_snapshot(self, project, payload, maps, state):
+        """Use row sharing only where later normalizers cannot mutate old rows."""
+        allowed = {'projectId', 'revision', 'talkGeneration', 'talks', 'talkPatch', 'options', 'events',
+                   'talkOwners', 'branchFolders', 'premises', 'pinnedIds', 'order', 'protagonistGender',
+                   'eventGrades', 'deletedIds', '_confirmedSaveWarnings'}
+        if project.original_mode or set(payload) - allowed or payload.get('deletedIds'):
+            return False
+        if not isinstance(state, dict) or state.get('premises') or state.get('deletedPremisePairs') or payload.get('premises'):
+            return False
+        for field, table in (('events', 'EvtCfg.json'), ('options', 'OptionCfg.json'), ('talks', 'TalkCfg.json')):
+            if field in payload and (not isinstance(payload[field], dict) or maps.get(table, {}).keys() - payload[field].keys()):
+                return False
+            # repair_map may move a row to its native id, removing the old key.
+            # That activates deletion cascades, whose original snapshot is deep.
+            if field in payload and any(not isinstance(row, dict) or type(row.get('id')) is not int or str(row['id']) != str(key)
+                                        for key, row in payload[field].items()):
+                return False
+        if read_json(safe_path(project.path, 'StudentAgeStudio/deleted-talks.json'), {}):
+            return False
+        cues = read_json(safe_path(project.path, 'StudentAgeStudio/audio-cues.json'), {})
+        # Managed BGM exports edit dialogue rows in place. Keep its old snapshot path.
+        return isinstance(cues, dict) and not cues.get('bgm')
+
+    @staticmethod
+    def _same_story_edges(before, after, previous_folders, folders, catalog_events):
+        """Adding an empty event changes the display band, but disconnects no old graph."""
+        if previous_folders != folders:
+            return False
+        for table, fields in (('TalkCfg.json', ('nextTalk', 'nextTalk2', 'option')),
+                              ('OptionCfg.json', ('talkId', 'talkId2'))):
+            old, new = before.get(table, {}), after.get(table, {})
+            if old.keys() != new.keys():
+                return False
+            for key, row in new.items():
+                prior = old[key]
+                if row is not prior and any(row.get(field) != prior.get(field) for field in fields):
+                    return False
+        old = {**catalog_events, **before.get('EvtCfg.json', {})}
+        new = {**catalog_events, **after.get('EvtCfg.json', {})}
+        if old.keys() - new.keys():
+            return False
+        for key, row in new.items():
+            prior = old.get(key)
+            if prior is None:
+                if row.get('talkId') or row.get('options'):
+                    return False
+            elif any(row.get(field) != prior.get(field) for field in ('talkId', 'options')):
+                return False
+        return True
+
+    @staticmethod
+    def _ownership_digest(events, talks, options, folders, band, anchor):
+        digest = hashlib.sha256(b'StudentAgeStudio-ownership-v1\0')
+        for rows, fields in ((events, ('talkId', 'options')), (talks, ('nextTalk', 'nextTalk2', 'option')),
+                             (options, ('talkId', 'talkId2'))):
+            digest.update(b'\0table\0')
+            for key, row in rows.items():
+                digest.update(repr((key, *(row.get(field) for field in fields))).encode('utf-8'))
+                digest.update(b'\0')
+        digest.update(repr(folders).encode('utf-8'))
+        digest.update(repr(None if band is None else sorted(map(str, band))).encode('utf-8'))
+        digest.update(repr(sorted(map(str, anchor or []))).encode('utf-8'))
+        return digest.digest()
+
+    @staticmethod
+    def _previous_owners_digest(previous):
+        digest = hashlib.sha256()
+        for key in sorted(previous or {}, key=str):
+            digest.update(repr((key, tuple(sorted(map(str, (previous or {})[key]))))).encode('utf-8'))
+            digest.update(b'\0')
+        return digest.digest()
+
+    def _story_ownership(self, project, revision, events, talks, options, folders, previous=None, band=None, anchor=None):
+        """One bounded immutable result, keyed by live source revision and every graph input."""
+        from event_ownership import ownership
+        graph = self._ownership_digest(events, talks, options, folders, band, anchor)
+        prior = self._previous_owners_digest(previous)
+        cache = getattr(self, '_story_ownership_cache', None)
+        if cache and cache['project'] == str(project.path) and cache['revision'] == revision and cache['graph'] == graph and prior in cache['previous']:
+            return {key: list(value) for key, value in cache['owners'].items()}
+        result = ownership(events, talks, options, folders, previous, band, anchor)
+        # ownership() closes forward/retained paths and removes display-only owners;
+        # passing that canonical result back as previous is the same fixed point.
+        self._story_ownership_cache = {'project': str(project.path), 'revision': revision, 'graph': graph,
+                                      'previous': {prior, self._previous_owners_digest(result)},
+                                      'owners': {key: tuple(value) for key, value in result.items()}}
+        return result
+
+    def _ownership_source_digests(self, project):
+        paths = [project.path / ('Cfgs/zh-cn/' + name + '.json') for name in ('TalkCfg', 'OptionCfg', 'EvtCfg')]
+        paths += [project.path / 'StudentAgeStudio/editor-state.json', game_cache(self.game) / 'game-catalog.json']
+        result = {}
+        for path in paths:
+            if not path.exists():
+                result[str(path)] = None
+                continue
+            cached = self._revision_file_digests.get(str(path))
+            if not cached or cached[0] != file_fingerprint(path):
+                return None
+            result[str(path)] = cached[1]
+        return result
+
+    def _save_event_titles(self, project, payload):
+        """Only existing title labels changed: commit EvtCfg without story scans."""
+        allowed = {'projectId', 'revision', 'talkGeneration', 'events'}
+        if project.original_mode or 'events' not in payload or set(payload) - allowed:
+            return None
+        incoming = payload['events']
+        if not isinstance(incoming, dict): return None
+        relative = 'Cfgs/zh-cn/EvtCfg.json'
+        try:
+            previous = read_json(safe_path(project.path, relative), {})
+        except ApiError:
+            return None  # Keep unreadable-table handling in the regular save.
+        if not isinstance(previous, dict) or set(incoming) != set(previous): return None
+        revised = dict(previous)
+        changed = False
+        for key, row in incoming.items():
+            old = previous[key]
+            if (not valid_id(key) and key != '0' or not isinstance(row, dict) or not isinstance(old, dict)
+                    or type(row.get('id')) is not int or type(old.get('id')) is not int
+                    or row['id'] != int(key) or old['id'] != int(key)
+                    or 'title' in old and 'title' not in row
+                    or 'title' in row and not isinstance(row['title'], str)):
+                return None
+            old_fields = {k: v for k, v in old.items() if k != 'title'}
+            new_fields = {k: v for k, v in row.items() if k != 'title'}
+            social_changed = False
+            if 'studioSocial' in old or 'studioSocial' in row:
+                previous_social, incoming_social = old.get('studioSocial'), row.get('studioSocial')
+                if not isinstance(previous_social, dict) or not isinstance(incoming_social, dict): return None
+                if ('title' in previous_social) != ('title' in incoming_social): return None
+                if 'title' in previous_social:
+                    if not isinstance(previous_social['title'], str) or not isinstance(incoming_social['title'], str): return None
+                    social_changed = previous_social['title'] != incoming_social['title']
+                old_fields['studioSocial'] = {k: v for k, v in previous_social.items() if k != 'title'}
+                new_fields['studioSocial'] = {k: v for k, v in incoming_social.items() if k != 'title'}
+            # Python equality treats true == 1 and 1 == 1.0. Preserve JSON types
+            # so non-title normalization and omitted unknown fields fall back.
+            try:
+                old_fields = json.dumps(old_fields, sort_keys=True, ensure_ascii=False, allow_nan=False)
+                new_fields = json.dumps(new_fields, sort_keys=True, ensure_ascii=False, allow_nan=False)
+            except (TypeError, ValueError):
+                return None
+            if old_fields != new_fields: return None
+            title_changed = ('title' in old) != ('title' in row) or old.get('title') != row.get('title')
+            if title_changed or social_changed:
+                revised[key] = dict(old)
+                if title_changed: revised[key]['title'] = row['title']
+                if social_changed: revised[key]['studioSocial'] = {**previous_social, 'title': incoming_social['title']}
+                changed = True
+        if not changed: return None
+        backup = self.commit(project, {relative: json_bytes(revised)}, payload['revision'])
+        revision = self.revision(project)
+        advanced = self.talk_segments.saved(project, payload.get('talkGeneration'), revision, story_saved=True) if 'talkGeneration' in payload else None
+        return {'ok': True, 'revision': revision, 'backup': backup, 'repairedIds': [],
+                **({'talkGenerationAdvanced': advanced} if advanced is not None else {}),
+                'warnings': list(getattr(self, 'commit_warnings', []))}
 
     def save(self, payload):
         with self.lock:
@@ -1656,6 +1839,9 @@ class StudioStore:
                 self.talk_segments.get(project.id, payload['talkGeneration'])
                 if 'talks' in payload:
                     raise ApiError('分段会话只能显式增量提交对话，不能提交部分完整表。')
+            title_result = self._save_event_titles(project, payload)
+            if title_result is not None: return title_result
+            owner_source_digests = self._ownership_source_digests(project)
             from text_record_save import save as save_text_records
             fast_result = save_text_records(self, project, payload, sys.modules[__name__])
             if fast_result is not None: return fast_result
@@ -1694,7 +1880,9 @@ class StudioStore:
                     # map too. Never serialize that placeholder over a bad file.
                     if payload[name] != catalog.get(name, {}): save_warnings.append(unreadable[filename].message + "。为避免覆盖损坏的文件，这张表的修改未写入。")
                     del payload[name]
-            original_maps = copy.deepcopy(all_maps)
+            premise_state = read_json(safe_path(project.path, 'StudentAgeStudio/editor-state.json'), {})
+            simple_snapshot = self._simple_story_snapshot(project, payload, all_maps, premise_state)
+            original_maps = {name: dict(rows) for name, rows in all_maps.items()} if simple_snapshot else copy.deepcopy(all_maps)
             original_talks = original_maps.get("TalkCfg.json", {})
             catalog_talks = self.catalog_rows("TalkCfg", catalog)
             previous_options = set(all_maps.get("OptionCfg.json", {}))
@@ -1744,7 +1932,6 @@ class StudioStore:
                     if rewritten != all_maps[filename]:
                         all_maps[filename] = rewritten
                         touched.add(filename)
-            premise_state = read_json(safe_path(project.path, 'StudentAgeStudio/editor-state.json'), {})
             from event_ownership import ownership, deletion
             if not isinstance(premise_state, dict):
                 save_warnings.append('编辑记录格式无效，已重建。'); premise_state = {}
@@ -1791,7 +1978,7 @@ class StudioStore:
                         remaining['studioGiftBindings']=[{**v,'index':int(v.get('index',0))-sum(i<int(v.get('index',0)) for i in slots)} if str(v.get('id'))==key else v for v in remaining['studioGiftBindings'] if str(v.get('id'))!=key or int(v.get('index',0)) not in slots]
                 for key,row in list(all_maps.get('InteractCfg.json', {}).items()):
                     if str(row.get('talkId')) in cascade_deleted: del all_maps['InteractCfg.json'][key]
-            reconciled_state = copy.deepcopy(premise_state)
+            reconciled_state = {} if simple_snapshot else copy.deepcopy(premise_state)
             if 'premises' in payload: reconciled_state['premises'] = copy.deepcopy(payload['premises'])
             reconcile_premises(reconciled_state, premise_state, all_maps, original_maps)
             payload = {**payload, 'premises': reconciled_state.get('premises', {})}
@@ -1945,10 +2132,10 @@ class StudioStore:
             canonical_deleted = nested_deletions(redirects)
             if canonical_deleted != prior_deleted:
                 changes["StudentAgeStudio/deleted-talks.json"] = json_bytes(canonical_deleted)
-            state = read_json(safe_path(project.path, "StudentAgeStudio/editor-state.json"), {})
+            state = dict(premise_state) if simple_snapshot else read_json(safe_path(project.path, "StudentAgeStudio/editor-state.json"), {})
             if not isinstance(state, dict):
                 save_warnings.append("编辑记录格式无效，已重建。"); state = {}
-            old_state = copy.deepcopy(state)
+            old_state = dict(state) if simple_snapshot else copy.deepcopy(state)
             if 'externalDialogueFolders' in payload:
                 from external_dialogues import folders as external_folders
                 external_owners=ownership({**self.catalog_rows('EvtCfg',catalog), **all_maps.get('EvtCfg.json',{})}, {**self.catalog_rows('TalkCfg',catalog), **all_maps.get('TalkCfg.json',{})}, all_maps.get('OptionCfg.json',{}), state.get('branchFolders',{}), state.get('talkOwners',{}), band=set(all_maps.get('EvtCfg.json', {})))
@@ -1963,6 +2150,10 @@ class StudioStore:
                 from external_usages import apply as apply_external_uses
                 state['externalDialogueFolders']=apply_external_uses(self,project,groups,previous_external,all_maps,touched,sys.modules[__name__],normalized_external_entries)
             from event_gift_folders import sync as sync_event_gift_folders
+            if simple_snapshot and 'externalDialogueFolders' in state:
+                # Gift binding sync edits nested folder metadata in place. Keep
+                # old_state independent so a metadata-only unbind is committed.
+                state['externalDialogueFolders'] = copy.deepcopy(state['externalDialogueFolders'])
             sync_event_gift_folders(state, all_maps, touched, external_edit='externalDialogueFolders' in payload, previous=old_state.get('externalDialogueFolders',{}))
             if "protagonistGender" in payload:
                 gender=payload["protagonistGender"]
@@ -1978,6 +2169,8 @@ class StudioStore:
                 value = row.get("studioLighting", {})
                 if not isinstance(value, dict) or any(not str(role).isdigit() or not isinstance(enabled, bool) for role, enabled in value.items()):
                     save_warnings.append('对话 ' + str(ident) + ' 的人物高光设置无效，已清除。')
+                    if simple_snapshot:
+                        row = copy.deepcopy(row); all_maps['TalkCfg.json'][ident] = row
                     row["studioLighting"] = {}; touched.add("TalkCfg.json"); value = {}
                 # The current speaker cannot be dimmed, including by old editor metadata.
                 # Game/third-party mods use null for narration as well as [].
@@ -1985,9 +2178,12 @@ class StudioStore:
                 speakers = {str(role) for role in (row.get("roleIds") or [])}
                 canonical = {role: enabled for role, enabled in value.items() if enabled or str(role) not in speakers}
                 if canonical != value:
+                    if simple_snapshot:
+                        row = copy.deepcopy(row); all_maps['TalkCfg.json'][ident] = row
                     row["studioLighting"] = canonical
                     touched.add("TalkCfg.json")
-                lighting[ident] = copy.deepcopy(canonical)
+                if canonical:
+                    lighting[ident] = copy.deepcopy(canonical)
             if lighting or "lighting" in state:
                 state["lighting"] = lighting
             # The old "deleted premise slots" ledger is no longer kept: it never expired and turned into spurious errors.
@@ -2009,7 +2205,8 @@ class StudioStore:
             if "branchFolders" in payload or folders != previous_folders:
                 state["branchFolders"] = folders
             proposed_owners = payload.get('talkOwners', old_owners)
-            try: self.validate_talk_owners(proposed_owners)
+            try:
+                if proposed_owners is not old_owners: self.validate_talk_owners(proposed_owners)
             except ApiError as error:
                 save_warnings.append('对话归属记录无效，已按当前对话连接重新推算（' + error.message + '）。'); proposed_owners = old_owners if isinstance(old_owners, dict) else {}
                 try: self.validate_talk_owners(proposed_owners)
@@ -2017,11 +2214,17 @@ class StudioStore:
             # Original connectivity records ownership before a submitted edit
             # disconnects a segment. This also covers non-UI table saves.
             mod_events=set(all_maps.get('EvtCfg.json', {}))
-            inferred_owners = ownership({**self.catalog_rows('EvtCfg', catalog), **original_maps.get('EvtCfg.json', {})}, original_talks,
-                original_maps.get('OptionCfg.json', {}), previous_folders, old_owners, band=set(original_maps.get('EvtCfg.json', {})))
-            known_owners = {t:list(set(inferred_owners.get(t, [])) | set(proposed_owners.get(t, []))) for t in set(inferred_owners) | set(proposed_owners)}
-            state['talkOwners'] = ownership({**self.catalog_rows('EvtCfg', catalog), **all_maps.get('EvtCfg.json', {})},
-                {t:r for t,r in all_maps.get('TalkCfg.json', {}).items() if t not in redirects}, all_maps.get('OptionCfg.json', {}), folders, known_owners, band=mod_events)
+            native_events = self.catalog_rows('EvtCfg', catalog)
+            if not redirects and self._same_story_edges(original_maps, all_maps, previous_folders, folders, native_events):
+                inferred_owners = old_owners
+            else:
+                inferred_owners = self._story_ownership(project, expected, {**native_events, **original_maps.get('EvtCfg.json', {})}, original_talks,
+                    original_maps.get('OptionCfg.json', {}), previous_folders, old_owners, band=set(original_maps.get('EvtCfg.json', {})))
+            known_owners = inferred_owners if proposed_owners is inferred_owners or proposed_owners == inferred_owners else {
+                t:list(set(inferred_owners.get(t, [])) | set(proposed_owners.get(t, []))) for t in set(inferred_owners) | set(proposed_owners)}
+            current_talks = {t:r for t,r in all_maps.get('TalkCfg.json', {}).items() if t not in redirects} if redirects else all_maps.get('TalkCfg.json', {})
+            state['talkOwners'] = self._story_ownership(project, expected, {**native_events, **all_maps.get('EvtCfg.json', {})},
+                current_talks, all_maps.get('OptionCfg.json', {}), folders, known_owners, band=mod_events)
             premises = state.get("premises", {})
             if "premises" in payload or premises:
                 try:
@@ -2063,6 +2266,16 @@ class StudioStore:
             changes.update({"Cfgs/zh-cn/" + filename: json_bytes(all_maps[filename]) for filename in touched})
             backup = self.commit(project, changes, expected)
             revision = self.revision(project)
+            # Advance the memo only if the actual sources match exactly what the
+            # validated transaction read/wrote. An external edit invalidates it.
+            cache = getattr(self, '_story_ownership_cache', None)
+            if cache and cache['project'] == str(project.path) and cache['revision'] == expected and owner_source_digests is not None:
+                planned = dict(owner_source_digests)
+                for relative, data in changes.items():
+                    path = str(project.path / relative)
+                    if path in planned: planned[path] = hashlib.sha256(data).digest()
+                if self._ownership_source_digests(project) == planned:
+                    cache['revision'] = revision
             generation_advanced = self.talk_segments.saved(project, payload.get('talkGeneration'), revision, story_saved=True) if 'talkGeneration' in payload else None
             return {"ok": True, "revision": revision, "backup": backup, "repairedIds": list(redirects),
                     **({'talkGenerationAdvanced': generation_advanced} if generation_advanced is not None else {}),
@@ -3952,21 +4165,23 @@ class StudioHandler(BaseHTTPRequestHandler):
             if start >= length or start > end:
                 raise ApiError("资源范围超出文件。", 416)
             partial = True
-        self.send_response(206 if partial else 200)
-        self.send_header("Content-Type", mimetypes.guess_type(path.name)[0] or "application/octet-stream")
-        self.send_header("Content-Length", str(end - start + 1))
-        self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Cache-Control", "private, no-cache")
-        self.send_header("ETag", etag)
-        self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
-        if partial:
-            self.send_header("Content-Range", "bytes " + str(start) + "-" + str(end) + "/" + str(length))
-        if self.close_connection:
-            self.send_header("Connection", "close")
-        self.end_headers()
+        # Open before committing media headers: an unreadable cache file must
+        # produce a normal JSON error, never a partial audio response.
         with path.open("rb") as stream:
+            self.send_response(206 if partial else 200)
+            self.send_header("Content-Type", mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+            self.send_header("Content-Length", str(end - start + 1))
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Cache-Control", "private, no-cache")
+            self.send_header("ETag", etag)
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+            if partial:
+                self.send_header("Content-Range", "bytes " + str(start) + "-" + str(end) + "/" + str(length))
+            if self.close_connection:
+                self.send_header("Connection", "close")
+            self.end_headers()
             stream.seek(start)
             remaining = end - start + 1
             while remaining:
@@ -4556,7 +4771,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                                   or method == 'POST' and route in {'/api/updates/check', '/api/updates/download'})
             independent = method == 'GET' and (
                 (not route.startswith('/api/') and route not in ('/', '/index.html'))
-                or route in {'/api/assets', '/api/talk-head', '/api/editor-music-file', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui',
+                or route in {'/api/assets', '/api/social-image', '/api/talk-head', '/api/editor-music-file', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui',
                              # Read-only listings that scan the disk: slow while the game cache is being written,
                              # they must not hold every other request (opening dialogue, saving) behind them.
                              '/api/ids', '/api/audio'})
@@ -4589,7 +4804,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self.send_json(data, exc.status)
             except (BrokenPipeError, ConnectionResetError):
                 pass
-        except (BrokenPipeError, ConnectionResetError, socket.timeout):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, socket.timeout):
             self.close_connection = True
         except PermissionError as exc:
             self.send_json(self.error_response(exc, "文件访问被拒绝，请检查访问权限：" + str(exc.filename or "当前模组目录"), "file_permission", method), 403)

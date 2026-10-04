@@ -147,8 +147,6 @@ def records(raw):
                     or str(int(key)) != key or int(key) > 2147483647 or key in seen):
                 raise SegmentError('对话表编号重复或无效')
             seen.add(key)
-            if len(seen) > 250000:
-                raise SegmentError('对话表记录过多')
             take(':')
             space()
             start = pos
@@ -384,9 +382,10 @@ class SegmentService:
                         self.generations.pop(token).close()
             source = b.safe_path(project.path, 'Cfgs/zh-cn/TalkCfg.json')
             before = file_fingerprint(source) if source.exists() else None
-            if source.exists() and source.stat().st_size > b.MAX_JSON:
-                raise SegmentError('对话文件过大')
-            raw = source.read_bytes() if source.exists() else b'{}'
+            try:
+                raw = source.read_bytes() if source.exists() else b'{}'
+            except MemoryError:
+                raise b.ApiError('读取对话时系统内存不足，请释放内存后重试：' + str(source), 503, 'file_memory')
             # Cold only: the existing loader resolves catalog overrides, retained
             # ownership and audio. No shortened table is ever passed to it.
             loaded = self.store.load(project_id, original_events)

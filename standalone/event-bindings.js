@@ -54,7 +54,7 @@ function syncSocialEffects(doc){
  for(const id of StudentAgeIndexedTalks.keysWithField(talks,'studioSocialEffects')){const t=talks[id];
   for(const [eventId,rows] of Object.entries(t.studioSocialEffects))for(const r of rows){const event=doc.events?.[eventId],manual=(event?.effect||[]).some(v=>same(v,r))&&!(event?.studioSocial?.effects||[]).some(v=>same(v,r));if(manual)continue;const i=(t.effect||[]).findIndex(v=>same(v,r));if(i>=0)t.effect.splice(i,1);}t.studioSocialEffects={};
  }
- const append=(t,eventId,rows)=>{if(!t)return;t.effect??=[];t.studioSocialEffects??={};const added=rows.filter(r=>!t.effect.some(v=>same(v,r)));t.effect.push(...copy(added));(t.studioSocialEffects[eventId]??=[]).push(...copy(added));};
+ const append=(t,eventId,rows)=>{if(!t)return;t.effect??=[];t.studioSocialEffects??={};const added=rows.filter(r=>!t.effect.some(v=>same(v,r)));t.effect.push(...copy(added));t.studioSocialEffects[eventId]??=[];t.studioSocialEffects[eventId].push(...copy(added));};
  for(const e of Object.values(doc.events||{})){
   const gift=e.studioGiftBindings?.length;
   // GiftEvtCfg enters ShowTalk directly: count entry, not completion, just like native ShowEvent.
