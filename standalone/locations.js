@@ -81,6 +81,7 @@
     const body=document.createElement('div');body.className='workshop-settings-body';
     sections.forEach((section,i)=>{section.dataset.settingsGroup=categories[i];body.append(section);});
     mountFolders(body);
+    window.STUDIO_DIALOGUE_KEYS?.mount(body);
     mountProjectPreferences(body);
     const appearance=document.createElement('section');appearance.className='location-section';appearance.dataset.settingsGroup='preferences';appearance.innerHTML=`<h3>界面主题</h3><label class="location-path-label" for="studio-theme-choice">外观</label><select id="studio-theme-choice"><option value="classic">经典主题 · 深绿</option><option value="glass">晴昼 · 浅蓝</option><option value="glass-dusk">暮色 · 暖紫</option><option value="glass-moon">月夜 · 深蓝</option><option value="glass-atelier">纸本 · 工作室</option><option value="glass-noir">夜幕 · 剧场（概念界面）</option></select><label class="location-path-label" for="studio-glass-material">玻璃质感</label><select id="studio-glass-material"><option value="liquid">液态玻璃</option><option value="frosted">毛玻璃 · 静谧层次</option></select><p class="location-help">毛玻璃以柔和透光、细腻边缘和层叠阴影呈现质感，不随鼠标实时渲染。三种配色均可使用；切换立即生效，下次启动保留。</p>`;body.prepend(appearance);
     // AI tools: copy-ready commands for this installation's own runtime.

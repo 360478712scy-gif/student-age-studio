@@ -1205,10 +1205,34 @@ function renderEvents() {
   $('#event-select').innerHTML='<option value="all" disabled>请从事件列表选择事件</option>'+values(S.doc?.events).map(e=>`<option ${StudentAgeRecordLabels.option(e.id)} value="${e.id}" ${String(e.id)===String(S.event)?'selected':''}>${h(e.title||'未命名事件')}</option>`).join('');
   if(S.event==='all')$('#event-select').value='all';
 }
+let dialogueListState=null;
+// Match the card tree: only expanded folders contribute selectable children.
+function expandedDialogueOrder(root,list){
+ const result=[],seen=new Set(),stack=[root],rows=Remote.routingTable(S.doc.talks);
+ while(stack.length){const id=stack.pop();if(seen.has(id)||!list.allowed.has(id)||!(id in S.doc.talks))continue;seen.add(id);result.push(id);
+  if(!list.parents.has(id))continue;const row=rows[id],children=[];
+  const folders=ids(row.option).map(option=>[Branches.key(id,option),S.branchFolders[Branches.key(id,option)]]).concat(Timeline.entries(S.branchFolders,id));
+  for(const [key,folder]of folders)if(folder&&(S.folderOpen[key]??!(folder.collapsed??true)))children.push(...ids(folder.talkIds));
+  for(let index=children.length-1;index>=0;index--)stack.push(children[index]);
+ }
+ return result;
+}
+function stepDialogue(direction){
+ if(direction!==-1&&direction!==1)return false;
+ if(!S.doc||!S.project||S.preview||S.projectOpening||S.saving||S.segmentLoading||storyPreview||sceneMode!=='edit'||externalSession||window.STUDIO_BOOTSTRAPPING||window.STUDIO_IDS?.busy||window.STUDIO_EVENTS?.isOpen()||window.STUDIO_WORKSHOP_NAV?.isOpen()||window.STUDIO_HELP?.isOpen()||document.querySelector('dialog[open]'))return false;
+ const workspace=document.querySelector('.workspace'),list=dialogueListState;if(!workspace?.getClientRects().length||!list||list.doc!==S.doc||list.event!==S.event||list.search!==S.search)return false;
+ let root=S.selected;const seen=new Set();while(list.owners.has(root)&&!seen.has(root)){seen.add(root);const parent=S.branchFolders[list.owners.get(root)]?.parentTalkId;if(!list.allowed.has(parent))break;root=parent;}
+ const rootIndex=list.positions.get(root);if(rootIndex===undefined)return false;
+ const order=expandedDialogueOrder(root,list),index=order.indexOf(S.selected);if(index<0)return false;
+ let next=order[index+direction];if(next===undefined){const adjacent=list.roots[rootIndex+direction];if(adjacent===undefined)return false;next=direction===1?adjacent:expandedDialogueOrder(adjacent,list).at(-1);}
+ if(next===undefined||next===S.selected)return false;
+ selectTalk(next);document.querySelector('#talk-list .talk-card[data-id="'+next+'"]')?.scrollIntoView({block:'nearest'});return S.selected===next;
+}
+window.STUDIO_STEP_DIALOGUE=stepDialogue;
 const storySelection=StudentAgeDialogueSelection.create({host:document.querySelector('.workspace'),selector:'#talk-list .talk-card',attribute:'data-id',toolbar:()=>document.querySelector('#talk-count')?.parentElement,scope:()=>[S.project?.id,S.event,S.search,JSON.stringify(S.idMappings||{})].join('|'),allowed:()=>S.doc?visibleIds():[],editable:()=>!!S.project&&!S.project.readOnly&&!S.projectOpening&&!S.saving,signature:currentSignature,remove:deleteTalk,error:fail,draggable:true});
 function renderList() {
   clearTimeout(textSearchTimer);textSearchTimer=null;
-  if(!S.doc){$('#talk-list').innerHTML='<div class="small-empty">请打开或新建模组。</div>';return;}
+  if(!S.doc){dialogueListState=null;$('#talk-list').innerHTML='<div class="small-empty">请打开或新建模组。</div>';return;}
   const visible=visibleIds(),allowed=new Set(visible),owners=new Map();for(const [key,f]of Object.entries(S.branchFolders))for(const id of ids(f.talkIds))owners.set(id,key);
   if(S.search){for(const start of visible){let id=start;const seen=new Set();while(owners.has(id)&&!seen.has(id)){seen.add(id);const f=S.branchFolders[owners.get(id)];allowed.add(f.parentTalkId);S.folderOpen[owners.get(id)]=true;id=f.parentTalkId;}}}
   $('#talk-count').textContent=visible.length+' 句对话';const rendered=new Set();let renderedIndex=0,parentCounts=null;
@@ -1221,6 +1245,8 @@ function renderList() {
   }
   const internalTalks=Timeline.internals(S.branchFolders);
   const topLevel=S.order.filter(id=>!internalTalks.has(id)&&allowed.has(id)&&(!owners.has(id)||!allowed.has(S.branchFolders[owners.get(id)]?.parentTalkId)));
+  const positions=new Map();topLevel.forEach((id,index)=>positions.set(id,index));
+  dialogueListState={doc:S.doc,event:S.event,search:S.search,roots:topLevel,positions,allowed,owners,parents:new Set(Object.values(S.branchFolders).map(folder=>Number(folder.parentTalkId)))};
   const pageSize=100;
   if(S.listAnchor!==S.selected){
     let root=S.selected;const seen=new Set();while(owners.has(root)&&!seen.has(root)){seen.add(root);root=S.branchFolders[owners.get(root)]?.parentTalkId;}

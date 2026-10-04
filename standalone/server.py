@@ -3903,11 +3903,28 @@ class StudioServer(ThreadingHTTPServer):
             if not isinstance(favorites, list): favorites = defaults
             favorites = list(dict.fromkeys(v for v in favorites if isinstance(v, str) and v in eligible))
             if payload is not None:
-                if not isinstance(payload, dict) or not any(key in payload for key in ('showRecordIds', 'autoSave', 'saveOnExit', 'onboardingComplete', 'favoriteFeature', 'theme', 'glassMaterial', 'idCheckExcludedProjects')):
+                if not isinstance(payload, dict) or not any(key in payload for key in ('showRecordIds', 'autoSave', 'saveOnExit', 'onboardingComplete', 'favoriteFeature', 'theme', 'glassMaterial', 'idCheckExcludedProjects', 'dialogueShortcuts')):
                     raise ApiError('请选择要修改的显示、保存或收藏设置。')
                 for key in ('showRecordIds', 'autoSave', 'saveOnExit', 'onboardingComplete'):
                     if key in payload and type(payload[key]) is not bool:
                         raise ApiError('保存设置必须为开启或关闭。')
+                if 'dialogueShortcuts' in payload:
+                    value = payload['dialogueShortcuts']
+                    if not isinstance(value, dict) or set(value) != {'previous', 'next'}:
+                        raise ApiError('请设置上一句和下一句的快捷键。')
+                    reserved_mod = {'KeyA','KeyC','KeyV','KeyX','KeyZ','KeyY','KeyS','KeyF','KeyR','KeyP','KeyL','KeyU','KeyW','KeyQ','KeyT','KeyN','KeyH','KeyJ','KeyK','KeyI','Digit0','Equal','Minus'}
+                    for shortcut in value.values():
+                        if not isinstance(shortcut, str) or len(shortcut) > 64:
+                            raise ApiError('快捷键格式无效。')
+                        if not shortcut: continue
+                        if '+' not in shortcut or not re.fullmatch(r'(?:Mod\+)?(?:Alt\+)?(?:Shift\+)?(?:Arrow(?:Up|Down|Left|Right)|Key[A-Z]|Digit[0-9]|F(?:[1-9]|1[0-2])|Home|End|PageUp|PageDown|Equal|Minus)', shortcut):
+                            raise ApiError('请使用带修饰键的组合快捷键。')
+                        parts = shortcut.split('+'); key = parts[-1]
+                        if ('Mod' in parts and key in reserved_mod) or key in ('F5', 'F11') or ('Alt' in parts and key in ('ArrowLeft', 'ArrowRight', 'F4')):
+                            raise ApiError('此组合已用于编辑器、系统或浏览器操作，请换一个。')
+                    if value['previous'] and value['previous'] == value['next']:
+                        raise ApiError('上一句和下一句不能使用相同的快捷键。')
+                    saved['dialogueShortcuts'] = dict(value)
                 if 'idCheckExcludedProjects' in payload:
                     value = payload['idCheckExcludedProjects']
                     if not isinstance(value, list) or len(value) > 1000 or any(not isinstance(v, str) or len(v) > 512 for v in value):
@@ -3930,7 +3947,9 @@ class StudioServer(ThreadingHTTPServer):
                     if key in payload: saved[key] = payload[key]
                 self.display_path.parent.mkdir(parents=True, exist_ok=True)
                 atomic_write(self.display_path, json_bytes(saved))
-            return {'glassMaterial': 'frosted' if saved.get('glassMaterial') == 'frosted' else 'liquid', 'idCheckExcludedProjects': saved.get('idCheckExcludedProjects', []), 'theme': saved.get('theme') if saved.get('theme') in ('classic', 'glass', 'glass-dusk', 'glass-moon', 'glass-atelier', 'glass-noir') else 'glass', 'showRecordIds': saved.get('showRecordIds') is not False, 'autoSave': saved.get('autoSave') is True, 'workshopFavorites': favorites, 'saveOnExit': saved.get('saveOnExit', saved.get('autoSave',False)) is True, 'onboardingComplete': saved.get('onboardingComplete') is True}
+            shortcuts = saved.get('dialogueShortcuts', {})
+            shortcuts = {key: shortcuts.get(key, default) if isinstance(shortcuts, dict) and isinstance(shortcuts.get(key, default), str) else default for key, default in [('previous', 'Alt+ArrowUp'), ('next', 'Alt+ArrowDown')]}
+            return {'dialogueShortcuts': shortcuts, 'glassMaterial': 'frosted' if saved.get('glassMaterial') == 'frosted' else 'liquid', 'idCheckExcludedProjects': saved.get('idCheckExcludedProjects', []), 'theme': saved.get('theme') if saved.get('theme') in ('classic', 'glass', 'glass-dusk', 'glass-moon', 'glass-atelier', 'glass-noir') else 'glass', 'showRecordIds': saved.get('showRecordIds') is not False, 'autoSave': saved.get('autoSave') is True, 'workshopFavorites': favorites, 'saveOnExit': saved.get('saveOnExit', saved.get('autoSave',False)) is True, 'onboardingComplete': saved.get('onboardingComplete') is True}
 
     def server_close(self):
         if hasattr(self, 'media_warmup'): self.media_warmup.close()
@@ -4456,7 +4475,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 page = page.replace('<script>window.STUDIO_TOKEN = "__STUDIO_TOKEN__";</script>', "")
                 nonce = secrets.token_urlsafe(18)
                 preferences = self.server.display_settings()
-                bootstrap = '<script nonce="' + nonce + '">window.STUDIO_TOKEN=' + json.dumps(self.server.token) + ';window.STUDIO_BOOTSTRAPPING=true;window.STUDIO_DISPLAY_IDS=' + json.dumps(preferences['showRecordIds']) + ';window.STUDIO_AUTO_SAVE=' + json.dumps(preferences['autoSave']) + ';window.STUDIO_SAVE_ON_EXIT='+json.dumps(preferences['saveOnExit'])+';window.STUDIO_ONBOARDING_COMPLETE='+json.dumps(preferences['onboardingComplete'])+';window.STUDIO_WORKSHOP_FAVORITES=' + json.dumps(preferences['workshopFavorites']) + ";</script>"
+                bootstrap = '<script nonce="' + nonce + '">window.STUDIO_TOKEN=' + json.dumps(self.server.token) + ';window.STUDIO_BOOTSTRAPPING=true;window.STUDIO_DISPLAY_IDS=' + json.dumps(preferences['showRecordIds']) + ';window.STUDIO_AUTO_SAVE=' + json.dumps(preferences['autoSave']) + ';window.STUDIO_SAVE_ON_EXIT='+json.dumps(preferences['saveOnExit'])+';window.STUDIO_ONBOARDING_COMPLETE='+json.dumps(preferences['onboardingComplete'])+';window.STUDIO_WORKSHOP_FAVORITES=' + json.dumps(preferences['workshopFavorites']) + ';window.STUDIO_DIALOGUE_SHORTCUTS=' + json.dumps(preferences['dialogueShortcuts']).replace('<', '\\u003c') + ";</script>"
                 from error_logs import APP_VERSION, display_version
                 bootstrap = bootstrap.replace('</script>', ';window.STUDIO_VERSION='+json.dumps(display_version(APP_VERSION))+';</script>')
                 try:
@@ -4471,7 +4490,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 page = page.replace("</head>", bootstrap + "</head>", 1) if "</head>" in page else bootstrap + page
                 policy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval' 'nonce-" + nonce + "'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
                 return self.send_data(page.encode(), "text/html; charset=utf-8", extra={"Content-Security-Policy": policy})
-            if route in ("/plugin-mode.js", "/plugin-mode.css", "/editor-music.js", "/editor-music.css", "/character-images.js", "/external-dialogues.js", "/external-uses.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/indexed-talks.js", "/remote-talks.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/frosted-glass.css", "/home-feedback.css", "/atelier.css", "/atelier-tones.css", "/noir.css", "/noir-tones.css", "/noir.js", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/dialogue-selection.js", "/dialogue-selection.css", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-text.js", "/preview-ui.css", "/locations.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/workshop-publish-ui.js", "/workshop-publish.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
+            if route in ("/plugin-mode.js", "/plugin-mode.css", "/editor-music.js", "/editor-music.css", "/character-images.js", "/external-dialogues.js", "/external-uses.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/indexed-talks.js", "/remote-talks.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/frosted-glass.css", "/home-feedback.css", "/atelier.css", "/atelier-tones.css", "/noir.css", "/noir-tones.css", "/noir.js", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/dialogue-selection.js", "/dialogue-selection.css", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-text.js", "/preview-ui.css", "/locations.js", "/dialogue-shortcuts.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/workshop-publish-ui.js", "/workshop-publish.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
                 file = self.server.web_root / route.lstrip("/")
                 if file.is_file():
                     data = file.read_bytes()

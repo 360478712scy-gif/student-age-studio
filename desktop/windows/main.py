@@ -10,7 +10,8 @@ import time
 import uuid
 
 ROOT = Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parents[2]))
-WORKER = '--extract' in sys.argv or '--server-only' in sys.argv
+WORKER = '--extract' in sys.argv or '--server-only' in sys.argv or '--diagnose-runtime' in sys.argv
+WINDOW_SHOWN = False
 BASE_WEB = ROOT / 'standalone'
 sys.path.insert(0,str(BASE_WEB))
 from update_bootstrap import select_web, RESTART_EXIT
@@ -36,9 +37,12 @@ def require_modern_webview():
     guilib.forced_gui_ = 'edgechromium'
     from webview.platforms import winforms
     if winforms.renderer != 'edgechromium':
-        raise RuntimeError(WEBVIEW_REQUIREMENT)
+        raise RuntimeError('WEBVIEW_REQUIREMENT: ' + WEBVIEW_REQUIREMENT)
 
 def main():
+    if '--diagnose-runtime' in sys.argv:
+        from startup_diagnostics import diagnostic_cli
+        raise SystemExit(diagnostic_cli(sys.argv[1:]))
     if '--extract' in sys.argv:
         i=sys.argv.index('--extract'); name=sys.argv[i+1]
         if name not in ('extract_catalog','extract_game_assets','extract_audio_assets','native_portraits','condition_library','model_idle','live_model','warm_ui_assets','studio_cli','studio_mcp'): raise ValueError('Unknown worker')
@@ -88,12 +92,20 @@ def main():
         def choose_mods(self):
             result=window.create_file_dialog(webview.FileDialog.FOLDER)
             return result[0] if result else None
-    from error_logs import APP_VERSION
-    window=webview.create_window('拾光工坊·模组编辑器-'+APP_VERSION,host.origin+'/#'+host.token,js_api=Bridge(),width=1440,height=920,min_size=(1040,700),background_color='#f4f6fa',text_select=True,maximized=True)
+    from error_logs import APP_VERSION, display_version
+    window=webview.create_window('拾光工坊·模组编辑器-'+display_version(APP_VERSION),host.origin+'/#'+host.token,js_api=Bridge(),width=1440,height=920,min_size=(1040,700),background_color='#f4f6fa',text_select=True,maximized=True)
     def restart_update():
         host.update_restart_requested=True;close_state['approved']=True;window.destroy()
     host.request_update_restart=restart_update
     loaded=threading.Event(); window.events.loaded += loaded.set
+    def mark_shown():
+        global WINDOW_SHOWN
+        WINDOW_SHOWN = True
+        ready_path = os.environ.get('STUDIO_STARTUP_READY')
+        if ready_path:
+            try: Path(ready_path).write_text('shown', encoding='ascii')
+            except OSError: pass
+    window.events.shown += mark_shown
     def closing():
         if close_state['approved'] or not loaded.is_set(): return True
         if close_state['checking']: return False
@@ -129,7 +141,27 @@ if __name__=='__main__':
         logs = ErrorLogs()
         name = logs.write(error, operation='启动 Windows 应用')
         diagnostic = str(logs.root / name) if name else '错误日志无法写入：' + str(logs.root)
-        if not WORKER:
+        if not WORKER and not WINDOW_SHOWN:
+            from startup_diagnostics import classify_failure, write_report
+            report = classify_failure(error, os.environ.get('STUDIO_INSTALL_ROOT', ROOT.parent))
+            report['logPath'] = str(logs.root / name) if name else ''
+            report_path = os.environ.get('STUDIO_STARTUP_REPORT')
+            if report_path:
+                try:
+                    write_report(report, report_path)
+                    raise SystemExit(43)  # The supervising launcher owns the one failure window.
+                except OSError: pass
+            launcher = Path(os.environ.get('STUDIO_INSTALL_ROOT', ROOT.parent)) / '拾光工坊.exe'
+            if launcher.is_file():
+                import subprocess
+                import tempfile
+                with tempfile.TemporaryDirectory(prefix='studio-startup-error-') as directory:
+                    report_path = write_report(report, Path(directory) / 'report.json')
+                    subprocess.run([str(launcher), '--startup-error', str(report_path)], check=False)
+                raise SystemExit(43)
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None,report['summary']+'\n\n详细日志：\n'+diagnostic,'拾光工坊 · 启动诊断',16)
+        elif not WORKER:
             import ctypes
             ctypes.windll.user32.MessageBoxW(None,'启动失败：\n'+str(error)+'\n\n详细日志：\n'+diagnostic,'学生时代模组工作台',16)
         raise

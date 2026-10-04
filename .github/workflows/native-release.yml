@@ -134,7 +134,10 @@ jobs:
           downloads=[f'- **[Windows 64 位客户端]({base}StudentAgeStudio-Windows-x64-{version}.zip)**：完整解压后打开“拾光工坊.exe”。需要 WebView2 Runtime。']
           if Path(f'release/StudentAgeStudio-Mac-arm64-{version}.zip').exists():
               downloads.append(f'- **[Mac Apple Silicon 客户端（M1/M2/M3/M4 等）]({base}StudentAgeStudio-Mac-arm64-{version}.zip)**：macOS 14 或以上，解压后把“拾光工坊.app”拖入“应用程序”。当前未做 Apple 公证。')
-          notes=Path('docs/releases/v'+version.replace('.','')+'.md').read_text(encoding='utf-8')
+          import sys
+          sys.path.insert(0,'standalone')
+          from error_logs import display_version
+          notes=Path('docs/releases/v'+display_version(version).replace('.','')+'.md').read_text(encoding='utf-8')
           download_list='\n'.join(downloads)
           text=f'''## 下载客户端
 

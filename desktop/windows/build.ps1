@@ -16,6 +16,7 @@ if(Test-Path "$source\standalone\vendor-steamworks"){Copy-Item "$source\standalo
 if(Test-Path "$stage\standalone\ui-assets"){Remove-Item "$stage\standalone\ui-assets" -Recurse -Force}
 Copy-Item "$source\standalone\ui-assets" "$stage\standalone\ui-assets" -Recurse -Force
 Copy-Item "$source\desktop\windows\main.py" "$stage\main.py" -Force
+Copy-Item "$source\desktop\windows\startup_diagnostics.py" "$stage\startup_diagnostics.py" -Force
 Copy-Item "$source\desktop\windows\child_processes.py" "$stage\child_processes.py" -Force
 Set-Location $stage
 $out=Join-Path $root 'dist'
@@ -39,7 +40,7 @@ Get-ChildItem "$package\runtime" -Recurse -File -Filter *.dll | Sort-Object Full
  ((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())+'  '+$relative
 } | Set-Content -LiteralPath $runtimeManifest -Encoding ASCII
 $csc=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-& $csc /nologo /target:winexe "/win32icon:$source\desktop\windows\studio.ico" /reference:System.Windows.Forms.dll "/resource:$runtimeManifest,runtime-sha256.txt" "/out:$package\拾光工坊.exe" "$source\desktop\windows\Launcher.cs"
+& $csc /nologo /target:winexe "/win32icon:$source\desktop\windows\studio.ico" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll "/resource:$runtimeManifest,runtime-sha256.txt" "/out:$package\拾光工坊.exe" "$source\desktop\windows\Launcher.cs"
 if($LASTEXITCODE -ne 0){throw 'Launcher failed'}
 & $python -m pip freeze | Out-File "$package\dependencies.txt" -Encoding utf8
 Copy-Item "$source\desktop\windows\使用说明.txt" $package -Force
