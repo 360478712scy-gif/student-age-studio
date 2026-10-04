@@ -31,6 +31,7 @@ jobs:
       - run: node standalone/tests/catalog-preload.cjs
       - run: node standalone/tests/bgm-editor.cjs
       - run: node standalone/tests/bgm-playback.cjs
+      - run: node standalone/tests/up-audio-warning.cjs
       - run: node standalone/tests/story-id-claims.cjs
       - run: node standalone/tests/timeline-folder-drop.cjs
       - run: node standalone/tests/all-story-export.cjs

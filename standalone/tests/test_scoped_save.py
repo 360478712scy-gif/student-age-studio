@@ -67,6 +67,25 @@ class ScopedSaveTests(unittest.TestCase):
   with patch.object(b,'read_json',wraps=b.read_json) as read:self.store.warehouse_save({'projectId':self.project.id,'revision':self.store.revision(self.project),'tables':tables,'migrations':[]})
   self.assertFalse(any(Path(c.args[0]).name in ('TalkCfg.json','FutureCfg.json') for c in read.call_args_list))
   self.assertEqual(b.read_json(self.cfg/'ItemCfg.json')['10']['future'],[1,2])
+ def test_warehouse_blank_drafts_save_reopen_and_keep_existing_data(self):
+  import save_review
+  self.write('BookCfg',{'20':{'id':20,'name':'已有书籍','icon':'Mods/test/book.png','type':3001,'future':{'keep':True}}})
+  self.write('ShopCfg',{'10':{'id':10,'type':1,'price':12,'future':'保留商品'}})
+  before={p.name:p.read_bytes() for p in self.cfg.iterdir()}
+  tables={n:b.read_json(self.cfg/(n+'.json')) for n in ('ItemCfg','BookCfg','ShopCfg')}
+  tables['ItemCfg']['10'].update(name='',desc='已有物品的草稿修改')
+  tables['ItemCfg']['30']={'id':30,'name':'','icon':'','type':1,'desc':'未命名物品草稿','future':{'draft':[3,4]}}
+  tables['BookCfg']['40']={'id':40,'name':'','icon':'','type':3001,'desc':'未命名书籍草稿'}
+  payload={'projectId':self.project.id,'revision':self.store.revision(self.project),'tables':tables,'migrations':[]}
+  result=save_review.perform(self.store.warehouse_save,payload,b.ApiError)
+  self.assertTrue(result['ok']);self.assertEqual(result['tables'],tables)
+  for name,rows in tables.items():
+   self.assertEqual(b.read_json(self.cfg/(name+'.json')),rows)
+   self.assertEqual(self.store.table(self.project.id,name)['localRows'],rows)
+  for name,data in before.items():
+   if name not in ('ItemCfg.json','BookCfg.json'):self.assertEqual((self.cfg/name).read_bytes(),data)
+  backup=Path(result['backup'])/'Cfgs/zh-cn'
+  for name in ('ItemCfg.json','BookCfg.json'):self.assertEqual((backup/name).read_bytes(),before[name])
  def test_command_menu_only_reads_premise_metadata(self):
   folder=self.project.path/'StudentAgeStudio';folder.mkdir(exist_ok=True)
   (folder/'editor-state.json').write_bytes(b.json_bytes({'premises':{'1':{'id':1,'name':'保留前提','talkId':1}}}))

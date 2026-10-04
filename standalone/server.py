@@ -838,6 +838,8 @@ class StudioStore:
         paths += [project.path / "manifest.json", project.path / "StudentAgeStudio/deleted-talks.json",
                   project.path / "StudentAgeStudio/editor-state.json", project.path / "StudentAgeStudio/audio-cues.json",
                   project.path / "StudentAgeStudio/original-edits.json", project.path / "StudentAgeStudio/social-state.json", project.path / "StudentAgeStudio/character-outfits.json", project.path / "StudentAgeStudio/character-romance.json", project.path / "StudentAgeStudio/space-layouts.json", project.path / "StudentAgeStudio/plugins.json", project.path / "EC2BUnofficialPatch/CustomMinigamecfg.json"]
+        audio_config = project.path / 'BetterAudio/BetterAudio.json'
+        if audio_config.exists(): paths.append(audio_config)
         return paths
 
     def revision(self, project):
@@ -1843,7 +1845,11 @@ class StudioStore:
             if title_result is not None: return title_result
             owner_source_digests = self._ownership_source_digests(project)
             from text_record_save import save as save_text_records
-            fast_result = save_text_records(self, project, payload, sys.modules[__name__])
+            from up_audio import needs_text_compile, verified_text_saved
+            api = sys.modules[__name__]
+            fast_result = None if needs_text_compile(project, payload, api) else save_text_records(
+                self, project, payload, api,
+                on_verified=lambda path, before, after: verified_text_saved(project, path, before, after, api))
             if fast_result is not None: return fast_result
             catalog = self.catalog()
             all_maps, unreadable = self.story_save_maps(project, payload)
@@ -2108,8 +2114,10 @@ class StudioStore:
                             touched.add("TalkCfg.json")
             changes = {}
             prior_cues = self.audio_cues(project, original_talks)
-            if "audioCues" in payload or redirects or prior_cues.get("bgm") and ("talks" in payload or "events" in payload):
-                incoming_cues = copy.deepcopy(payload.get("audioCues", prior_cues))
+            if "audioCues" in payload or redirects or id_mappings or any(prior_cues.get(k) for k in ('bgm', 'sfx', 'nativeAudio', 'upAudio')) and any(k in payload for k in ('talks', 'events', 'options')):
+                import up_audio
+                previous_audio = up_audio.remap(prior_cues, id_mappings.get('TalkCfg', {}))
+                incoming_cues = copy.deepcopy(payload.get("audioCues", previous_audio))
                 deleted_talks = set(redirects)
                 if isinstance(incoming_cues, dict) and isinstance(incoming_cues.get("sfx", {}), dict) and isinstance(incoming_cues.get("bgm", []), list):
                     incoming_cues["sfx"] = {key: value for key, value in incoming_cues.get("sfx", {}).items() if key not in deleted_talks}
@@ -2119,13 +2127,49 @@ class StudioStore:
                     incoming_cues["bgm"] = [group for group in incoming_cues.get("bgm", []) if not isinstance(group, dict) or group.get("talkIds") != []]
                     if isinstance(incoming_cues.get("nativeAudio"), dict):
                         incoming_cues["nativeAudio"] = {key: value for key, value in incoming_cues["nativeAudio"].items() if key not in deleted_talks}
-                cues = self.validate_audio_cues(incoming_cues, all_maps, prior_cues)
+                cues = self.validate_audio_cues(incoming_cues, all_maps, previous_audio)
+                # Ownership comes from the previous disk save, never from an
+                # incoming editor document's arbitrary metadata.
+                if 'upAudio' in previous_audio: cues['upAudio'] = copy.deepcopy(previous_audio['upAudio'])
+                else: cues.pop('upAudio', None)
                 from native_audio import export as export_native_audio
-                before_audio = {k:r.get("audio", 0) for k,r in all_maps.get("TalkCfg.json", {}).items()}
-                export_native_audio(cues, prior_cues, all_maps.setdefault("TalkCfg.json", {}), original_talks,
-                                    {**self.catalog_rows("AudioCfg"), **all_maps.get("AudioCfg.json", {})},
-                                    all_maps.get("EvtCfg.json", {}), all_maps.get("OptionCfg.json", {}))
-                if before_audio != {k:r.get("audio", 0) for k,r in all_maps["TalkCfg.json"].items()}:
+                talk_rows = all_maps.setdefault('TalkCfg.json', {})
+                before_audio = {k:(r.get('audio', 0), copy.deepcopy(r.get('effect', []))) for k,r in talk_rows.items()}
+                # The small-save path shares unchanged rows with its comparison
+                # snapshot. Copy only rows whose audio export can write them.
+                audio_keys = set(cues.get('sfx', {})) | set(cues.get('nativeAudio', {})) | set(previous_audio.get('nativeSnapshot', {})) | set(previous_audio.get('upAudio', {}).get('effects', {}))
+                audio_keys.update(str(i) for group in cues.get('bgm', []) for i in group['talkIds'])
+                for key in audio_keys:
+                    if key in talk_rows: talk_rows[key] = copy.deepcopy(talk_rows[key])
+                up_audio.remove_effects(talk_rows, previous_audio.get('upAudio', {}))
+                audio_rows = all_maps.setdefault('AudioCfg.json', {})
+                before_aliases = copy.deepcopy(audio_rows)
+                audios = {**self.catalog_rows('AudioCfg'), **audio_rows}
+                plan = export_native_audio(cues, previous_audio, talk_rows, original_talks, audios,
+                                           all_maps.get('EvtCfg.json', {}), all_maps.get('OptionCfg.json', {}))
+                needs_config = previous_audio.get('upAudio', {}).get('aliases') or any(
+                    cue.get('volume', 1) != 1 or not up_audio._exact_float_id(cue['audioId'])
+                    for cue in [*cues.get('bgm', []), *(cue for entries in cues.get('sfx', {}).values() for cue in entries)]
+                    if cue.get('audioId'))
+                old_config = read_json(safe_path(project.path, up_audio.CONFIG), {}) if needs_config else {}
+                def alias_referenced(ident):
+                    def contains(value):
+                        if isinstance(value, dict): return any(contains(v) for v in value.values())
+                        if isinstance(value, list): return any(contains(v) for v in value)
+                        return type(value) in (int, float) and value == ident
+                    for filename, path in self.cfg_table_files(project).items():
+                        rows = all_maps.get(filename) if filename in all_maps else read_json(path, {})
+                        if filename == 'AudioCfg.json': rows = {k:r for k,r in rows.items() if k != str(ident)}
+                        if contains(rows): return True
+                    return any(isinstance(entry, dict) and entry.get('id') == ident for entry in old_config.get('musics', []))
+                try:
+                    new_config = up_audio.compile(cues, previous_audio, talk_rows, audios, audio_rows, plan, old_config,
+                        lambda occupied: self.record_ids.allocate('AudioCfg', {key: {} for key in occupied}), alias_referenced)
+                except ValueError as error:
+                    raise ApiError(str(error)) from error
+                if audio_rows != before_aliases: touched.add('AudioCfg.json')
+                if new_config != old_config: changes[up_audio.CONFIG] = json_bytes(new_config)
+                if before_audio != {k:(r.get('audio', 0), r.get('effect', [])) for k,r in talk_rows.items()}:
                     touched.add("TalkCfg.json")
                 if cues != prior_cues:
                     changes["StudentAgeStudio/audio-cues.json"] = json_bytes(cues)
@@ -3071,18 +3115,22 @@ class StudioStore:
         audios = {**self.catalog_rows("AudioCfg"), **all_maps.get("AudioCfg.json", {})}
         talks = set(all_maps.get("TalkCfg.json", {})) | set(self.catalog_rows("TalkCfg"))
         talks.update(str(value) for value in self.catalog().get("baseTalkIds", []) if valid_id(value))
-        def sound(cue, allow_continue=False):
+        def sound(cue, allow_continue=False, kind=None):
             if not isinstance(cue, dict): raise ApiError('声音设置必须是对象。')
             continuing = allow_continue and isinstance(cue, dict) and type(cue.get("audioId")) is int and cue["audioId"] == 0
             if not continuing and (not isinstance(cue, dict) or not valid_id(cue.get("audioId")) or str(cue["audioId"]) not in audios):
                 save_review.warn(ApiError, "声音设置引用了不存在的音频，请重新选择。")
+            if not continuing and kind is not None and str(cue.get('audioId')) in audios:
+                actual = 2 if audios[str(cue['audioId'])].get('type') == 2 else 1
+                if actual != kind: save_review.warn(ApiError, '请选择音乐类型的 BGM。' if kind == 1 else '请选择音效类型的声音。')
+            if 'loop' in cue and not isinstance(cue['loop'], bool): raise ApiError('声音循环方式无效。')
             volume = cue.get("volume", 1)
             if isinstance(volume, bool) or not isinstance(volume, (float, int)) or not math.isfinite(volume) or volume < 0 or volume > 1:
                 save_review.warn(ApiError, "音量需要在 0 到 1 之间。")
         for ident, cues in result["sfx"].items():
             if not valid_id(ident) or str(ident) not in talks or not isinstance(cues, list) or len(cues) > 16:
                 raise ApiError("句子音效引用无效或同一句音效过多。")
-            for cue in cues: sound(cue)
+            for cue in cues: sound(cue, kind=2)
         if "nativeAudio" in result:
             if not isinstance(result["nativeAudio"], dict): raise ApiError("原有背景音乐记录格式无效。")
             for ident, audio in result["nativeAudio"].items():
@@ -3090,7 +3138,7 @@ class StudioStore:
                 sound({"audioId": audio})
         occupied = set(); groups = set()
         for group in result["bgm"]:
-            sound(group, allow_continue=True)
+            sound(group, allow_continue=True, kind=1)
             if not isinstance(group.get("id"), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,120}", group["id"]) or group["id"] in groups:
                 raise ApiError("背景音乐范围标识无效或重复。")
             groups.add(group["id"])

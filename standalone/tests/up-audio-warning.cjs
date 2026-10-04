@@ -1,0 +1,32 @@
+"use strict";
+const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),assert=require('node:assert/strict');
+const source=fs.readFileSync(path.resolve(__dirname,'../app.js'),'utf8');
+let pluginMode=false,notices=[];
+const S={selected:1,doc:{talks:{1:{id:1,audio:0},2:{id:2,audio:0}},audioCues:{sfx:{},bgm:[{id:'music',audioId:7,talkIds:[1,2],loop:true,volume:1}]}},audios:[{id:7,type:1},{id:8,type:2},{id:9,type:2}]};
+const c={S,Remote:{info:()=>null,routingTable:rows=>rows},sceneContext:()=>({roots:[1]}),currentStage:()=>({trace:[1,2]}),links:row=>[...(row.nextTalk||[]),...(row.nextTalk2||[]),...(row.option||[]).flatMap(id=>[...(S.doc.options?.[id]?.talkId||[]),...(S.doc.options?.[id]?.talkId2||[])])],window:{STUDIO_WORKSHOP_NAV:{pluginEditing:()=>pluginMode}},Set,Map,Number,Math,Date,JSON,ids:v=>(v||[]).map(Number),visibleIds:()=>[1,2],$:()=>null,talk:()=>S.doc.talks[S.selected],toast:(message,kind)=>notices.push({message,kind}),mutate:(_,fn)=>fn()};
+vm.createContext(c);
+for(const [start,end] of [['function audioData()','function audioName('],['function bgmDraft()','function audioOptions('],['const AUDIO_PLUGIN_NOTICE=','async function previewAudio(']])vm.runInContext(source.slice(source.indexOf(start),source.indexOf(end)),c);
+c.addSfx(8);
+if(process.env.EXPECT_REPRO){assert(notices.at(-1).message.includes('仅预览'));pluginMode=true;notices=[];c.addSfx(9);assert(notices.length>0);console.log('REPRO: combo warning says preview only and still appears in plugin editing mode');process.exit(0);}
+assert.equal(S.doc.audioCues.sfx[1][0].audioId,8);assert(notices.at(-1).message.includes('UP'));assert(notices.at(-1).message.includes('启用'));assert(!notices.at(-1).message.includes('仅预览'));
+pluginMode=true;notices=[];c.addSfx(9);assert.equal(notices.length,0);assert.equal(S.doc.audioCues.sfx[1].length,2);
+pluginMode=false;S.doc.audioCues={sfx:{},bgm:[]};notices=[];c.addSfx(8);assert.equal(notices.length,0);
+S.doc.talks[1].audio=7;S.doc.audioCues={sfx:{},bgm:[]};notices=[];c.addSfx(8);assert.equal(S.doc.audioCues.nativeAudio[1],7);assert(notices.at(-1).message.includes('UP'));
+S.doc.audioCues={sfx:{1:[{audioId:8,volume:1}]},bgm:[]};S.doc.talks[1].audio=0;S.bgmDraft={talk:1,stamp:JSON.stringify(S.doc.audioCues),groupId:null,track:7,trackChosen:true,ids:[1],volume:1,loop:true};notices=[];c.applyBgmDraft();assert(notices.at(-1).message.includes('UP'));
+S.event=1;S.doc.events={1:{id:1,talkId:[1]}};S.doc.options={};
+S.doc.talks={1:{id:1,audio:0,nextTalk:[2]},2:{id:2,audio:0,nextTalk:[]}};
+S.doc.audioCues={sfx:{2:[{audioId:8,volume:1}]},bgm:[{id:'first',audioId:7,talkIds:[1],loop:true,volume:1},{id:'continue',audioId:0,talkIds:[2],loop:true,volume:1}]};
+assert.equal(c.audioNeedsPlugin([2]),true,'BGM entering a continuation line also needs UP for its SFX');
+S.doc.audioCues.bgm=[];S.doc.talks[1].effect=[[1163,10,7,0,-1,0]];
+assert.equal(c.audioNeedsPlugin([2]),true,'manual UP music carries through to the SFX line');
+S.doc.talks[1].effect=[null,[55,2]];S.doc.talks[1].nextTalk=[3];S.doc.talks[3]={id:3,audio:7,nextTalk:[]};
+assert.equal(c.audioNeedsPlugin([2]),false,'music on an unrelated branch does not create a combo');
+S.doc.talks[1].option=[10];S.doc.options[10]={talkId:[2]};
+assert.equal(c.audioNeedsPlugin([2]),false,'the other choice stays independent');
+S.doc.talks[3].nextTalk=[2];
+assert.equal(c.audioNeedsPlugin([2]),true,'music can arrive at a branch join');
+// The cue check visits the current event's links, not the entire dialogue directory.
+S.doc.talks[1].nextTalk=[2];S.doc.talks[1].audio=7;
+S.doc.talks=new Proxy(S.doc.talks,{ownKeys(){throw Error('must not enumerate every dialogue');}});
+assert.equal(c.audioNeedsPlugin([2]),true);
+console.log('PASS: combo/addition order/mode gating, inherited and manual BGM, unrelated branches and no full-directory scan');

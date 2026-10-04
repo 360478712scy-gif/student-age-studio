@@ -27,6 +27,8 @@ def export(cues, previous, talks, original, audios, events=None, options=None):
     managed = set(music) | set(cues['sfx']) | set(native)
     for key in managed:
         old_audio = original.get(key, {}).get('audio', 0)
+        if key in previous.get('nativeSnapshot', {}) and old_audio == previous['nativeSnapshot'][key]:
+            old_audio = previous.get('nativeAudio', {}).get(key, 0)
         kind = audios.get(str(old_audio), {}).get('type')
         if key in cues['sfx'] and key not in music and kind == 1:
             native.setdefault(key, old_audio)
@@ -46,6 +48,25 @@ def export(cues, previous, talks, original, audios, events=None, options=None):
             if str(target) in predecessors:predecessors[str(target)].add(key)
     roots = {str(i) for row in (events or {}).values() for i in row.get('talkId') or []}
     if events is None:roots.update(str(g['talkIds'][0]) for g in cues['bgm'] if g['talkIds'])
+    # A native SFX in TalkCfg.audio also stops the music in BlackBg. Keep it in
+    # the native field only when no music can arrive through any story branch.
+    children = {}
+    for key, parents in predecessors.items():
+        for parent in parents: children.setdefault(parent, []).append(key)
+    music_possible = set()
+    for key, row in talks.items():
+        old_value = row.get('audio', 0)
+        if key in previous.get('nativeSnapshot', {}) and old_value == previous['nativeSnapshot'][key]: old_value = 0
+        value = music.get(key, native.get(key, old_value))
+        if value and (key in music or key in native or audios.get(str(value), {}).get('type') == 1):
+            music_possible.add(key)
+        if any(isinstance(e, list) and len(e) >= 3 and e[0] == 1163 and e[1] in (1, 2, 10, 20)
+               for e in row.get('effect', [])):
+            music_possible.add(key)
+    queue = deque(music_possible)
+    while queue:
+        for child in children.get(queue.popleft(), []):
+            if child not in music_possible: music_possible.add(child); queue.append(child)
     # Compute the music arriving through continuation lines as well as directly
     # adjacent ranges. A 0 or a gap between two ranges of the same track must not
     # turn the next range into a restart. Ambiguous joins keep an entry command.
@@ -53,15 +74,19 @@ def export(cues, previous, talks, original, audios, events=None, options=None):
     for key, row in talks.items():
         if key in music: value = music[key]
         elif key in native: value = native[key]
-        elif cues['sfx'].get(key): value = cues['sfx'][key][0]['audioId']
+        elif cues['sfx'].get(key):
+            first = cues['sfx'][key][0]
+            value = first['audioId'] if key not in music_possible and first.get('volume', 1) == 1 and not first.get('loop') else 0
         elif key in previous.get('nativeSnapshot', {}) and row.get('audio', 0) == previous['nativeSnapshot'][key]: value = 0
         else: value = row.get('audio', 0)
         planned[key] = value
+    signatures = {str(i): (g['audioId'], g.get('loop', True), g.get('volume', 1))
+                  for g in cues['bgm'] for i in g['talkIds'] if g['audioId']}
     outgoing, dependents, waiting = {}, {}, {}
     for key, value in planned.items():
         parents = predecessors[key]
         if value:
-            outgoing[key] = value if key in music or key in native or audios.get(str(value), {}).get('type') == 1 else None
+            outgoing[key] = signatures.get(key, (value, True, 1)) if key in music or key in native or audios.get(str(value), {}).get('type') == 1 else None
         elif key in roots or not parents:
             outgoing[key] = None
         else:
@@ -82,7 +107,9 @@ def export(cues, previous, talks, original, audios, events=None, options=None):
         value = planned[key]
         if key in music and value:
             parents = predecessors[key]
-            if key not in roots and parents and all(outgoing.get(parent) == value for parent in parents): value = 0
+            if key not in roots and parents and all(outgoing.get(parent) == signatures[key] for parent in parents): value = 0
         talks[key]['audio'] = value
         snapshot[key] = value
     cues['nativeSnapshot'] = snapshot
+    return {'predecessors': predecessors, 'children': children, 'roots': roots,
+            'signatures': signatures, 'outgoing': outgoing, 'musicPossible': music_possible}

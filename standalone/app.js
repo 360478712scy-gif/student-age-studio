@@ -1671,17 +1671,38 @@ function toggleBgmAll(){
 }
 function renderBgmChoices(draft=bgmDraft()){const selected=new Set(draft.ids||[]);return (S.project?.readOnly?(draft.ids||[]).slice(0,100):visibleIds()).map(id=>`<label><input type="checkbox" data-bgm-talk="${id}" ${selected.has(id)?'checked':''}><span>${StudentAgeRecordLabels.html(id,talkLabel(id))}</span></label>`).join('');}
 function renderAudio(){return '<section id="audio-section" class="audio-section">'+renderAudioContents()+'</section>';}
-const AUDIO_PLUGIN_NOTICE='游戏内实现多音轨、单次播放或独立音量需要安装插件；当前版本不附带插件，这些高级设置仅在编辑器预览中生效。普通保存同一句优先保留背景音乐，否则保留一个音效。';
+const AUDIO_PLUGIN_NOTICE='同时播放 BGM 和音效、多个音效或独立音量等设置需要玩家在游戏中安装并启用 UP 非官方补丁。保存时会写入 UP 支持的配置；编辑器不会替玩家安装插件。';
+function audioMusicCanReach(target,cues){
+ // Read only graph/audio fields in this event. Large segmented dialogue bodies
+ // remain on disk; music on another branch is not treated as arriving here.
+ const rows=S.doc?.talks;if(!rows)return false;
+ const owners=S.doc.talkOwners?.[target]||[],roots=S.event==='all'
+  ?(owners.length?owners.flatMap(id=>ids(S.doc.events[id]?.talkId)):currentStage().trace)
+  :sceneContext().roots;
+ const table=Remote.routingTable(rows),info=Remote.info(rows),types=new Map(S.audios.map(a=>[Number(a.id),Number(a.type)])),music=new Set();
+ for(const group of cues.bgm)if(Number(group.audioId)>0)for(const id of ids(group.talkIds))music.add(id);
+ for(const [id,audio]of Object.entries(cues.nativeAudio||{}))if(Number(audio)>0)music.add(Number(id));
+ const queue=roots.map(id=>[Number(id),false]),seen=new Map();
+ for(let index=0;index<queue.length;index++){
+  const [id,incoming]=queue[index],row=table[id];if(!row)continue;
+  const audio=info?info.read(String(id),'audio'):rows[id]?.audio,effects=(info?info.read(String(id),'effect'):rows[id]?.effect)||[];
+  const playing=incoming||music.has(id)||types.get(Number(audio))===1||Array.isArray(effects)&&effects.some(e=>Array.isArray(e)&&Number(e[0])===1163&&[1,2,10,20].includes(Number(e[1])));
+  const bit=playing?2:1;if((seen.get(id)||0)&bit)continue;seen.set(id,(seen.get(id)||0)|bit);
+  if(id===Number(target)&&playing)return true;
+  for(const next of links(row))queue.push([Number(next),playing]);
+ }
+ return false;
+}
 function audioNeedsPlugin(talkIds=[S.selected]){
  const cues=audioData();
  return talkIds.some(id=>{
   const group=cues.bgm.find(g=>ids(g.talkIds).includes(Number(id))),effects=cues.sfx[id]||[],legacy=S.audios.find(a=>Number(a.id)===Number(S.doc?.talks[id]?.audio));
   const effectIds=new Set(effects.map(c=>Number(c.audioId)));if(Number(legacy?.type)===2)effectIds.add(Number(legacy.id));
   const music=(group&&Number(group.audioId)>0)||Number(cues.nativeAudio?.[id])||Number(legacy?.type)===1;
-  return effectIds.size>1||effectIds.size>0&&!!music||effects.some(c=>(c.volume??1)!==1)||group&&Number(group.audioId)>0&&(group.loop===false||(group.volume??1)!==1);
+  return effectIds.size>1||effectIds.size>0&&(!!music||audioMusicCanReach(id,cues))||effects.some(c=>(c.volume??1)!==1)||group&&Number(group.audioId)>0&&(group.loop===false||(group.volume??1)!==1);
  });
 }
-function warnAudioPlugin(talkIds){if(audioNeedsPlugin(talkIds))toast('这些声音设置需要游戏插件；当前版本未附带，仅预览支持。','note');}
+function warnAudioPlugin(talkIds){if(!window.STUDIO_WORKSHOP_NAV?.pluginEditing?.()&&audioNeedsPlugin(talkIds))toast('同时播放 BGM 和音效等设置需要玩家加入并启用 UP 非官方补丁。','note');}
 function addSfx(id) {
   id=Number(id);if(!id||!talk())return;
   mutate('设置本句音效',()=>{preserveLegacyAudio(S.selected,false);const cues=S.doc.audioCues,rows=cues.sfx[S.selected]||[];if(!rows.some(c=>Number(c.audioId)===id))rows.push({audioId:id,volume:1});cues.sfx[S.selected]=rows;talk().audio=0;});

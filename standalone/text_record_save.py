@@ -47,7 +47,7 @@ def index(path, api):
     return rows
 
 
-def save(store, project, payload, api):
+def save(store, project, payload, api, on_verified=None):
     if project.original_mode or set(payload) - {'projectId','revision','talkGeneration','talkPatch'}:
         return None
     patch = payload.get('talkPatch')
@@ -61,6 +61,7 @@ def save(store, project, payload, api):
     try: offsets = index(path, api)
     except (ValueError, UnicodeError, IndexError): return None
     if not offsets or any(k not in offsets for k in changes): return None
+    source_stamp = api.file_fingerprint(path)
     replacements = {}
     with path.open('rb') as stream:
         for key, row in changes.items():
@@ -92,6 +93,7 @@ def save(store, project, payload, api):
     # Existing IDs and every field except content were verified above. The private
     # flag skips only ID scanning; every transaction guard remains enabled.
     raw = path.read_bytes(); chunks=[]; cursor=0; new_offsets={}; shift=0
+    if api.file_fingerprint(path) != source_stamp: source_stamp = None
     for key,(start,end) in offsets.items():
         body=replacements.get(key)
         new_offsets[key]=(start+shift,end+shift+(len(body)-(end-start) if body is not None else 0))
@@ -102,6 +104,8 @@ def save(store, project, payload, api):
     stamp=api.file_fingerprint(path)
     if path.read_bytes()==result and api.file_fingerprint(path)==stamp:
         _CACHE[str(path.resolve())]=(stamp,new_offsets)
+        if on_verified is not None and source_stamp is not None:
+            on_verified(path, source_stamp, stamp)
     else:
         _CACHE.pop(str(path.resolve()),None)
     revision=store.revision(project)

@@ -34,6 +34,7 @@ jobs:
       - run: node standalone/tests/event-empty-performance.cjs
       - run: node standalone/tests/talk-field-scan.cjs
       - run: node standalone/tests/save-payload-state.cjs
+      - run: node standalone/tests/up-audio-warning.cjs
       - run: node standalone/tests/json-unrelated-save.cjs
       - run: node standalone/tests/remote-routing.cjs
       - run: node --expose-gc standalone/tests/remote-load-order.cjs
