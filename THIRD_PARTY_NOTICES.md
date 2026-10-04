@@ -11,6 +11,15 @@ StudentAge Studio's original editor code is licensed under GPL-3.0-only.
 
 - certifi 提供 Mozilla 根证书集合，按其 MPL-2.0 许可分发；客户端同时保留系统信任根并校验 HTTPS 证书与主机名。
 
+## Optional Windows offline prerequisite
+
+The Windows full package with .NET components includes Microsoft's unmodified .NET Framework 4.8 Runtime offline redistributable, `prerequisites/NDP48-x86-x64-AllOS-ENU.exe`. It is a Microsoft component, remains subject to Microsoft's license terms shown by its installer, and is not covered by this project's GPL license. The application never runs it automatically; users may run it manually when .NET Framework is missing or too old and startup fails. It does not repair damaged application files or install WebView2.
+
+- Official download: https://go.microsoft.com/fwlink/?linkid=2088631 ([Microsoft download page](https://dotnet.microsoft.com/en-us/download/dotnet-framework/net48)).
+- SHA256: `0a3a390c47e639d0f7fc65b21195fee6b7f65b066f80f70c60fab191d14b7e40`.
+- Distribution guidance: [Microsoft's .NET Framework deployment guide](https://learn.microsoft.com/en-us/dotnet/framework/deployment/deployment-guide-for-developers).
+- Build tooling verifies both the pinned SHA256 and a valid Microsoft Corporation Authenticode signature before bundling the cached installer. `prerequisites/SHA256SUMS.json` records the appended component files separately from the original package manifest.
+
 ## Publisher-provided editor music (2026-09-20)
 
 The publisher supplied these recordings for the editor playlist:

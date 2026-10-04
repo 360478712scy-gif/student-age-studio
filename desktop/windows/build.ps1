@@ -3,6 +3,26 @@
 $source=if($env:STUDIO_SOURCE_ROOT){$env:STUDIO_SOURCE_ROOT}else{(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path}
 $root=if($env:STUDIO_BUILD_ROOT){$env:STUDIO_BUILD_ROOT}else{Join-Path $env:LOCALAPPDATA 'StudentAgeStudioBuild'}
 $python=Join-Path $root 'venv\Scripts\python.exe'
+$netfxName='NDP48-x86-x64-AllOS-ENU.exe'
+$netfxSha256='0a3a390c47e639d0f7fc65b21195fee6b7f65b066f80f70c60fab191d14b7e40'
+$netfxInstaller=if($env:STUDIO_NETFX_INSTALLER){[IO.Path]::GetFullPath($env:STUDIO_NETFX_INSTALLER)}else{Join-Path $root ('prerequisites-cache\'+$netfxName)}
+function Assert-NetFxInstaller([string]$path){
+ if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $netfxSha256){throw '.NET offline installer SHA256 mismatch; refusing to bundle'}
+ $signature=Get-AuthenticodeSignature -LiteralPath $path
+ if($signature.Status -ne 'Valid' -or -not $signature.SignerCertificate -or $signature.SignerCertificate.Subject -notmatch '(^|,\s*)CN=Microsoft Corporation(,|$)'){throw '.NET offline installer must have a valid Microsoft Corporation signature'}
+}
+if(Test-Path -LiteralPath $netfxInstaller -PathType Leaf){
+ Assert-NetFxInstaller $netfxInstaller
+}else{
+ if($env:STUDIO_NETFX_INSTALLER){throw ('Configured .NET offline installer is missing: '+$netfxInstaller)}
+ New-Item -ItemType Directory -Force ([IO.Path]::GetDirectoryName($netfxInstaller)) | Out-Null
+ $netfxDownload=$netfxInstaller+'.download-'+[Guid]::NewGuid().ToString('N')+'.exe'
+ try{
+  Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/?linkid=2088631' -OutFile $netfxDownload -UseBasicParsing
+  Assert-NetFxInstaller $netfxDownload
+  Move-Item -LiteralPath $netfxDownload -Destination $netfxInstaller
+ }finally{if(Test-Path -LiteralPath $netfxDownload){Remove-Item -LiteralPath $netfxDownload -Force}}
+}
 if(-not $env:STUDIO_REUSE_BUILD_DEPS){
  & $python -m pip install --disable-pip-version-check imageio-ffmpeg numpy 'certifi>=2026.2.25'
  if($LASTEXITCODE -ne 0){throw 'ffmpeg failed'}
@@ -46,4 +66,7 @@ if($LASTEXITCODE -ne 0){throw 'Launcher failed'}
 Copy-Item "$source\desktop\windows\使用说明.txt" $package -Force
 Copy-Item "$source\LICENSE" $package -Force
 Copy-Item "$source\THIRD_PARTY_NOTICES.md" $package -Force
+& $python "$source\tools\bundle_windows_netfx.py" --prepare-directory $package --installer $netfxInstaller --installer-sha256 $netfxSha256
+if($LASTEXITCODE -ne 0){throw '.NET offline component bundling failed'}
+Assert-NetFxInstaller (Join-Path $package ('prerequisites\'+$netfxName))
 Write-Output ('PACKAGE='+$package)
