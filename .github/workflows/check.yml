@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install 'certifi>=2026.2.25' 'Pillow==12.3.0' 'numpy>=2,<3'
+      - run: python -m pip install 'certifi>=2026.2.25' 'Pillow==12.3.0' 'numpy>=2,<3' 'imageio-ffmpeg>=0.6,<0.7'
       - run: python -B -m unittest discover -s standalone/tests
       - run: node standalone/tests/relation-optional-action.cjs
       - run: node standalone/tests/scene-entry.cjs
@@ -35,6 +35,7 @@ jobs:
       - run: node standalone/tests/talk-field-scan.cjs
       - run: node standalone/tests/save-payload-state.cjs
       - run: node standalone/tests/up-audio-warning.cjs
+      - run: node standalone/tests/mac-folder-bridge.cjs
       - run: node standalone/tests/json-unrelated-save.cjs
       - run: node standalone/tests/remote-routing.cjs
       - run: node --expose-gc standalone/tests/remote-load-order.cjs
@@ -50,4 +51,5 @@ jobs:
         run: |
           node standalone/tests/settings-open.cjs
           node standalone/tests/app-updates-poll.cjs
+          node standalone/tests/up-video-ui.cjs
       - run: python -B tools/build_update.py --out release/student-age-studio-update.zip

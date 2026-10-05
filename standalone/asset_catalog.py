@@ -86,6 +86,9 @@ def link(path):
 class AssetCatalog:
     def __init__(self, store, backend, settings_path=None):
         self.store, self.api = store, backend
+        # Imports temporarily release store.lock for codecs. Keep their shared
+        # draft-ID reservation scopes ordered without blocking editor reads.
+        self._import_lock = threading.RLock()
         self.settings_path = Path(settings_path or backend.settings_path().with_name('asset-folders.json'))
         self.cache = OrderedDict()
         # Bounded LRU: evicted entries recompute byte-identical results.
@@ -219,9 +222,9 @@ class AssetCatalog:
                      '.mp3': head.startswith(b'ID3') or len(head) >= 4 and head[0] == 255 and head[1] & 224 == 224 and head[1] & 6 != 0,
                      '.aac': len(head) >= 4 and head[0] == 255 and head[1] & 246 == 240,
                      '.m4a': len(head) >= 12 and head[4:8] == b'ftyp'}
-            if not valid.get(suffix): self.error('文件内容与声音格式不符。', 422)
+            if not any(valid.values()): self.error('文件内容不是可识别的音频。', 422)
             info = {'size': fingerprint[1]}
-            if suffix == '.wav':
+            if valid['.wav']:
                 import wave
                 try:
                     with wave.open(str(path), 'rb') as audio:
@@ -920,6 +923,30 @@ class AssetCatalog:
         if stamp(path) != item['_fingerprint']: self.error('读取时源素材发生变化，请重试。', 409, 'conflict')
         return raw
 
+    def _prepare_audio(self, payload):
+        """Only the codec worker runs on another thread; writer scopes stay here."""
+        from audio_transcode import MAX_SECONDS
+        condition, outcome = threading.Condition(self.store.lock), {}
+        def convert():
+            try:
+                result = ('value', self.api.prepare_audio_import(payload))
+            except Exception as error:
+                result = ('error', error)
+            with condition:
+                outcome[result[0]] = result[1]
+                condition.notify_all()
+        with condition:
+            threading.Thread(target=convert, daemon=True, name='studio-library-audio').start()
+            if not condition.wait_for(lambda: bool(outcome), timeout=MAX_SECONDS + 10):
+                self.error('音频转换超时，请稍后重试。', 422, 'audio_conversion')
+        if 'error' in outcome: raise outcome['error']
+        return outcome['value']
+
+    def _audio_source_unchanged(self, item, before):
+        try: unchanged = file_fingerprint(item['_path']) == before
+        except OSError: unchanged = False
+        if not unchanged: self.error('转换期间源音频已经变化，请刷新后重试。', 409, 'conflict')
+
     def _copy_person(self, target, revision, item, payload):
         warnings_list = []
         persons = self._rows(target, 'PersonCfg', warnings_list)
@@ -1062,7 +1089,7 @@ class AssetCatalog:
         """Multi-selection import: folder media of one kind goes through the sliced batch writer; anything else imports one by one."""
         ids = payload.get('assetIds')
         if not isinstance(ids, list) or not ids or len(ids) > 2000 or any(not isinstance(v, str) for v in ids): self.error('请先勾选要导入的素材。')
-        with self.store.lock, self.store.catalog_scope(), self.reserve_drafts(payload):
+        with self._import_lock, self.store.lock, self.store.catalog_scope(), self.reserve_drafts(payload):
             target, revision, source, source_project, source_revision, kind, grade, cloth = self._context(payload, writable=True)
             catalog = self._entries(payload, refresh_media=False)
             wanted = [row for row in catalog['items'] if row['assetId'] in set(ids)]
@@ -1089,7 +1116,7 @@ class AssetCatalog:
                     'importDelta': self.import_delta(target, kind, before), 'warnings': [e['name'] + '：' + e['error'] for e in errors]}
 
     def import_asset(self, payload, nested=False):
-        with (nullcontext() if nested else self.store.lock), (nullcontext() if nested else self.store.catalog_scope()), (nullcontext() if nested else self.reserve_drafts(payload)):
+        with self._import_lock, (nullcontext() if nested else self.store.lock), (nullcontext() if nested else self.store.catalog_scope()), (nullcontext() if nested else self.reserve_drafts(payload)):
             target, revision, source, source_project, source_revision, kind, grade, cloth = self._context(payload, writable=True)
             catalog = self._entries(payload, refresh_media=False)
             item = next((row for row in catalog['items'] if row['assetId'] == payload.get('assetId')), None)
@@ -1106,12 +1133,16 @@ class AssetCatalog:
             elif kind == 'portrait' and item['origin'] == 'mod': result = self._copy_person(target, revision, item, payload)
             elif kind == 'cg' and item['origin'] == 'mod': result = self._copy_cg(target, revision, item, payload)
             else:
+                source_fingerprint = file_fingerprint(item['_path']) if kind == 'audio' else None
                 raw = self._read_selected(item, kind)
                 data = {'projectId': target.id, 'revision': revision, 'kind': kind, 'name': self.api.display_name(payload.get('name'), item['name']),
                         'fileName': item.get('fileName', item['_path'].name), 'data': base64.b64encode(raw).decode('ascii')}
                 if kind == 'social': result = self.store.import_field_image(data)
                 elif kind == 'audio':
-                    data['type'] = payload.get('type', item.get('type', 1)); result = self.store.audio_import(data)
+                    data.update(type=payload.get('type', item.get('type', 1)), transcode='aac')
+                    prepared = self._prepare_audio(data)
+                    self._audio_source_unchanged(item, source_fingerprint)
+                    result = self.store.audio_import(data, prepared=prepared)
                 else:
                     if kind == 'portrait': data.update(grade=grade, cloth=0, faceId=0, gender=payload.get('gender', 2))
                     if kind == 'cg': data['_assetAssociation'] = {'personNames': item.get('personNames', [])}
@@ -1129,6 +1160,13 @@ class AssetCatalog:
         index_path = 'StudentAgeStudio/library-imports.json'
         index = self.api.read_json(self.api.safe_path(target.path, index_path), {})
         if not isinstance(index, dict): self.error('素材导入记录无法读取。', 422)
+        audio_index_path = 'StudentAgeStudio/audio-imports.json'
+        audio_index = None
+        if kind == 'audio':
+            audio_index = self.api.read_json(self.api.safe_path(target.path, audio_index_path), {'version': 1, 'previews': {}})
+            if (not isinstance(audio_index, dict) or not isinstance(audio_index.get('previews'), dict)
+                    or any(not isinstance(value, dict) for value in audio_index['previews'].values())):
+                self.error('音频导入记录无法读取，请先修复 audio-imports.json。', 422)
         changes, results, total, skipped, backup = {}, [], 0, 0, None
         # Large batches are written in slices: converted bytes never accumulate
         # beyond one slice in memory, and finished slices stay imported if a
@@ -1138,11 +1176,14 @@ class AssetCatalog:
             if not changes: return
             changes['Cfgs/zh-cn/'+table+'.json'] = self.api.json_bytes(rows)
             changes[index_path] = self.api.json_bytes(index)
+            if audio_index is not None and audio_index_path not in changes:
+                changes[audio_index_path] = self.api.json_bytes(audio_index)
             backup = self.store.commit(target, changes, revision) or backup
             revision = self.store.revision(target)
             changes, total = {}, 0
         for item in items:
             if total >= IMPORT_SLICE: flush()
+            source_fingerprint = file_fingerprint(item['_path']) if kind == 'audio' else None
             raw = self._read_selected(item, kind)
             digest = hashlib.sha256(raw).hexdigest()
             key = hashlib.sha256((kind+'\0'+str(item['_path'].resolve())).encode()).hexdigest()
@@ -1151,20 +1192,44 @@ class AssetCatalog:
             if prior.get('sha256') == digest and prior_id in rows:
                 try: present = self.store.project_asset(target, prior.get('url', '')).is_file()
                 except self.api.ApiError: present = False
+                if present and audio_index is not None:
+                    preview = audio_index['previews'].get(prior_id, {})
+                    try:
+                        native_path = self.store.project_asset(target, rows[prior_id].get('url', '')).resolve()
+                        preview_path = self.api.safe_path(target.path, preview.get('path', ''))
+                        present = (str(rows[prior_id].get('url', '')).lower().endswith('.wav')
+                                   and str(preview.get('path', '')).lower().endswith('.m4a')
+                                   and preview_path.is_file()
+                                   and self.api.safe_path(target.path, preview.get('native', '')).resolve() == native_path)
+                        if present:
+                            for owner, binding in audio_index['previews'].items():
+                                if owner == prior_id or not isinstance(binding.get('path'), str): continue
+                                try: shared = str(self.api.safe_path(target.path, binding['path']).resolve()).casefold() == str(preview_path.resolve()).casefold()
+                                except self.api.ApiError: shared = False
+                                if shared: present = False; break
+                    except self.api.ApiError: present = False
                 if present:
                     skipped += 1;results.append({'id':int(prior_id),'name':item['name'],'imported':False});continue
             ident = int(prior_id) if prior_id in rows else self.store.record_ids.allocate(table, rows)
             name = self.api.display_name(item['name'], item['_path'].stem)
+            preview_bytes = None
             if kind == 'audio':
-                converted, extension = self.api.decode_audio({'fileName':item['_path'].name,'data':base64.b64encode(raw).decode('ascii')})
+                converted, extension, preview_bytes = self._prepare_audio({'fileName':item['_path'].name,
+                    'data':base64.b64encode(raw).decode('ascii'), 'transcode':'aac'})
+                self._audio_source_unchanged(item, source_fingerprint)
                 directory = 'Audios'
             else:
                 converted, extension, _, _ = self.api.normalize_image(raw)
                 directory = {'background':'Textures/Bg','cg':'Textures/CG','avatar':'Textures/KZoneAvatar'}[kind]
-            total += len(converted)
+            total += len(converted) + (len(preview_bytes) if preview_bytes is not None else 0)
             relative = directory+'/library_'+key[:20]+extension
             url = 'Mods\\'+target.package+'\\'+relative.replace('/','\\')
             changes[relative] = converted
+            if preview_bytes is not None:
+                if audio_index_path not in changes:
+                    changes[audio_index_path] = self.api.json_bytes(audio_index)
+                self.store.audio_preview_changes(target, ident, relative, preview_bytes, changes)
+                audio_index = json.loads(changes[audio_index_path])
             if kind == 'cg': row = {'id':ident,'name':name,'urls':[url],'group':3,'gender':0,'comic':[],'idx':0,'move':[],'startTalks':[]}
             elif kind == 'background': row = {'id':ident,'name':name,'url':url,'audio':0,'cloth':[],'gaozhongCond':[],'gaozhongUrl':0}
             elif kind == 'avatar': row = {'id':ident,'name':name,'icon':url,'state':0,'type':0}
@@ -1179,7 +1244,7 @@ class AssetCatalog:
         return {'ok':True,'kind':kind,'imported':imported,'count':len(results)-skipped,'skipped':skipped,'results':results,'revision':self.store.revision(target),'backup':backup,'projectId':target.id}
 
     def import_folder(self, payload):
-        with self.store.lock, self.store.catalog_scope(), self.reserve_drafts(payload):
+        with self._import_lock, self.store.lock, self.store.catalog_scope(), self.reserve_drafts(payload):
             target, revision, _, _, _, kind, _, _ = self._context({**payload,'source':'custom'}, writable=True)
             if kind not in {'background','cg','audio','avatar'}: self.error('此类型不支持素材仓库批量导入。')
             settings = self.folders()

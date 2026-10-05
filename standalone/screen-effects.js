@@ -9,6 +9,14 @@ const entries=[
  {id:4012,name:'闪白',value:1,label:'次数（0 为单次无震动）',min:0,max:10,step:1},
  {id:4013,name:'彩纸飘落'},{id:4018,name:'展示图片',table:'BgCfg',label:'图片'}
 ];
+function videoCommand(talk){return Array.isArray(talk?.effect)?talk.effect.findLast(row=>Array.isArray(row)&&Number(row[0])===1164)||null:null;}
+function applyVideoCommand(talk,action,id){
+ if(!talk)return;if(!['play','stop','remove'].includes(action))throw Error('视频操作无效。');
+ if(action==='play'&&(!Number.isInteger(Number(id))||Number(id)<=0))throw Error('请选择有效视频。');
+ if(action==='remove'&&!Array.isArray(talk.effect))return;
+ const rows=(Array.isArray(talk.effect)?talk.effect:[]).filter(row=>!Array.isArray(row)||Number(row[0])!==1164);
+ if(action==='play')rows.push([1164,1,Number(id)]);else if(action==='stop')rows.push([1164,0]);talk.effect=rows;
+}
 function state(prior,talk,transition){const screen=talk.screenEffect||[],code=Number(screen[0]),out={filter:transition?'':prior?.filter||'',eyes:prior?.eyes||0,command:screen.slice(),previousEyes:prior?.eyes||0};
  if(code===4002)out.filter='blur(8px)';if(code===4009)out.filter='sepia(1)';if(code===4010)out.filter='invert(1)';if(code===4003)out.filter='';if(code===4011)out.eyes=Math.max(0,Math.min(1,Number(screen[1])||0));return out;}
 function draw(renderer,doc,scene,animate){const root=renderer.container;for(const animation of renderer.screenShakeAnimations||[])animation.cancel();renderer.screenShakeAnimations=[];root.querySelector('.scene-backdrop').style.filter=scene.screen?.filter||'';
@@ -28,9 +36,11 @@ function draw(renderer,doc,scene,animate){const root=renderer.container;for(cons
  else if(tr?.kind==='mosaic'){const url=renderer.options.assetUrl(window.StudentAgeScene.backgroundPath(doc,{background:tr.from,roles:scene.roles})),W=root.clientWidth,H=root.clientHeight;for(let i=0;i<48;i++){const x=i%8,y=Math.floor(i/8),n=add('screen-transition-cell',{left:x*12.5+'%',top:y*100/6+'%',width:'12.6%',height:'16.8%',backgroundImage:`url("${url}")`,backgroundSize:`${W}px ${H}px`,backgroundPosition:`${-x*W/8}px ${-y*H/6}px`});n.animate([{clipPath:'inset(0)'},{clipPath:'inset(50%)'}],{duration:500,delay:(i*17%200),fill:'forwards'});}}
 }
 function duration(scene){const row=scene?.screen?.command||[],id=Number(row[0]);return Math.max(scene?.transition?.kind==='wipe'?1200:scene?.transition?750:0,id===4006?2800:id===4013?5000:id===4001?(row[1]||.15)*1000:id===4012?Math.max(1,row[1]||1)*200:id===4011?400:0);}
-async function edit({projectId,api,talk,persons={},allowPaper=false}){
- const UI=StudentAgeCharacterUI,esc=UI.esc,current=JSON.parse(JSON.stringify(talk)),items=[...entries,...(allowPaper?[{id:'paper',name:'纸条'}]:[]),{id:'clear',name:'移除本句屏幕效果'}];
- const selected=await UI.choices('屏幕效果',items,{selected:current.screenEffect?.[0]});if(!selected)return null;
+async function edit({projectId,api,talk,persons={},allowPaper=false,allowVideo=false,chooseVideo}){
+ const UI=StudentAgeCharacterUI,esc=UI.esc,current=JSON.parse(JSON.stringify(talk)),video=videoCommand(current),items=[...entries,...(allowPaper?[{id:'paper',name:'纸条'}]:[]),...(allowVideo?[{id:'video',name:'视频'},{id:'video-stop',name:'停止视频'},...(video?[{id:'video-remove',name:'移除本句视频效果'}]:[])]:[]),{id:'clear',name:'移除本句屏幕效果'}];
+ const selected=await UI.choices('屏幕效果',items,{selected:current.screenEffect?.[0]||(video?'video':undefined)});if(!selected)return null;
+ if(selected.id==='video'){const picked=await chooseVideo?.();return picked?{videoAction:'play',videoId:Number(picked.id)}:null;}
+ if(selected.id==='video-stop')return {videoAction:'stop'};if(selected.id==='video-remove')return {videoAction:'remove'};
  if(selected.id==='paper')return {paper:true};if(selected.id==='clear')return {screenEffect:[]};
  const config=entries.find(r=>r.id===selected.id),value=current.screenEffect?.[0]===config.id?current.screenEffect.slice():[config.id];
  if(config.id===4007){
@@ -48,4 +58,4 @@ async function edit({projectId,api,talk,persons={},allowPaper=false}){
  return {screenEffect:[config.id]};
 }
 
-window.StudentAgeScreenEffects={entries,state,draw,duration,edit};})();
+window.StudentAgeScreenEffects={entries,state,draw,duration,edit,videoCommand,applyVideoCommand};})();

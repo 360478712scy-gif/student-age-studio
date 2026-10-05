@@ -71,6 +71,42 @@ class UpAudioSaveTests(unittest.TestCase):
         self.assertEqual(rows['2']['future'], {'keep': [1, 2]})
         self.assertEqual(self.store.load(self.ident)['audioCues']['sfx']['2'][0]['audioId'], 9)
 
+    def test_nullable_effects_survive_native_audio_and_text_saves(self):
+        rows = self.read(); rows['2']['effect'] = None; rows['3'].pop('effect')
+        manual = [[1163, 99, 2], [55, 2]]
+        rows['4']['effect'] = copy.deepcopy(manual); self.write('TalkCfg', rows)
+        result = self.save(audioCues={'sfx': {}, 'bgm': [self.group()]})
+        saved = self.read()
+        self.assertTrue(result['ok'])
+        self.assertEqual(saved['1']['audio'], 7)
+        self.assertIsNone(saved['2']['effect'])
+        self.assertNotIn('effect', saved['3'])
+        self.assertEqual(saved['4']['effect'], manual)
+        self.assertEqual(saved['2']['future'], rows['2']['future'])
+        self.assertIsNone(b.read_json(Path(result['backup']) / 'Cfgs/zh-cn/TalkCfg.json')['2']['effect'])
+        reopened = self.store.load(self.ident)
+        changed = {**saved['2'], 'content': 'saved nullable draft'}
+        self.save(talkPatch={'version': 1, 'upsert': {'2': changed}, 'deleted': []})
+        self.save(audioCues=reopened['audioCues'])
+        self.assertEqual(self.read()['2'], changed)
+        self.assertNotIn('effect', self.read()['3'])
+        self.assertEqual(self.read()['4']['effect'], manual)
+
+    def test_up_commands_initialize_only_the_targeted_nullable_effects(self):
+        rows = self.read(); rows['1']['effect'] = None; rows['2']['effect'] = None
+        rows['5']['effect'] = None
+        manual = [[1163, 99, 2], [55, 2]]
+        rows['4']['effect'] = copy.deepcopy(manual); self.write('TalkCfg', rows)
+        cues = {'sfx': {'2': [{'audioId': 9}]}, 'bgm': [self.group(loop=False)]}
+        self.save(audioCues=cues)
+        self.save(audioCues=self.store.load(self.ident)['audioCues'])
+        saved = self.read()
+        self.assertEqual(saved['1']['effect'], [[1163, 10, 7, 1, -1, 0]])
+        self.assertEqual(saved['2']['effect'], [[1163, 3, 9, 1]])
+        self.assertIsNone(saved['5']['effect'])
+        self.assertEqual(saved['4']['effect'], manual)
+        self.assertTrue(all(saved[key]['future'] == rows[key]['future'] for key in rows))
+
     def test_native_single_music_and_single_sfx_need_no_up(self):
         self.save(audioCues={'sfx': {'1': [{'audioId': 9}]}, 'bgm': []})
         self.assertEqual(self.read()['1']['audio'], 9)

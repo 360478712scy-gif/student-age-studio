@@ -37,6 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
         config.mediaTypesRequiringUserActionForPlayback = []
         config.userContentController.add(self, name: "studioCloseDecision")
         config.userContentController.add(self, name: "studioAssetFolder")
+        config.userContentController.addUserScript(WKUserScript(
+            source: "window.STUDIO_NATIVE_CAPABILITIES = Object.freeze({videoFolder: true});",
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
         web = WKWebView(frame: window.contentView!.bounds, configuration: config)
         web.autoresizingMask = [.width,.height]; web.uiDelegate = self; web.navigationDelegate = self
         window.contentView!.addSubview(web); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
@@ -114,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
         if message.name == "studioAssetFolder" {
             guard message.frameInfo.isMainFrame, message.webView === web,
                   let request = message.body as? [String:Any], let id = request["id"] as? String,
-                  let kind = request["kind"] as? String, ["portrait", "background", "cg", "audio", "social", "avatar", "mods", "game", "cache"].contains(kind) else { return }
+                  let kind = request["kind"] as? String, ["portrait", "background", "cg", "audio", "video", "social", "avatar", "mods", "game", "cache"].contains(kind) else { return }
             chooseAssetFolder(id, kind:kind)
             return
         }
@@ -127,7 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUI
         guard assetFolderPanel == nil else { finishAssetFolder(id, path:nil); return }
         let panel=NSOpenPanel();assetFolderPanel=panel
         panel.canChooseDirectories=true;panel.canChooseFiles=false;panel.allowsMultipleSelection=false;panel.canCreateDirectories=true
-        panel.title="选择" + (["portrait":"人物立绘", "background":"场景", "cg":"CG", "audio":"声音", "social":"动态配图", "avatar":"人物头像", "mods":"可编辑模组", "game":"游戏", "cache":"缓存"][kind] ?? "素材") + "文件夹"
+        panel.title="选择" + (["portrait":"人物立绘", "background":"场景", "cg":"CG", "audio":"声音", "video":"视频素材", "social":"动态配图", "avatar":"人物头像", "mods":"可编辑模组", "game":"游戏", "cache":"缓存"][kind] ?? "素材") + "文件夹"
         panel.prompt="使用此文件夹"
         panel.beginSheetModal(for:window) { [weak self] result in
             self?.assetFolderPanel=nil

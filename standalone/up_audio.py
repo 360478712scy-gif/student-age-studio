@@ -113,7 +113,9 @@ def compile(cues, previous, talks, audios, local_audios, plan, config, allocate,
 
     def add(key, command):
         talks[key] = copy.deepcopy(talks[key])
-        effects = talks[key].setdefault('effect', [])
+        effects = talks[key].get('effect')
+        if effects is None:
+            effects = talks[key]['effect'] = []
         record = {'command': command, 'index': len(effects),
                   'occurrence': sum(e == command for e in effects)}
         effects.append(command)

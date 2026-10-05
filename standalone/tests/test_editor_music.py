@@ -15,6 +15,25 @@ class MusicTests(unittest.TestCase):
  def setUp(self):
   test_plugin_mode.PluginModeTests.setUp(self)
   mock=patch.object(music,'builtin_tracks',return_value=[]);mock.start();self.addCleanup(mock.stop)
+ def test_manual_playback_and_volume_survive_restart_and_old_settings(self):
+  music.folder().mkdir(parents=True,exist_ok=True)
+  api.atomic_write(music.folder()/'player.json',api.json_bytes({'mode':'shuffle','volume':.12,'future':'keep'}))
+  self.assertTrue(music.access(self.store,api)['preferences']['playing'])
+  music.access(self.store,api,{'playing':False,'volume':0})
+  restarted=api.StudioStore(self.store.mods,self.store.workshop,self.store.game,asset_settings_path=Path(self.tmp.name)/'assets.json')
+  self.assertEqual(music.access(restarted,api)['preferences'],{'mode':'shuffle','collapsed':False,'volume':0,'playing':False})
+  self.assertEqual(api.read_json(music.folder()/'player.json')['future'],'keep')
+  music.access(restarted,api,{'playing':True,'volume':.68})
+  self.assertEqual(music.access(self.store,api)['preferences']['volume'],.68)
+  self.assertTrue(music.access(self.store,api)['preferences']['playing'])
+  self.assertEqual(self.protected.read_bytes(),self.before)
+
+ def test_invalid_playback_intent_does_not_change_saved_preferences(self):
+  music.access(self.store,api,{'playing':False})
+  path=music.folder()/'player.json';before=path.read_bytes()
+  for value in ('false',0,None,[],{}):
+   with self.subTest(value=value),self.assertRaises(api.ApiError):music.access(self.store,api,{'playing':value})
+   self.assertEqual(path.read_bytes(),before)
  def test_custom_library_order_dedup_and_restart(self):
   def put(title,track='local',extra=b''):
    return music.access(self.store,api,dict(trackId=track,fileName=title,data=base64.b64encode(b'RIFF'+b'\0'*4+b'WAVEfmt '+extra).decode()))

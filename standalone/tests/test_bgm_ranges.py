@@ -53,6 +53,12 @@ class BgmRanges(unittest.TestCase):
         cues={'sfx':{},'bgm':[self.group('a',7,[1,2,4]),self.group('b',8,[3])]}
         export(cues,{},rows,{}, {},{'1':{'talkId':[1]},'2':{'talkId':[2]}},{})
         self.assertEqual([rows[str(i)]['audio'] for i in range(1,5)],[7,7,8,7])
+    def test_null_effects_are_read_as_empty_without_rewriting_rows(self):
+        rows=copy.deepcopy(self.rows);rows['1']['effect']=None;rows['2']['effect']=[[1163,10,7,0,-1,0]]
+        before=copy.deepcopy(rows)
+        plan=export({'sfx':{},'bgm':[]},{},rows,{}, {},{'1':{'talkId':[1]}},{})
+        self.assertEqual(rows,before)
+        self.assertEqual(plan['musicPossible'],{str(i) for i in range(2,9)})
     def test_same_music_after_zero_or_gap_does_not_restart(self):
         self.save(audioCues={'sfx':{},'bgm':[self.group('a',7,[1,2]),self.group('zero',0,[3]),self.group('a2',7,[5,6]),self.group('b',8,[7,8])]})
         self.assertEqual(self.native(),{'1':7,'2':0,'3':0,'4':0,'5':0,'6':0,'7':8,'8':0})

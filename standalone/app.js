@@ -516,7 +516,7 @@ function popupMenu(anchor,items){
 }
 function openScreenEffectMenu(anchor){
   const t=talk();if(!t)return;const effect=StudentAgeScreenEffects.entries.find(e=>e.id===Number(t.screenEffect?.[0])),hasPaper=(t.roles||[]).some(r=>Number(r[1])===5001);
-  popupMenu(anchor,[{label:effect?'屏幕效果：'+effect.name+'（更换）':'添加屏幕效果…',run:editScreenEffect},{label:hasPaper?'编辑纸条…':'添加纸条…',run:editPaper},...(t.screenEffect?.length?[{label:'移除屏幕效果',danger:true,run:()=>mutate('移除屏幕效果',()=>talk().screenEffect=[])}]:[])]);
+  popupMenu(anchor,[{label:effect?'屏幕效果：'+effect.name+'（更换）':'添加屏幕效果…',run:editScreenEffect},{label:hasPaper?'编辑纸条…':'添加纸条…',run:editPaper},...(videoEditing()?[{label:'视频…',run:editVideoEffect},{label:'停止视频',run:()=>setTalkVideo('stop')},...(StudentAgeScreenEffects.videoCommand(t)?[{label:'移除本句视频效果',danger:true,run:()=>setTalkVideo('remove')}]:[])]:[]),...(t.screenEffect?.length?[{label:'移除屏幕效果',danger:true,run:()=>mutate('移除屏幕效果',()=>talk().screenEffect=[])}]:[])]);
 }
 function openCGMenu(x,y){
   const t=talk();if(!t||!editable())return;const state=currentStage();if(!state.cg)return;
@@ -1294,11 +1294,19 @@ function renderDialogue() {
  return html+renderAudio()+`<section class="talk-action-codes"><label class="field-label" for="talk-action-codes">动作指令</label><p class="helper">逗号分隔参数，分号分隔多条指令，与原版一致。</p><textarea id="talk-action-codes" data-talk-id="${t.id}" rows="3" spellcheck="false" placeholder="例如：3,3001;4,3001" ${S.project?.readOnly?'readonly':''}>${h((t.roles||[]).map(row=>Array.isArray(row)?row.join(','):String(row)).join(';'))}</textarea></section>`;
 }
 function screenEffectControls(t){const effect=StudentAgeScreenEffects.entries.find(e=>e.id===Number(t.screenEffect?.[0]));return `<section class="screen-effect-controls"><h3>屏幕效果</h3><button data-action="screen-effect">${h(effect?.name|| (t.screenEffect?.length?'已有屏幕效果':'＋ 添加屏幕效果'))}</button>${t.screenEffect?.length?'<button data-action="screen-effect-clear">移除</button>':''}</section>`;}
-async function editScreenEffect(){const t=talk();if(!t||!editable())return;const id=t.id;
- const result=await StudentAgeScreenEffects.edit({projectId:S.project.id,api,talk:t,persons:S.doc.persons,allowPaper:true});
- if(!result||talk()?.id!==id)return;if(result.paper){editPaper();return;}
+async function editScreenEffect(){const t=talk();if(!t||!editable())return;const id=t.id,projectId=S.project.id;
+ const result=await StudentAgeScreenEffects.edit({projectId:S.project.id,api,talk:t,persons:S.doc.persons,allowPaper:true,allowVideo:videoEditing(),chooseVideo:openVideoLibrary});
+ if(!result||S.project?.id!==projectId||talk()?.id!==id)return;if(result.paper){editPaper();return;}
+ if(result.videoAction){setTalkVideo(result.videoAction,result.videoId);return;}
  mutate('设置屏幕效果',()=>Object.assign(talk(),result));
 }
+const videoEditing=()=>!!window.STUDIO_WORKSHOP_NAV?.pluginEditing?.();
+function setTalkVideo(action,id){if(!editable()||!talk()||!videoEditing())return;mutate(action==='remove'?'移除本句视频效果':action==='stop'?'停止视频':'设置视频',()=>StudentAgeScreenEffects.applyVideoCommand(talk(),action,id));}
+async function openVideoLibrary(){
+ if(!videoEditing())return null;if(!window.StudentAgeVideoLibrary)throw Error('视频素材库尚未加载，请重新打开编辑器。');
+ return StudentAgeVideoLibrary.open({projectId:S.project.id,api,token,selectedId:Number(StudentAgeScreenEffects.videoCommand(talk())?.[2])||null,getContext:()=>window.STUDIO_PICKER_CONTEXT(),onCommitted:result=>window.STUDIO_USE_PICKED_ASSET(result,{intent:'library'})});
+}
+async function editVideoEffect(){const t=talk();if(!t||!editable()||!videoEditing())return;const project=S.project.id,id=t.id,picked=await openVideoLibrary();if(picked&&S.project?.id===project&&talk()?.id===id)setTalkVideo('play',picked.id);}
 function slider(index,arg,label,min,max,step=0.1,unit='') {
   const row=talk().roles[index],v=row[arg]??0;
   return `<label class="range-field"><span class="field-label">${h(label)}<output id="range-${index}-${arg}">${Number(v).toFixed(step>=1?0:1)}${h(unit)}</output></span><input type="range" min="${min}" max="${max}" step="${step}" value="${v}" data-arg="${arg}" data-action-index="${index}" data-unit="${h(unit)}"></label>`;
@@ -1760,7 +1768,7 @@ async function importAudioFile(file,type) {
   const projectId=S.project.id,selected=S.selected;if(S.dirty&&!await window.STUDIO_NAV.prepareLeave({allowDiscard:false}))return;
   if(S.project.id!==projectId)return;const importRevision=S.revision;
   const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(new Error('声音读取失败。'));reader.readAsDataURL(file);});
-  const result=await api('/api/audio-import',{projectId,revision:importRevision,fileName:file.name,data,name:file.name.replace(/\.[^.]+$/,''),type});
+  const result=await api('/api/audio-import',{projectId,revision:importRevision,fileName:file.name,data,name:file.name.replace(/\.[^.]+$/,''),type,transcode:'aac'});
   if(S.project.id!==projectId){toast('声音已导入原模组。');return;}S.revision=result.revision;await loadAudioCatalog();
   if(S.selected===selected){if(type===2)addSfx(result.id);else{const draft=bgmDraft();draft.track=Number(result.id);applyBgmDraft();}}
   toast('声音已导入并应用，可以撤销当前播放设置。');warnAudioPlugin();
@@ -2122,9 +2130,11 @@ function mergeImportedAssets(result){
 if(window.webkit?.messageHandlers?.studioAssetFolder){
   const requests=new Map();
   window.STUDIO_CHOOSE_ASSET_FOLDER=kind=>new Promise((resolve,reject)=>{
-    if(!['portrait','background','cg','audio','social','avatar','mods','game','cache'].includes(kind)){reject(Error('未知文件夹类型。'));return;}
+    if(!['portrait','background','cg','audio','social','avatar','video','mods','game','cache'].includes(kind)){reject(Error('未知文件夹类型。'));return;}
     const id=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);requests.set(id,resolve);
-    window.webkit.messageHandlers.studioAssetFolder.postMessage({id,kind});
+    // Lightweight updates also run in older Mac hosts whose picker lacks video.
+    const nativeKind=kind==='video'&&window.STUDIO_NATIVE_CAPABILITIES?.videoFolder!==true?'audio':kind;
+    window.webkit.messageHandlers.studioAssetFolder.postMessage({id,kind:nativeKind});
   });
   window.STUDIO_ASSET_FOLDER_CHOSEN=({id,path})=>{const resolve=requests.get(id);if(resolve){requests.delete(id);resolve(typeof path==='string'?path:null);}};
 }

@@ -31,7 +31,7 @@ def settings(api):
     value=api.read_json(folder()/'player.json',{})
     if (not isinstance(value,dict) or not isinstance(value.get('library',[]),list)
         or any(not isinstance(r,dict) or any(not isinstance(r.get(k),str) for k in ('id','file','name')) for r in value.get('library',[]))):raise api.ApiError('播放器设置无法读取。')
-    return {'mode':'list','collapsed':False,'volume':0.35,**value}
+    return {'mode':'list','collapsed':False,'volume':0.35,'playing':True,**value}
 def access(store,api,payload=None):
     with _lock:
         pref=settings(api)
@@ -45,6 +45,9 @@ def access(store,api,payload=None):
                 if not valid:raise api.ApiError('文件不是可识别的音频。')
                 track_id=payload.get('trackId','tooi-sora')
                 if track_id not in ('tooi-sora','odoriko','local'):raise api.ApiError('曲目无效。')
+                if payload.get('transcode') == 'aac':
+                    _,_,raw=api.prepare_audio_import(payload)
+                    suffix='.m4a'
                 digest=hashlib.sha256(raw).hexdigest();name=digest+suffix
                 api.atomic_write(folder()/name,raw)
                 if track_id=='tooi-sora':pref['track']=name
@@ -53,11 +56,12 @@ def access(store,api,payload=None):
                     library=pref.setdefault('library',[])
                     if not any(r.get('id')=='local-'+digest for r in library):
                         library.append({'id':'local-'+digest,'file':name,'name':Path(str(payload.get('fileName','音乐')).replace('\\','/')).stem[:200] or '本地音乐','artist':'本地音乐'})
-            for key in ('mode','collapsed','volume'):
+            for key in ('mode','collapsed','volume','playing'):
                 if key not in payload:continue
                 v=payload[key]
                 if key=='mode' and v not in ('single','list','shuffle'):raise api.ApiError('播放模式无效。')
                 if key=='collapsed' and type(v)!=bool:raise api.ApiError('收起状态无效。')
+                if key=='playing' and type(v)!=bool:raise api.ApiError('播放状态无效。')
                 if key=='volume' and (type(v) not in (float,int) or not 0<=v<=1):raise api.ApiError('音量无效。')
                 pref[key]=v
             folder().mkdir(parents=True,exist_ok=True);api.atomic_write(folder()/'player.json',api.json_bytes(pref))
@@ -70,7 +74,7 @@ def access(store,api,payload=None):
         for ident,row in store.catalog_rows('AudioCfg').items():
             if row.get('type',1)==1 and 8 in (row.get('group') or []) and row.get('url'):
                 tracks.append({'id':str(ident),'name':row.get('name') or row['url'],'artist':'原版空间 BGM','assetPath':row['url']})
-        return {'tracks':tracks,'preferences':{k:pref[k] for k in ('mode','collapsed','volume')}}
+        return {'tracks':tracks,'preferences':{k:pref[k] for k in ('mode','collapsed','volume','playing')}}
 def media(api,track_id="tooi-sora"):
     row=next((r for r in builtin_tracks() if r['id']==track_id),None)
     if row:return builtin_media(api,row)

@@ -61,7 +61,7 @@ def export(cues, previous, talks, original, audios, events=None, options=None):
         if value and (key in music or key in native or audios.get(str(value), {}).get('type') == 1):
             music_possible.add(key)
         if any(isinstance(e, list) and len(e) >= 3 and e[0] == 1163 and e[1] in (1, 2, 10, 20)
-               for e in row.get('effect', [])):
+               for e in row.get('effect') or []):
             music_possible.add(key)
     queue = deque(music_possible)
     while queue:

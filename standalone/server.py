@@ -840,6 +840,11 @@ class StudioStore:
                   project.path / "StudentAgeStudio/original-edits.json", project.path / "StudentAgeStudio/social-state.json", project.path / "StudentAgeStudio/character-outfits.json", project.path / "StudentAgeStudio/character-romance.json", project.path / "StudentAgeStudio/space-layouts.json", project.path / "StudentAgeStudio/plugins.json", project.path / "EC2BUnofficialPatch/CustomMinigamecfg.json"]
         audio_config = project.path / 'BetterAudio/BetterAudio.json'
         if audio_config.exists(): paths.append(audio_config)
+        audio_imports = project.path / 'StudentAgeStudio/audio-imports.json'
+        if audio_imports.exists(): paths.append(audio_imports)
+        for relative in ('ScreenVideo/CustomVideo.json', 'EC2BUnofficialPatch/ScreenVideo/CustomVideo.json'):
+            config = project.path / relative
+            if config.exists(): paths.append(config)
         return paths
 
     def revision(self, project):
@@ -3239,6 +3244,9 @@ class StudioStore:
                 if len(files) >= 10000:
                     break
         local = read_json(safe_path(project.path, "Cfgs/zh-cn/AudioCfg.json"), {})
+        preview_data = read_json(safe_path(project.path, 'StudentAgeStudio/audio-imports.json'), {})
+        previews = preview_data.get('previews', {}) if isinstance(preview_data, dict) else {}
+        if not isinstance(previews, dict): previews = {}
         rows = {**self.catalog_rows("AudioCfg"), **local}
         metadata = self.catalog().get("audioMetadata", {})
         audios = []
@@ -3253,8 +3261,20 @@ class StudioStore:
                 except ApiError:
                     available = False
                 info = metadata.get(resource.replace("\\", "/").lower(), {})
+                preview_path = resource
+                preview = previews.get(ident) if ident in local else None
+                if isinstance(preview, dict):
+                    native = 'Mods/' + project.package + '/' + str(preview.get('native') or '')
+                    candidate = preview.get('path')
+                    if (resource.replace('\\', '/').casefold() == native.casefold()
+                            and isinstance(candidate, str) and candidate.lower().endswith('.m4a')):
+                        try:
+                            self.project_asset(project, candidate)
+                            preview_path = candidate
+                        except ApiError:
+                            pass  # The game-compatible file remains usable if a preview was moved.
                 audios.append({"id": int(ident), "name": row.get("name") or resource or ("声音 " + ident), "type": row.get("type", 1),
-                               "url": resource, "assetPath": resource, "available": available, "source": "local" if ident in local else "game",
+                               "url": resource, "assetPath": preview_path, "available": available, "source": "local" if ident in local else "game",
                                "volume": row.get("volumn") or 1, **info})
         # AudioMgrEx.PlayBgm uses AudioCfg 4 outside an active game save.
         # Resolve it from the original catalogue, even if a mod overrides ID 4.
@@ -3323,13 +3343,18 @@ class StudioStore:
                     'previousRevision': payload.get('revision'),
                     'importDelta': self.asset_catalog.import_delta(project, 'audio', before)}
 
-    def audio_import(self, payload):
+    def audio_import(self, payload, *, prepared=None):
         with self.lock:
             project = self.project(payload.get("projectId"), writable=True)
             revision = self.revision(project)
             if payload.get("revision") != revision:
                 raise ApiError("导入前模组已经变化，请重新载入。", 409, "conflict")
-            raw, extension = decode_audio(payload)
+            original_path = project.path.resolve()
+        raw, extension, aac = prepare_audio_import(payload) if prepared is None else prepared
+        with self.lock:
+            project = self.project(payload.get('projectId'), writable=True)
+            if project.path.resolve() != original_path or self.revision(project) != revision:
+                raise ApiError('音频转换期间模组已经变化，请重新导入。', 409, 'conflict')
             table = read_json(safe_path(project.path, "Cfgs/zh-cn/AudioCfg.json"), {})
             kind = payload.get("type", 1)
             if not isinstance(kind, int) or isinstance(kind, bool) or kind < 0 or kind > 128:
@@ -3341,8 +3366,12 @@ class StudioStore:
                 ident, row = existing
                 relative = str(row.get("url") or "").replace("\\", "/")
                 relative = relative.split("/", 2)[2] if relative.lower().startswith("mods/") and relative.count("/") >= 2 else relative
-                return {"ok": True, "id": ident, "row": row, "assetPath": relative, "url": row.get("url"),
-                        "revision": revision, "backup": None, "reused": True}
+                changes = {}
+                preview = self.audio_preview_changes(project, ident, relative, aac, changes)
+                backup = self.commit(project, changes, revision) if changes else None
+                return {"ok": True, "id": ident, "row": row, "assetPath": preview or relative, "url": row.get("url"),
+                        "revision": self.revision(project), "backup": backup, "reused": True,
+                        'previewCodec': 'aac' if aac else None}
             inherited = self.catalog_rows("AudioCfg")
             occupied = set(table) | set(inherited)
             ident = self.record_ids.allocate('AudioCfg', {str(k): {} for k in occupied})
@@ -3353,9 +3382,69 @@ class StudioStore:
             row = {"id": ident, "name": display_name(payload.get("name"), Path(str(payload.get("fileName"))).stem),
                    "url": resource_url, "type": kind, "volumn": 0, "group": [], "cond": [], "disable": 0, "uiType": 0}
             table[str(ident)] = row
-            backup = self.commit(project, {relative: raw, "Cfgs/zh-cn/AudioCfg.json": json_bytes(table)}, revision)
-            return {"ok": True, "id": ident, "row": row, "assetPath": relative, "url": resource_url,
-                    "revision": self.revision(project), "backup": backup}
+            changes = {relative: raw, "Cfgs/zh-cn/AudioCfg.json": json_bytes(table)}
+            preview = self.audio_preview_changes(project, ident, relative, aac, changes)
+            backup = self.commit(project, changes, revision)
+            return {"ok": True, "id": ident, "row": row, "assetPath": preview or relative, "url": resource_url,
+                    "revision": self.revision(project), "backup": backup, 'previewCodec': 'aac' if aac else None}
+
+    def audio_preview_changes(self, project, ident, relative, aac, changes):
+        if aac is None:
+            return None
+        metadata_path = 'StudentAgeStudio/audio-imports.json'
+        staged_metadata = metadata_path in changes
+        if staged_metadata:
+            try:
+                metadata = json.loads(changes[metadata_path])
+            except (ValueError, TypeError, UnicodeError) as error:
+                raise ApiError('音频预览记录无法读取，原文件已保留。', 422) from error
+        else:
+            metadata = read_json(safe_path(project.path, metadata_path), {'version': 1, 'previews': {}})
+        if (not isinstance(metadata, dict) or not isinstance(metadata.get('previews'), dict)
+                or any(not isinstance(row, dict) for row in metadata['previews'].values())):
+            raise ApiError('音频预览记录无法读取，原文件已保留。', 422)
+        relative = safe_path(project.path, relative).relative_to(project.path).as_posix()
+        def identity(value):
+            return str(safe_path(project.path, value).resolve()).casefold()
+        native_identity = identity(relative)
+        claims = {}
+        for owner, row in metadata['previews'].items():
+            for field in ('path', 'native'):
+                value = row.get(field)
+                if not isinstance(value, str) or not value:
+                    continue
+                try:
+                    key = identity(value)
+                except ApiError:
+                    continue
+                claims.setdefault(key, set()).add(str(owner))
+        pending = {identity(path) for path in changes if path != metadata_path}
+        prior = metadata['previews'].get(str(ident), {})
+        preview = None
+        if isinstance(prior.get('native'), str) and isinstance(prior.get('path'), str):
+            try:
+                owned = safe_path(project.path, prior['path'])
+                key = identity(prior['path'])
+                if (identity(prior['native']) == native_identity and owned.suffix.lower() == '.m4a'
+                        and claims.get(key) == {str(ident)} and (key not in pending or staged_metadata)):
+                    preview = owned.relative_to(project.path).as_posix()
+            except ApiError:
+                pass
+        if preview is None:
+            base = Path(relative).with_suffix('.m4a')
+            for attempt in range(100):
+                candidate = base if attempt == 0 else base.with_name(base.stem + '_aac_' + secrets.token_hex(12) + '.m4a')
+                candidate = candidate.as_posix()
+                path, key = safe_path(project.path, candidate), identity(candidate)
+                if key not in claims and key not in pending and not path.exists() and not path.is_symlink():
+                    preview = candidate
+                    break
+            if preview is None:
+                raise ApiError('暂时无法分配音频预览文件名，请重试。', 409)
+        metadata['previews'][str(ident)] = {**prior, 'path': preview, 'native': relative}
+        changes[preview] = aac
+        changes[metadata_path] = json_bytes(metadata)
+        return preview
 
     def asset(self, project_id, requested, *, thumbnail=False):
         project = self.project(project_id)
@@ -3419,7 +3508,8 @@ class StudioStore:
             path = self.mod_image_path(project, text)
         suffix = path.suffix.lower()
         audio = suffix in {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"}
-        if not path.is_file() or suffix not in {".png", ".jpg", ".jpeg", ".webp", ".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"} or path.stat().st_size > (256 if audio else 72) * 1024 * 1024:
+        video = suffix == '.mp4'
+        if not path.is_file() or suffix not in {".png", ".jpg", ".jpeg", ".webp", ".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".mp4"} or path.stat().st_size > (512 if video else 256 if audio else 72) * 1024 * 1024:
             raise ApiError("图片不存在或格式不支持；游戏内置 Live2D 需要在游戏版预览。", 404)
         return path
 
@@ -3536,6 +3626,31 @@ class StudioStore:
             return {"ok": True, "projectId": project.id, "revision": self.revision(project), "assetPath": relative,
                     "url": "Mods\\" + project.package + "\\" + relative.replace("/", "\\"), "width": width, "height": height, "backup": backup}
 
+    def import_video(self, payload, source):
+        """Convert outside the writer lock; import only the movie, leaving table drafts alone."""
+        import video_transcode
+        with self.lock:
+            project = self.project(payload.get('projectId'), writable=True)
+            revision = self.revision(project)
+            if payload.get('revision') != revision:
+                raise ApiError('导入前模组已经变化，请重新载入。', 409, 'conflict')
+            original_path = project.path.resolve()
+        with tempfile.TemporaryDirectory(prefix='student-age-video-result-') as temporary:
+            converted = Path(temporary) / 'converted.mp4'
+            try:
+                metadata = video_transcode.transcode(source, converted)
+            except ValueError as error:
+                raise ApiError(str(error), 422, 'video_conversion') from error
+            with self.lock:
+                project = self.project(payload.get('projectId'), writable=True)
+                if project.path.resolve() != original_path:
+                    raise ApiError('视频转换期间模组位置已变化，请重新导入。', 409, 'conflict')
+                import screen_videos
+                if payload.get('assetId'):
+                    screen_videos.resolve_import(self, sys.modules[__name__], payload)
+                return screen_videos.commit_import(self, sys.modules[__name__], project, revision,
+                                                   converted.read_bytes(), metadata, payload)
+
     def import_image(self, payload):
         with self.lock:
             project = self.project(payload.get("projectId"), writable=True)
@@ -3636,6 +3751,33 @@ class StudioStore:
             result["revision"] = self.revision(project)
             return result
 
+
+
+def prepare_audio_import(payload):
+    """AAC preview and a PCM WAV for the game's WAV-only fallback decoder."""
+    if payload.get('transcode') != 'aac':
+        raw, extension = decode_audio(payload)
+        return raw, extension, None
+    extension = Path(str(payload.get('fileName') or '')).suffix.lower()
+    encoded = payload.get('data')
+    if extension not in {'.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac'} or not isinstance(encoded, str):
+        raise ApiError('请选择 MP3、WAV、OGG、FLAC、M4A 或 AAC 音频。')
+    if len(encoded) > 64 * 1024 * 1024 + 128:
+        raise ApiError('上传音频不能超过 48 MB。', 413)
+    if encoded.startswith('data:'):
+        encoded = encoded.split(',', 1)[-1]
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except ValueError:
+        raise ApiError('音频编码无效。')
+    if not 0 < len(raw) <= 48 * 1024 * 1024:
+        raise ApiError('上传音频为空或超过 48 MB。', 413)
+    from audio_transcode import convert
+    try:
+        converted = convert(raw, extension)
+    except ValueError as error:
+        raise ApiError(str(error), 422, 'audio_conversion') from error
+    return converted['wav'], '.wav', converted['aac']
 
 
 def decode_audio(payload):
@@ -4281,6 +4423,14 @@ class StudioHandler(BaseHTTPRequestHandler):
                 raise ApiError('未知的更新操作。',404)
             except ValueError as error:raise ApiError(str(error),400)
         if method == "GET":
+            if route in {'/api/videos', '/api/video-folder', '/api/video-file'}:
+                import screen_videos
+                values = {key: entries[0] for key, entries in query.items()}
+                if route == '/api/video-folder':
+                    return self.send_json(screen_videos.folder_get(self.server.store, sys.modules[__name__]))
+                if route == '/api/video-file':
+                    return self.send_file(screen_videos.file_path(self.server.store, sys.modules[__name__], values))
+                return self.send_json(screen_videos.access(self.server.store, sys.modules[__name__], values))
             if route == "/api/startup-preparation":
                 return self.send_json(self.server.startup.get())
             if route == "/api/background-status":
@@ -4538,7 +4688,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 page = page.replace("</head>", bootstrap + "</head>", 1) if "</head>" in page else bootstrap + page
                 policy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval' 'nonce-" + nonce + "'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
                 return self.send_data(page.encode(), "text/html; charset=utf-8", extra={"Content-Security-Policy": policy})
-            if route in ("/plugin-mode.js", "/plugin-mode.css", "/editor-music.js", "/editor-music.css", "/character-images.js", "/external-dialogues.js", "/external-uses.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/indexed-talks.js", "/remote-talks.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/frosted-glass.css", "/home-feedback.css", "/atelier.css", "/atelier-tones.css", "/noir.css", "/noir-tones.css", "/noir.js", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/dialogue-selection.js", "/dialogue-selection.css", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-text.js", "/preview-ui.css", "/locations.js", "/dialogue-shortcuts.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/workshop-publish-ui.js", "/workshop-publish.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
+            if route in ("/plugin-mode.js", "/plugin-mode.css", "/editor-music.js", "/editor-music.css", "/character-images.js", "/external-dialogues.js", "/external-uses.js", "/app-updates.js", "/original-mode.js", "/event-ownership.js", "/indexed-talks.js", "/remote-talks.js", "/live-preview.js", "/config-doctor.js", "/save-review.js", "/libraries.js", "/json-editor.js", "/json-editor.css", "/editor-theme.css", "/glass-palette.css", "/glass-theme.css", "/liquid-glass.js", "/theme.js", "/glass-tones.css", "/frosted-glass.css", "/home-feedback.css", "/atelier.css", "/atelier-tones.css", "/noir.css", "/noir-tones.css", "/noir.js", "/onboarding.js", "/onboarding.css", "/brand.svg", "/branch-tree.js", "/idle-chats.js", "/idle-chats.css", "/message-graph.js", "/messages.js", "/messages.css", "/goals.js", "/goals.css", "/character-ui.js", "/characters.js", "/character-model.js", "/character-states.js", "/character-model.css", "/character-controls.js", "/space-style.js", "/space-style.css", "/minigame-sudoku.js", "/minigame-library.js", "/minigame-library.css", "/characters.css", "/event-types.js", "/record-labels.js", "/record-labels.css", "/search-pinyin.js", "/search.js", "/record-ids.js", "/record-ids.css", "/navigation.js", "/navigation.css", "/help.js", "/app.js", "/scene.js", "/screen-effects.js", "/screen-effects.css", "/video-library.js", "/video-library.css", "/branches.js", "/timeline.js", "/conditions.js", "/condition-library.js", "/effects.js", "/history.js", "/dialogue-text.js", "/dialogue-selection.js", "/dialogue-selection.css", "/action-editor.js", "/performance.css", "/preview-ui.js", "/preview-text.js", "/preview-ui.css", "/locations.js", "/dialogue-shortcuts.js", "/event-bindings.js", "/warehouse.js", "/warehouse.css", "/workshop.js", "/workshop.css", "/workshop-publish-ui.js", "/workshop-publish.css", "/social-media.js", "/social.js", "/social.css", "/space.js", "/reuse-assets.js", "/reuse-assets.css", "/events.js", "/events.css", "/asset-picker.js", "/asset-picker.css", "/ui-controls.js", "/ui-controls.css", "/scene-dialogue.css", "/asset-names.js", "/expressions.js", "/styles.css", "/icon.png"):
                 file = self.server.web_root / route.lstrip("/")
                 if file.is_file():
                     data = file.read_bytes()
@@ -4546,6 +4696,35 @@ class StudioHandler(BaseHTTPRequestHandler):
                     return self.send_data(data, mimetypes.guess_type(file.name)[0] or "application/octet-stream")
             raise ApiError("页面不存在。", 404)
         if method == "POST":
+            if route == '/api/video-import':
+                import video_transcode
+                if self.headers.get('Content-Type', '').split(';', 1)[0].strip() != 'application/octet-stream':
+                    raise ApiError('请上传完整的视频文件。', 415)
+                if self.headers.get('Transfer-Encoding'):
+                    raise ApiError('请求格式不支持。', 400)
+                try:
+                    length = int(self.headers.get('Content-Length', '0'))
+                except ValueError:
+                    raise ApiError('请求长度无效。')
+                if length <= 0 or length > video_transcode.MAX_INPUT:
+                    raise ApiError('上传视频为空或超过 256 MB。', 413)
+                extension = Path(query.get('fileName', [''])[0]).suffix.lower()
+                if extension not in video_transcode.EXTENSIONS:
+                    raise ApiError('请选择 MP4、WebM、MOV、MKV、AVI、M4V、MPEG 或 MPG 视频。')
+                payload = {key: query.get(key, [''])[0] for key in ('projectId', 'revision', 'fileName')}
+                with tempfile.TemporaryDirectory(prefix='student-age-video-upload-') as temporary:
+                    source = Path(temporary) / ('source' + extension)
+                    with source.open('xb') as stream:
+                        remaining = length
+                        while remaining:
+                            chunk = self.rfile.read(min(1024 * 1024, remaining))
+                            if not chunk:
+                                self.close_connection = True
+                                raise ApiError('视频上传未完成，请重新导入。')
+                            stream.write(chunk)
+                            remaining -= len(chunk)
+                    self._body_consumed = True
+                    return self.send_json(self.server.store.import_video(payload, source), 201)
             if self.headers.get("Content-Type", "").split(";", 1)[0].strip() != "application/json":
                 raise ApiError("请求格式必须是 JSON。", 415)
             if self.headers.get("Transfer-Encoding"):
@@ -4564,6 +4743,18 @@ class StudioHandler(BaseHTTPRequestHandler):
                 raise ApiError("请求 JSON 无效。")
             if not isinstance(payload, dict):
                 raise ApiError("请求内容必须为对象。")
+            if route in {'/api/video-folder', '/api/video-settings', '/api/video-library-import'}:
+                import screen_videos
+                if route == '/api/video-folder':
+                    return self.send_json(screen_videos.folder_set(self.server.store, sys.modules[__name__], payload))
+                if route == '/api/video-settings':
+                    return self.send_json(screen_videos.settings_save(self.server.store, sys.modules[__name__], payload))
+                source, row = screen_videos.resolve_import(self.server.store, sys.modules[__name__], payload)
+                if payload.get('source') == 'mod' and payload.get('sourceProjectId') == payload.get('projectId'):
+                    return self.send_json({'ok': True, 'reference': True, 'imported': False,
+                        'projectId': payload['projectId'], 'id': row['id'], 'row': row,
+                        'revision': payload['revision']})
+                return self.send_json(self.server.store.import_video({**payload, 'row': row}, source), 201)
             if route == "/api/project-preferences":
                 from project_preferences import update
                 return self.send_json(update(self.server, payload))
@@ -4838,11 +5029,11 @@ class StudioHandler(BaseHTTPRequestHandler):
                                   or method == 'POST' and route in {'/api/updates/check', '/api/updates/download'})
             independent = method == 'GET' and (
                 (not route.startswith('/api/') and route not in ('/', '/index.html'))
-                or route in {'/api/assets', '/api/social-image', '/api/talk-head', '/api/editor-music-file', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui',
+                or route in {'/api/assets', '/api/social-image', '/api/video-file', '/api/talk-head', '/api/editor-music-file', '/api/asset-preview', '/api/background-status', '/api/preview-ui', '/api/minigame-image', '/api/phone-ui', '/api/goal-ui', '/api/talk-ui', '/api/cg-ui',
                              # Read-only listings that scan the disk: slow while the game cache is being written,
                              # they must not hold every other request (opening dialogue, saving) behind them.
                              '/api/ids', '/api/audio'})
-            independent = independent or method == 'POST' and route == '/api/portrait-dimensions'
+            independent = independent or method == 'POST' and route in {'/api/portrait-dimensions', '/api/video-import', '/api/video-library-import', '/api/audio-import', '/api/asset-catalog-import', '/api/asset-library-import'}
             independent = independent or update_independent
             started = time.monotonic()
             tracked = route.startswith('/api/')
