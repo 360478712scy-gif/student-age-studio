@@ -405,6 +405,43 @@ def normalize_loaded_map(value, name):
     return value, mismatches
 
 
+def native_submission_rows(rows, table):
+    """Repair only submitted records, including old browser drafts; no disk scan."""
+    if not isinstance(rows, dict): return rows, []
+    from native_condition_migration import migrate_row
+    result, converted, unresolved, positions = rows, 0, 0, []
+    for key, row in rows.items():
+        revised, count, issues = migrate_row(row, include_social=table == 'EvtCfg')
+        if revised is not row:
+            if result is rows: result = dict(rows)
+            result[key] = revised
+        converted += count; unresolved += len(issues)
+        if issues and len(positions) < 5: positions.append(table + ' #' + str(key))
+    notes = []
+    if converted: notes.append(table + '：已将本次提交中的 ' + str(converted) + ' 处旧数值条件改为原版条件。')
+    if unresolved: notes.append(table + '：' + str(unresolved) + ' 处旧条件无法等价转换，已保留，请手动修改。位置：' + '、'.join(positions))
+    return result, notes
+
+
+def native_submission_payload(payload):
+    result, notes = payload, []
+    for alias, filename in TABLES.items():
+        if alias not in payload: continue
+        rows, warnings_list = native_submission_rows(payload[alias], filename[:-5])
+        notes.extend(warnings_list)
+        if rows is not payload[alias]:
+            if result is payload: result = dict(payload)
+            result[alias] = rows
+    patch = payload.get('talkPatch')
+    if isinstance(patch, dict) and 'upsert' in patch:
+        rows, warnings_list = native_submission_rows(patch['upsert'], 'TalkCfg')
+        notes.extend(warnings_list)
+        if rows is not patch['upsert']:
+            if result is payload: result = dict(payload)
+            result['talkPatch'] = {**patch, 'upsert': rows}
+    return result, notes
+
+
 def repair_map(value, name, allow_zero=False, warnings=None):
     """Saving is never refused over row numbering: keys and row ids are reconciled and reported."""
     if not isinstance(value, dict):
@@ -1833,7 +1870,7 @@ class StudioStore:
 
     def save(self, payload):
         with self.lock:
-            save_warnings = []
+            payload, save_warnings = native_submission_payload(payload)
             project = self.project(payload.get("projectId"), writable=True)
             expected = payload.get("revision")
             save_review.revision(payload, self.revision(project), ApiError, "模组已被其他窗口或游戏修改。")
@@ -1847,15 +1884,23 @@ class StudioStore:
                 if 'talks' in payload:
                     raise ApiError('分段会话只能显式增量提交对话，不能提交部分完整表。')
             title_result = self._save_event_titles(project, payload)
-            if title_result is not None: return title_result
+            if title_result is not None:
+                title_result.setdefault('warnings', []).extend(save_warnings)
+                return title_result
             owner_source_digests = self._ownership_source_digests(project)
             from text_record_save import save as save_text_records
             from up_audio import needs_text_compile, verified_text_saved
             api = sys.modules[__name__]
+            def verified_text_markers(path, before, after):
+                verified_text_saved(project, path, before, after, api)
+                from native_condition_migration import verified_text_saved as condition_text_saved
+                condition_text_saved(project, path, before, after, api)
             fast_result = None if needs_text_compile(project, payload, api) else save_text_records(
                 self, project, payload, api,
-                on_verified=lambda path, before, after: verified_text_saved(project, path, before, after, api))
-            if fast_result is not None: return fast_result
+                on_verified=verified_text_markers)
+            if fast_result is not None:
+                fast_result.setdefault('warnings', []).extend(save_warnings)
+                return fast_result
             catalog = self.catalog()
             all_maps, unreadable = self.story_save_maps(project, payload)
             payload = dict(payload)
@@ -2567,6 +2612,11 @@ class StudioStore:
             for kind in ("condition", "effect"):
                 bundled = read_json(Path(__file__).with_name(kind + "-templates.json"), [])
                 rows = commands.setdefault(kind, [])
+                if kind == 'condition':
+                    # Old extracted catalogs may still advertise Studio-only opcodes.
+                    from native_condition_migration import is_owned
+                    rows[:] = [row for row in rows if not (isinstance(row, dict) and is_owned(row.get('template')))]
+                    bundled = [row for row in bundled if not (isinstance(row, dict) and is_owned(row.get('template')))]
                 existing = {signature(row) for row in rows if isinstance(row, dict)}
                 rows.extend(row for row in bundled if signature(row) not in existing)
                 if kind == 'effect': rows.sort(key=lambda row: row.get('label') != '直接成为恋人')
@@ -2916,6 +2966,7 @@ class StudioStore:
             old = read_json(safe_path(project.path, "Cfgs/zh-cn/" + name + ".json"), {})
             inherited = self.catalog_rows(name)
             incoming = validate_map(payload.get("rows"), name, allow_zero="0" in old or "0" in inherited)
+            incoming, condition_notes = native_submission_rows(incoming, name)
             incoming = self.preserve_editing_rows(project, name, incoming)
             previous = {**inherited, **old}
             self.validate_fields(name, incoming, previous)
@@ -2933,6 +2984,7 @@ class StudioStore:
                 except ApiError: references = []
                 result = self.save({'projectId':project.id, 'revision':revision,
                                     'talks':{**inherited, **incoming}, 'deletedIds':[int(k) for k in removed], '_fullCatalogTable':'TalkCfg'})
+                result.setdefault('warnings', []).extend(condition_notes)
                 if references: result.setdefault('warnings', []).append("已删除仍被引用的对话，以下位置需要自行调整：" + "；".join(references))
                 return result
             if scope == "local" and name == 'EvtCfg':
@@ -2972,7 +3024,7 @@ class StudioStore:
                             changes[relative] = json_bytes(kept)
                 backup = self.commit(project, changes, revision)
                 return {"ok": True, "revision": self.revision(project), "backup": backup, "scope": "local", "rows": self.editing_rows(project, name),
-                        "updatedTables": [Path(path).stem for path in changes]}
+                        "updatedTables": [Path(path).stem for path in changes], "warnings": condition_notes + list(getattr(self, 'commit_warnings', []))}
             removed = set(previous) - set(incoming)
             if name != "TalkCfg" and removed.intersection(inherited):
                 raise ApiError("原版配置不能通过删除文件行停用。请修改其本地覆盖，或先移除使用该配置的引用。", 409, "base_row_delete")
@@ -2987,14 +3039,16 @@ class StudioStore:
                     if key in payload:
                         request[key] = payload[key]
                 if name == 'TalkCfg': request['deletedIds'] = sorted(set(request.get('deletedIds', [])) | {int(k) for k in removed})
-                return self.save(request)
+                result = self.save(request)
+                result.setdefault('warnings', []).extend(condition_notes)
+                return result
             revised = {}
             for key, row in incoming.items():
                 if key not in old and inherited.get(key) == row:
                     continue
                 revised[key] = {**old.get(key, {}), **copy.deepcopy(row)}
             backup = self.commit(project, {"Cfgs/zh-cn/" + name + ".json": json_bytes(revised)}, revision)
-            return {"ok": True, "revision": self.revision(project), "backup": backup}
+            return {"ok": True, "revision": self.revision(project), "backup": backup, "warnings": condition_notes + list(getattr(self, 'commit_warnings', []))}
 
     def warehouse_save(self, payload):
         """Commit the warehouse's related native tables in one backed-up transaction."""
@@ -3005,6 +3059,10 @@ class StudioStore:
             incoming = payload.get("tables")
             if not isinstance(incoming, dict) or set(incoming) != {"ItemCfg", "BookCfg", "ShopCfg"}:
                 raise ApiError("仓库配置不完整。")
+            incoming = dict(incoming); condition_notes = []
+            for name, rows in incoming.items():
+                incoming[name], notes = native_submission_rows(rows, name)
+                condition_notes.extend(notes)
             selected = {name + '.json' for name in incoming}
             maps, unreadable = self.readable_maps(project, selected)
             if payload.get('migrations') or any(not isinstance(rows, dict) or set(maps.get(name + '.json', {})) - set(rows) for name, rows in incoming.items()):
@@ -3063,7 +3121,8 @@ class StudioStore:
                     save_review.warn(ApiError, "商品需要选择已有物品或书籍。")
             backup = self.commit(project, changes, revision) if changes else None
             return {"ok": True, "revision": self.revision(project), "backup": backup,
-                    "tables": {n: self.editing_rows(project,n) for n in incoming}}
+                    "tables": {n: self.editing_rows(project,n) for n in incoming},
+                    "warnings": condition_notes + list(getattr(self, 'commit_warnings', []))}
 
     def manifest(self, project_id):
         with self.lock:
@@ -4346,6 +4405,20 @@ class StudioHandler(BaseHTTPRequestHandler):
                  'X-Studio-Talk-Epoch': str(advanced[2])} if advanced and status < 400 else None
         self.send_data(json_bytes(value), "application/json; charset=utf-8", status, extra=extra)
 
+    def native_condition_warnings(self, project_id):
+        # Prepare the disk snapshot before capturing a segmented generation.
+        # Never run this scan in a save request or after loading an active draft.
+        from native_condition_migration import repair
+        try:
+            return repair(self.server.store, project_id, sys.modules[__name__]).get('warnings', [])
+        except ApiError as error:
+            return ['旧版条件自动修复未完成，原文件已保留，请手动检查：' + error.message]
+        except Exception as error:
+            diagnostic = self.error_response(error, '旧版条件修复未完成，仍可继续编辑。',
+                                             'native_condition_repair_failed', 'GET')
+            return ['旧版条件自动修复未完成，原文件已保留；仍可继续编辑。' +
+                    (' 错误日志：' + diagnostic['errorLog'] if diagnostic.get('errorLog') else '')]
+
     def send_file(self, path):
         self.settle_body()
         stat = path.stat()
@@ -4531,6 +4604,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             if route == '/api/project-revision':
                 return self.send_json(self.server.store.talk_segments.refresh_revision(query.get('id', [''])[0], query.get('generation', [''])[0], query.get('revision', [''])[0]))
             if route == "/api/project":
+                condition_warnings = self.native_condition_warnings(query.get('id', [''])[0])
                 from playback_repair import repair
                 repair_warning=None
                 try:repair(self.server.store,query.get("id", [""])[0])
@@ -4554,12 +4628,16 @@ class StudioHandler(BaseHTTPRequestHandler):
                     # and history stores only changed rows instead of cloning the full table.
                     data['indexedTalks'] = {'version': 1, 'rows': [[key, json.dumps(row, ensure_ascii=False, separators=(',', ':'))] for key, row in data.pop('talks', {}).items()]}
                 if repair_warning:data.setdefault('warnings',[]).append(repair_warning)
+                data.setdefault('warnings', []).extend(condition_warnings)
                 return self.send_json(data)
             if route == "/api/talk-segments/project":
                 from talk_segments import SegmentError
                 try:
                     expanded=[v for v in query.get('originalEvents', [''])[0].split(',') if v.strip().isdigit()]
-                    return self.send_json(self.server.store.talk_segments.open(query.get('projectId', [''])[0], expanded))
+                    condition_warnings = self.native_condition_warnings(query.get('projectId', [''])[0])
+                    data = self.server.store.talk_segments.open(query.get('projectId', [''])[0], expanded)
+                    data.setdefault('warnings', []).extend(condition_warnings)
+                    return self.send_json(data)
                 except SegmentError as error:
                     raise ApiError(str(error), 422, 'segment_unavailable') from error
             if route == "/api/command-references":
@@ -4567,8 +4645,12 @@ class StudioHandler(BaseHTTPRequestHandler):
             if route == "/api/commands":
                 return self.send_json(self.server.store.command_catalog(query.get("projectId", [""])[0]))
             if route == "/api/workshop":
-                self.server.store.clean_orphan_dialogues(query.get("projectId", [""])[0])
-                return self.send_json(self.server.store.workshop_info(query.get("projectId", [""])[0]))
+                project_id = query.get('projectId', [''])[0]
+                condition_warnings = self.native_condition_warnings(project_id)
+                self.server.store.clean_orphan_dialogues(project_id)
+                data = self.server.store.workshop_info(project_id)
+                data.setdefault('warnings', []).extend(condition_warnings)
+                return self.send_json(data)
             if route == "/api/table":
                 return self.send_json(self.server.store.table(query.get("projectId", [""])[0], query.get("name", [""])[0]))
             if route == "/api/manifest":

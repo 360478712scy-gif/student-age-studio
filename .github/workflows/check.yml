@@ -52,4 +52,5 @@ jobs:
           node standalone/tests/settings-open.cjs
           node standalone/tests/app-updates-poll.cjs
           node standalone/tests/up-video-ui.cjs
+          node standalone/tests/condition-native-numeric.cjs
       - run: python -B tools/build_update.py --out release/student-age-studio-update.zip

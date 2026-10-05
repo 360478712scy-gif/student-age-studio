@@ -34,6 +34,10 @@ def collect(table, rows, schema=None):
             group = row.get(field)
             if not isinstance(group, list) or not group: continue
             if not all(isinstance(command, list) and command and all(isinstance(n, (int, float)) and not isinstance(n, bool) and math.isfinite(n) for n in command) for command in group): continue
+            # Reusing an old Mod's group must not reintroduce repairable opcodes.
+            # This read does not write to other authors' Mods or the game cache.
+            from native_condition_migration import migrate_conditions
+            group, _, _ = migrate_conditions(group)
             result.append({'rows': copy.deepcopy(group), 'title': title or category + '（原配置未命名）',
                            'table': table, 'recordId': str(key), 'field': field, 'fieldLabel': label, 'category': category})
     return result
@@ -234,10 +238,20 @@ class UserConditionPresets:
                     if not isinstance(data, dict) or not isinstance(data.get('entries'), list):
                         raise self.api.ApiError('用户条件配置文件格式无效，未覆盖原文件。')
                     entries = data['entries']
+                    from native_condition_migration import migrate_conditions
+                    converted, unresolved = 0, []
+                    original = self.path.read_bytes() if self.path.exists() else None
+                    for entry in entries:
+                        if not isinstance(entry, dict): continue
+                        rows, count, issues = migrate_conditions(entry.get('rows'))
+                        if count: entry['rows'] = rows; converted += count
+                        if issues: unresolved.append(str(entry.get('title') or entry.get('key') or '未命名配置'))
                     if payload is not None:
                         action = payload.get('action')
                         if action == 'save':
-                            rows = self.validate_rows(payload.get('rows'))
+                            rows, count, issues = migrate_conditions(self.validate_rows(payload.get('rows')))
+                            converted += count
+                            if issues: unresolved.append(str(payload.get('title') or '新配置'))
                             title = payload.get('title', '')
                             if not isinstance(title, str) or len(title) > 120 or any(c in title for c in '\r\n'):
                                 raise self.api.ApiError('配置名称最多 120 个字，不能换行。')
@@ -262,8 +276,21 @@ class UserConditionPresets:
                             entries = [e for e in entries if e.get('key') != key]
                         else:
                             raise self.api.ApiError('不支持的配置操作。')
+                    backup = None
+                    if converted or payload is not None:
+                        current = self.path.read_bytes() if self.path.exists() else None
+                        if current != original:
+                            raise self.api.ApiError('用户条件配置已被外部修改，请重新读取；原文件已保留。', 409, 'condition_busy')
+                        if converted and original is not None:
+                            backup = self.path.parent / 'ConditionPresetBackups' / (uuid.uuid4().hex + '.json')
+                            self.api.atomic_write(backup, original)
                         self.api.atomic_write(self.path, self.api.json_bytes({**data, 'entries': entries}))
-                    return {'entries': copy.deepcopy(entries)}
+                    warnings = []
+                    if converted: warnings.append('用户配置中已自动修复 ' + str(converted) + ' 条旧版条件。')
+                    if unresolved:
+                        warnings.append('这些用户配置含无法等价转换的旧版条件，已保留，请手动修改：' + '、'.join(unresolved[:5]) + ('等' if len(unresolved) > 5 else ''))
+                    return {'entries': copy.deepcopy(entries), 'warnings': warnings,
+                            **({'backup': str(backup)} if backup is not None else {})}
                 finally:
                     unlock_file(handle)
 

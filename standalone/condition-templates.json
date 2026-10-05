@@ -3,7 +3,7 @@
     "label": "属性 ≥ 不低于",
     "template": [
       4,
-      9001,
+      1,
       101,
       0
     ],
@@ -19,47 +19,20 @@
       {
         "index": 3,
         "label": "数值",
-        "type": "double"
+        "type": "float"
       }
     ],
     "match": {
       "0": 4,
-      "1": 9001
-    }
-  },
-  {
-    "label": "好感 ≥ 不低于",
-    "template": [
-      7,
-      9001,
-      3,
-      0
-    ],
-    "parameters": [
-      {
-        "index": 2,
-        "label": "人物",
-        "type": "int",
-        "range": {
-          "table": "PersonCfg"
-        }
-      },
-      {
-        "index": 3,
-        "label": "数值",
-        "type": "double"
-      }
-    ],
-    "match": {
-      "0": 7,
-      "1": 9001
-    }
+      "1": 1
+    },
+    "source": "Condition.ConditionerAttr"
   },
   {
     "label": "属性 < 低于",
     "template": [
       4,
-      9002,
+      2,
       101,
       0
     ],
@@ -75,48 +48,22 @@
       {
         "index": 3,
         "label": "数值",
-        "type": "double"
+        "type": "float"
       }
     ],
     "match": {
       "0": 4,
-      "1": 9002
-    }
+      "1": 2
+    },
+    "source": "Condition.ConditionerAttr"
   },
   {
-    "label": "好感 < 低于",
-    "template": [
-      7,
-      9002,
-      3,
-      0
-    ],
-    "parameters": [
-      {
-        "index": 2,
-        "label": "人物",
-        "type": "int",
-        "range": {
-          "table": "PersonCfg"
-        }
-      },
-      {
-        "index": 3,
-        "label": "数值",
-        "type": "double"
-      }
-    ],
-    "match": {
-      "0": 7,
-      "1": 9002
-    }
-  },
-  {
-    "label": "属性 > 高于",
+    "label": "属性范围",
     "template": [
       4,
-      9003,
+      3,
       101,
+      0,
       0
     ],
     "parameters": [
@@ -130,210 +77,20 @@
       },
       {
         "index": 3,
-        "label": "数值",
-        "type": "double"
+        "label": "下限",
+        "type": "float"
+      },
+      {
+        "index": 4,
+        "label": "上限（不含）",
+        "type": "float"
       }
     ],
     "match": {
       "0": 4,
-      "1": 9003
-    }
-  },
-  {
-    "label": "好感 > 高于",
-    "template": [
-      7,
-      9003,
-      3,
-      0
-    ],
-    "parameters": [
-      {
-        "index": 2,
-        "label": "人物",
-        "type": "int",
-        "range": {
-          "table": "PersonCfg"
-        }
-      },
-      {
-        "index": 3,
-        "label": "数值",
-        "type": "double"
-      }
-    ],
-    "match": {
-      "0": 7,
-      "1": 9003
-    }
-  },
-  {
-    "label": "属性 ≤ 不高于",
-    "template": [
-      4,
-      9004,
-      101,
-      0
-    ],
-    "parameters": [
-      {
-        "index": 2,
-        "label": "属性",
-        "type": "int",
-        "range": {
-          "table": "PersonAttrCfg"
-        }
-      },
-      {
-        "index": 3,
-        "label": "数值",
-        "type": "double"
-      }
-    ],
-    "match": {
-      "0": 4,
-      "1": 9004
-    }
-  },
-  {
-    "label": "好感 ≤ 不高于",
-    "template": [
-      7,
-      9004,
-      3,
-      0
-    ],
-    "parameters": [
-      {
-        "index": 2,
-        "label": "人物",
-        "type": "int",
-        "range": {
-          "table": "PersonCfg"
-        }
-      },
-      {
-        "index": 3,
-        "label": "数值",
-        "type": "double"
-      }
-    ],
-    "match": {
-      "0": 7,
-      "1": 9004
-    }
-  },
-  {
-    "label": "属性 = 等于",
-    "template": [
-      4,
-      9005,
-      101,
-      0
-    ],
-    "parameters": [
-      {
-        "index": 2,
-        "label": "属性",
-        "type": "int",
-        "range": {
-          "table": "PersonAttrCfg"
-        }
-      },
-      {
-        "index": 3,
-        "label": "数值",
-        "type": "double"
-      }
-    ],
-    "match": {
-      "0": 4,
-      "1": 9005
-    }
-  },
-  {
-    "label": "好感 = 等于",
-    "template": [
-      7,
-      9005,
-      3,
-      0
-    ],
-    "parameters": [
-      {
-        "index": 2,
-        "label": "人物",
-        "type": "int",
-        "range": {
-          "table": "PersonCfg"
-        }
-      },
-      {
-        "index": 3,
-        "label": "数值",
-        "type": "double"
-      }
-    ],
-    "match": {
-      "0": 7,
-      "1": 9005
-    }
-  },
-  {
-    "label": "属性 ≠ 不等于",
-    "template": [
-      4,
-      9006,
-      101,
-      0
-    ],
-    "parameters": [
-      {
-        "index": 2,
-        "label": "属性",
-        "type": "int",
-        "range": {
-          "table": "PersonAttrCfg"
-        }
-      },
-      {
-        "index": 3,
-        "label": "数值",
-        "type": "double"
-      }
-    ],
-    "match": {
-      "0": 4,
-      "1": 9006
-    }
-  },
-  {
-    "label": "好感 ≠ 不等于",
-    "template": [
-      7,
-      9006,
-      3,
-      0
-    ],
-    "parameters": [
-      {
-        "index": 2,
-        "label": "人物",
-        "type": "int",
-        "range": {
-          "table": "PersonCfg"
-        }
-      },
-      {
-        "index": 3,
-        "label": "数值",
-        "type": "double"
-      }
-    ],
-    "match": {
-      "0": 7,
-      "1": 9006
-    }
+      "1": 3
+    },
+    "source": "Condition.ConditionerAttr"
   },
   {
     "label": "指定年份与季节",

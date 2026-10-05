@@ -81,9 +81,12 @@ function family(row,t={}){
 function numeric(row){
  const [a,b]=row.map(Number),f=family(row);let ops,valueIndex,op,make,upperIndex;
  if(f.key==='attribute'||f.key==='favor'){
-  ops=['=','>','≥','<','≤','≠'];if(a===4)ops.push('范围');valueIndex=3;upperIndex=b===3?4:null;
-  op=({9001:'≥',9002:'<',9003:'>',9004:'≤',9005:'=',9006:'≠',1:'≥',2:'<','-1':'<',3:'范围'})[b];
-  make=(symbol,value,upper)=>symbol==='范围'?[a,3,row[2],value,upper??value]:[a,({'=':9005,'>':9003,'≥':9001,'<':9002,'≤':9004,'≠':9006})[symbol],row[2],value];
+  // Only offer instructions handled by the game's attribute/relation conditioners.
+  // An older editor-only instruction must be migrated before it can use these controls.
+  if(a===4?![1,2,3].includes(b):![1,-1].includes(b))return null;
+  ops=a===4?['≥','<','范围']:['≥','<'];valueIndex=3;upperIndex=a===4&&b===3?4:null;
+  op=b===3?'范围':b===1?'≥':'<';
+  make=(symbol,value,upper)=>{if(!ops.includes(symbol))throw Error('原版不支持这个比较方式。');return symbol==='范围'?[4,3,row[2],value,upper??value]:[a,symbol==='≥'?1:a===4?2:-1,row[2],value];};
  }else if(f.key==='age'){
   ops=['=','≥','≤','范围'];valueIndex=2;upperIndex=b===3?3:null;op=b===1?'≥':b===2?'≤':row[2]===row[3]?'=':'范围';
   make=(symbol,value,upper)=>symbol==='='?[1,3,value,value]:symbol==='范围'?[1,3,value,upper??value]:[1,symbol==='≥'?1:2,value];
@@ -98,6 +101,6 @@ function numeric(row){
  return op?{ops,valueIndex,upperIndex,op,make}:null;
 }
 function categoryOf(rows,templates=[],refs){return rows.length?conditionCategory(rows[0],refs):'其他';}
-function evaluateExact(row,context={}){if(!Array.isArray(row))return null;if(Number(row[0])===999&&Number(row[1])===1000)return true;if(Number(row[0])===999&&Number(row[1])===999)return false;if(![4,7].includes(Number(row[0]))||Number(row[1])<9001||Number(row[1])>9006)return null;const input=(Number(row[0])===4?context.attributes:context.affection)?.[row[2]];if(input===undefined)return null;const a=Math.fround(Number(input)),b=Math.fround(Number(row[3]));if(!Number.isFinite(a)||!Number.isFinite(b))return null;return ({9001:()=>a>=b,9002:()=>a<b,9003:()=>a>b,9004:()=>a<=b,9005:()=>a===b,9006:()=>a!==b})[Number(row[1])]();}
+function evaluateExact(row){if(!Array.isArray(row))return null;if(Number(row[0])===999&&Number(row[1])===1000)return true;if(Number(row[0])===999&&Number(row[1])===999)return false;return null;}
 return {match,summary,mount,evaluateExact,family,numeric,categoryOf,parseCommand,parameterText,parameterHTML,readParameterInput,rawCommandHTML,readCommandInput};
 });
