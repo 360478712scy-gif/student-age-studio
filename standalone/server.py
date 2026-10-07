@@ -88,6 +88,10 @@ class ApiError(Exception):
         self.message, self.status, self.code = message, status, code
 
 
+class DraftConfigurationError(ApiError):
+    """A semantic draft issue, distinct from file reads or request parsing."""
+
+
 def json_bytes(value):
     # One complete top-level record per line. Keep the C encoder for nested data;
     # recursive indent formatting is disproportionately costly for large CFG maps.
@@ -983,8 +987,17 @@ class StudioStore:
             order = editor_state.get("order", []) if isinstance(editor_state, dict) else []
             result["order"] = [int(ident) for ident in order if valid_id(ident) and str(ident) in result["talks"]]
             folders = editor_state.get("branchFolders", {}) if isinstance(editor_state, dict) else {}
-            if not isinstance(folders, dict):
-                raise ApiError("对话夹记录格式无效，请先恢复编辑记录备份。")
+            from branch_folders import reconcile_branch_folders, warning as branch_warning
+            folders, dropped_folders = reconcile_branch_folders(result['talks'], folders)
+            if dropped_folders: result['warnings'].append(branch_warning(dropped_folders))
+            # A subsequent text/title save must also commit this pending sidecar
+            # cleanup, rather than bypassing it through the content-only fast path.
+            pending_folders = getattr(self, '_branch_folder_reconciliation', {})
+            if dropped_folders:
+                if len(pending_folders) >= 64 and project.id not in pending_folders: pending_folders.pop(next(iter(pending_folders)))
+                pending_folders[project.id] = (revision, copy.deepcopy(folders), branch_warning(dropped_folders))
+            else: pending_folders.pop(project.id, None)
+            self._branch_folder_reconciliation = pending_folders
             result["protagonistGender"] = 2 if isinstance(editor_state,dict) and editor_state.get("protagonistGender")==2 else 1
             grades=editor_state.get("eventGrades", {}) if isinstance(editor_state,dict) else {}
             result["eventGrades"]={str(k):v for k,v in grades.items() if type(v) is int and v in (0,1)} if isinstance(grades,dict) else {}
@@ -1683,7 +1696,7 @@ class StudioStore:
                 if not isinstance(groups, dict): continue
                 for folder in groups.values():
                     if not isinstance(folder, dict): continue
-                    for use in folder.get('uses', []):
+                    for use in (folder.get('uses', []) if isinstance(folder.get('uses', []), list) else []):
                         definition = KINDS.get(use.get('kind')) if isinstance(use, dict) else None
                         if definition: selected.add(definition['table'] + '.json')
         maps, unreadable = self.readable_maps(project, selected)
@@ -1879,6 +1892,10 @@ class StudioStore:
                 if generation and generation.identity['path'] == str(project.path.resolve()) and generation.identity['originalMode'] == project.original_mode:
                     self.talk_segments.saved(project, payload['talkGeneration'], payload['revision'], story_saved=True)
             expected = payload['revision']
+            pending_folders = getattr(self, '_branch_folder_reconciliation', {}).get(project.id)
+            if pending_folders and pending_folders[0] == expected and 'branchFolders' not in payload:
+                payload = {**payload, 'branchFolders': copy.deepcopy(pending_folders[1])}
+                save_warnings.append(pending_folders[2])
             if 'talkGeneration' in payload:
                 self.talk_segments.get(project.id, payload['talkGeneration'])
                 if 'talks' in payload:
@@ -2052,7 +2069,7 @@ class StudioStore:
             if not isinstance(deleted, list): deleted = []
             if any(not valid_id(ident) for ident in deleted):
                 save_warnings.append("待删除对话编号中有无效项，已忽略。"); deleted = [ident for ident in deleted if valid_id(ident)]
-            # Omitted rows are not implicit deletions. After acknowledgement, merge them
+            # Omitted rows are not implicit deletions. Merge them
             # from disk; only explicit deletions and existing tombstones stay removed.
             removed = set(str(ident) for ident in deleted) | cascade_deleted
             if "talks" in payload:
@@ -2061,7 +2078,7 @@ class StudioStore:
                 if undeclared:
                     sample = ", ".join(sorted(undeclared)[:5])
                     save_review.warn(ApiError, "对话表未提交 " + str(len(undeclared)) + " 行（例如 " + sample +
-                                     "）。继续保存会保留磁盘上的这些对话，只写入已提交的修改。", status=409, code='conflict')
+                                     "）。已保留磁盘上的这些对话，只写入已提交的修改。")
                     payload['talks'] = {**{key: original_talks[key] for key in undeclared}, **payload['talks']}
                     all_maps.setdefault('TalkCfg.json', {}).update({key: original_talks[key] for key in undeclared})
                 removed.update(set(original_talks) - set(payload["talks"]) - set(prior_markers))
@@ -2171,58 +2188,22 @@ class StudioStore:
                 deleted_talks = set(redirects)
                 if isinstance(incoming_cues, dict) and isinstance(incoming_cues.get("sfx", {}), dict) and isinstance(incoming_cues.get("bgm", []), list):
                     incoming_cues["sfx"] = {key: value for key, value in incoming_cues.get("sfx", {}).items() if key not in deleted_talks}
+                    kept_groups = []
                     for group in incoming_cues.get("bgm", []):
                         if isinstance(group, dict) and isinstance(group.get("talkIds"), list):
+                            previous_members = group["talkIds"]
                             group["talkIds"] = [ident for ident in group["talkIds"] if str(ident) not in deleted_talks]
-                    incoming_cues["bgm"] = [group for group in incoming_cues.get("bgm", []) if not isinstance(group, dict) or group.get("talkIds") != []]
+                            if previous_members and not group["talkIds"]: continue
+                        kept_groups.append(group)
+                    incoming_cues["bgm"] = kept_groups
                     if isinstance(incoming_cues.get("nativeAudio"), dict):
                         incoming_cues["nativeAudio"] = {key: value for key, value in incoming_cues["nativeAudio"].items() if key not in deleted_talks}
-                cues = self.validate_audio_cues(incoming_cues, all_maps, previous_audio)
-                # Ownership comes from the previous disk save, never from an
-                # incoming editor document's arbitrary metadata.
-                if 'upAudio' in previous_audio: cues['upAudio'] = copy.deepcopy(previous_audio['upAudio'])
-                else: cues.pop('upAudio', None)
-                from native_audio import export as export_native_audio
-                talk_rows = all_maps.setdefault('TalkCfg.json', {})
-                before_audio = {k:(r.get('audio', 0), copy.deepcopy(r.get('effect', []))) for k,r in talk_rows.items()}
-                # The small-save path shares unchanged rows with its comparison
-                # snapshot. Copy only rows whose audio export can write them.
-                audio_keys = set(cues.get('sfx', {})) | set(cues.get('nativeAudio', {})) | set(previous_audio.get('nativeSnapshot', {})) | set(previous_audio.get('upAudio', {}).get('effects', {}))
-                audio_keys.update(str(i) for group in cues.get('bgm', []) for i in group['talkIds'])
-                for key in audio_keys:
-                    if key in talk_rows: talk_rows[key] = copy.deepcopy(talk_rows[key])
-                up_audio.remove_effects(talk_rows, previous_audio.get('upAudio', {}))
-                audio_rows = all_maps.setdefault('AudioCfg.json', {})
-                before_aliases = copy.deepcopy(audio_rows)
-                audios = {**self.catalog_rows('AudioCfg'), **audio_rows}
-                plan = export_native_audio(cues, previous_audio, talk_rows, original_talks, audios,
-                                           all_maps.get('EvtCfg.json', {}), all_maps.get('OptionCfg.json', {}))
-                needs_config = previous_audio.get('upAudio', {}).get('aliases') or any(
-                    cue.get('volume', 1) != 1 or not up_audio._exact_float_id(cue['audioId'])
-                    for cue in [*cues.get('bgm', []), *(cue for entries in cues.get('sfx', {}).values() for cue in entries)]
-                    if cue.get('audioId'))
-                old_config = read_json(safe_path(project.path, up_audio.CONFIG), {}) if needs_config else {}
-                def alias_referenced(ident):
-                    def contains(value):
-                        if isinstance(value, dict): return any(contains(v) for v in value.values())
-                        if isinstance(value, list): return any(contains(v) for v in value)
-                        return type(value) in (int, float) and value == ident
-                    for filename, path in self.cfg_table_files(project).items():
-                        rows = all_maps.get(filename) if filename in all_maps else read_json(path, {})
-                        if filename == 'AudioCfg.json': rows = {k:r for k,r in rows.items() if k != str(ident)}
-                        if contains(rows): return True
-                    return any(isinstance(entry, dict) and entry.get('id') == ident for entry in old_config.get('musics', []))
-                try:
-                    new_config = up_audio.compile(cues, previous_audio, talk_rows, audios, audio_rows, plan, old_config,
-                        lambda occupied: self.record_ids.allocate('AudioCfg', {key: {} for key in occupied}), alias_referenced)
-                except ValueError as error:
-                    raise ApiError(str(error)) from error
-                if audio_rows != before_aliases: touched.add('AudioCfg.json')
-                if new_config != old_config: changes[up_audio.CONFIG] = json_bytes(new_config)
-                if before_audio != {k:(r.get('audio', 0), r.get('effect', [])) for k,r in talk_rows.items()}:
-                    touched.add("TalkCfg.json")
-                if cues != prior_cues:
-                    changes["StudentAgeStudio/audio-cues.json"] = json_bytes(cues)
+                from audio_drafts import save as save_audio_draft
+                audio_changes, audio_touched, audio_notes = save_audio_draft(
+                    self, project, incoming_cues, previous_audio, all_maps, original_talks, sys.modules[__name__])
+                changes.update(audio_changes); touched.update(audio_touched)
+                save_warnings.extend(audio_notes)
+                for issue in audio_notes: save_review.note(issue)
             canonical_deleted = nested_deletions(redirects)
             if canonical_deleted != prior_deleted:
                 changes["StudentAgeStudio/deleted-talks.json"] = json_bytes(canonical_deleted)
@@ -2234,21 +2215,28 @@ class StudioStore:
                 from external_dialogues import folders as external_folders
                 external_owners=ownership({**self.catalog_rows('EvtCfg',catalog), **all_maps.get('EvtCfg.json',{})}, {**self.catalog_rows('TalkCfg',catalog), **all_maps.get('TalkCfg.json',{})}, all_maps.get('OptionCfg.json',{}), state.get('branchFolders',{}), state.get('talkOwners',{}), band=set(all_maps.get('EvtCfg.json', {})))
                 previous_external=state.get('externalDialogueFolders',{})
-                shared_external={str(i) for f in previous_external.values() if f.get('uses') for i in f.get('talkIds',[])} | {str(i) for i in state.get('externalDialogueIds',[])}
+                shared_external={str(i) for f in (previous_external.values() if isinstance(previous_external, dict) else []) if isinstance(f, dict) and f.get('uses') for i in (f.get('talkIds', []) if isinstance(f.get('talkIds', []), list) else [])} | {str(i) for i in (state.get('externalDialogueIds', []) if isinstance(state.get('externalDialogueIds', []), list) else [])}
                 external_rows={k:v for k,v in all_maps.get('TalkCfg.json',{}).items() if not external_owners.get(k) or k in shared_external}
-                groups=external_folders(payload['externalDialogueFolders'],external_rows,sys.modules[__name__])
+                external_notes=[]
+                groups=external_folders(payload['externalDialogueFolders'],external_rows,sys.modules[__name__],external_notes)
                 if 'externalDialogueIds' in payload:
                     external_ids=payload['externalDialogueIds']
-                    if not isinstance(external_ids,list) or any(type(i)!=int or str(i) not in external_rows for i in external_ids):raise ApiError('事件外对话归属无效。')
-                    state['externalDialogueIds']=sorted(set(external_ids))
-                from external_usages import apply as apply_external_uses
-                state['externalDialogueFolders']=apply_external_uses(self,project,groups,previous_external,all_maps,touched,sys.modules[__name__],normalized_external_entries)
+                    if not isinstance(external_ids,list) or any(type(i)!=int or str(i) not in external_rows for i in external_ids):
+                        external_notes.append('事件外对话归属尚未完成，已保留草稿。')
+                    state['externalDialogueIds']=copy.deepcopy(external_ids)
+                from external_usages import apply_draft as apply_external_uses
+                state['externalDialogueFolders'], usage_notes = apply_external_uses(self,project,groups,previous_external,all_maps,touched,sys.modules[__name__],normalized_external_entries)
+                external_notes.extend(usage_notes); save_warnings.extend(external_notes)
+                for issue in external_notes: save_review.note(issue)
             from event_gift_folders import sync as sync_event_gift_folders
             if simple_snapshot and 'externalDialogueFolders' in state:
                 # Gift binding sync edits nested folder metadata in place. Keep
                 # old_state independent so a metadata-only unbind is committed.
                 state['externalDialogueFolders'] = copy.deepcopy(state['externalDialogueFolders'])
-            sync_event_gift_folders(state, all_maps, touched, external_edit='externalDialogueFolders' in payload, previous=old_state.get('externalDialogueFolders',{}))
+            stored_external = state.get('externalDialogueFolders', {})
+            safe_external = isinstance(stored_external, dict) and all(isinstance(f, dict) and isinstance(f.get('talkIds', []), list) and isinstance(f.get('uses', []), list) and all(isinstance(u, dict) for u in f.get('uses', [])) for f in stored_external.values())
+            if safe_external and not ('externalDialogueFolders' in payload and external_notes):
+                sync_event_gift_folders(state, all_maps, touched, external_edit='externalDialogueFolders' in payload, previous=old_state.get('externalDialogueFolders',{}))
             if "protagonistGender" in payload:
                 gender=payload["protagonistGender"]
                 if type(gender) is not int or gender not in (1,2): gender = 1
@@ -2284,6 +2272,9 @@ class StudioStore:
             state.pop('deletedPremisePairs', None)
             previous_folders = state.get("branchFolders", {})
             incoming_folders = payload.get("branchFolders", previous_folders)
+            from branch_folders import reconcile_branch_folders, warning as branch_warning
+            incoming_folders, stale_folders = reconcile_branch_folders({**self.catalog_rows('TalkCfg', catalog), **all_maps.get('TalkCfg.json', {})}, incoming_folders)
+            if stale_folders: save_warnings.append(branch_warning(stale_folders))
             try:
                 folders = self.normalize_branch_folders(incoming_folders, previous_folders, all_maps, original_maps, catalog, redirects, removed_options)
             except ApiError as error:
@@ -2776,10 +2767,11 @@ class StudioStore:
         results = []
         if target == "AudioCfg" and removed:
             cues = self.audio_cues(project)
-            for ident, entries in cues.get("sfx", {}).items():
+            for ident, entries in (cues.get("sfx", {}).items() if isinstance(cues.get("sfx", {}), dict) else []):
+                if not isinstance(entries, list): continue
                 if any(isinstance(entry, dict) and str(entry.get("audioId")) in removed for entry in entries):
                     results.append("对话 #" + ident + " · 音效")
-            for group in cues.get("bgm", []):
+            for group in cues.get("bgm", []) if isinstance(cues.get("bgm", []), list) else []:
                 if isinstance(group, dict) and str(group.get("audioId")) in removed:
                     results.append("背景音乐范围 " + str(group.get("id", "")))
         def contains(value):
@@ -2887,10 +2879,10 @@ class StudioStore:
         if name == "KZoneCommentCfg" and removed:
             for ident in removed:
                 parent = previous[ident]
-                for child in parent.get("comments") or []:
+                for child in (parent.get("comments") or []) if isinstance(parent.get("comments") or [], list) else []:
                     if isinstance(child, list) and child and str(child[0]) in incoming:
                         promoted[str(child[0])] = False
-                for child in parent.get("options") or []:
+                for child in (parent.get("options") or []) if isinstance(parent.get("options") or [], list) else []:
                     if str(child) in incoming:
                         promoted[str(child)] = True
             for ident, row in incoming.items():
@@ -2910,24 +2902,30 @@ class StudioStore:
             if row == previous.get(ident):
                 continue
             owner = int(ident) if name == "KZoneContentCfg" else int(ident) // 100
+            if name == 'KZoneCommentCfg' and str(owner) not in posts:
+                raise DraftConfigurationError('评论需要关联已有动态。')
             if name == "KZoneCommentCfg":
                 roles = row.get("roles")
                 if roles != previous.get(ident, {}).get('roles') and (not isinstance(roles, list) or not roles or not known(roles[0], people) or any(role != -1 and not known(role, people) for role in roles[1:])):
-                    raise ApiError("请为评论选择至少一个有效人物。")
+                    raise DraftConfigurationError("请为评论选择至少一个有效人物。")
                 parent = row.get("parent", 0)
                 if parent and (not known(parent, comments) or parent // 100 != owner or parent == int(ident)):
-                    raise ApiError("回复的上级评论必须属于同一条动态，且不能是当前评论。")
+                    raise DraftConfigurationError("回复的上级评论必须属于同一条动态，且不能是当前评论。")
             elif row.get("role") != previous.get(ident, {}).get("role") and not known(row.get("role"), people):
-                raise ApiError("请为动态选择有效的发布人物。")
+                raise DraftConfigurationError("请为动态选择有效的发布人物。")
             for field, target in (("thumbs", people), ("comments", comments)):
+                if not isinstance(row.get(field) or [], list):
+                    raise DraftConfigurationError('点赞或评论设置必须是列表。')
                 for entry in row.get(field) or []:
                     if not isinstance(entry, list) or not entry or not known(entry[0], target):
-                        raise ApiError("点赞或评论中有未选择的项目，请选择人物/评论或删除空行。")
+                        raise DraftConfigurationError("点赞或评论中有未选择的项目，请选择人物/评论或删除空行。")
                     if field == "comments" and entry[0] // 100 != owner:
-                        raise ApiError("请使用属于当前动态的评论。")
+                        raise DraftConfigurationError("请使用属于当前动态的评论。")
+            if not isinstance(row.get('options') or [], list):
+                raise DraftConfigurationError('可选回复必须是列表。')
             for option in row.get("options") or []:
                 if not known(option, comments) or option // 100 != owner:
-                    raise ApiError("可选回复必须属于当前动态。")
+                    raise DraftConfigurationError("可选回复必须属于当前动态。")
         changes = {}
         if name == "KZoneContentCfg" and removed:
             kept = {key: row for key, row in comment_local.items() if str(int(key) // 100) not in removed}
@@ -2947,6 +2945,8 @@ class StudioStore:
                         post_revised[post_id] = copy.deepcopy(posts[post_id])
                     owner = post_revised[post_id]
                 links = owner.get("comments") or []
+                if not isinstance(links, list) or not isinstance(owner.get('options') or [], list):
+                    raise DraftConfigurationError('所属动态的评论或可选回复列表尚未完成。')
                 # A selectable reply must stay selectable; do not also publish it immediately.
                 if int(ident) not in (owner.get("options") or []) and not any(isinstance(entry, list) and entry and entry[0] == int(ident) for entry in links):
                     if promoted.get(ident):
@@ -3004,7 +3004,14 @@ class StudioStore:
                 # Omitted vanilla records were never part of the editing list. Removing a local
                 # override restores its vanilla row; only missing custom IDs are actual deletions.
                 removed = set(old) - set(incoming) - set(inherited)
-                linked_changes = self.workshop_social_changes(project, name, incoming, previous, removed)
+                social_incoming = copy.deepcopy(incoming) if name in {'KZoneContentCfg', 'KZoneCommentCfg'} else incoming
+                try:
+                    linked_changes = self.workshop_social_changes(project, name, social_incoming, previous, removed)
+                except DraftConfigurationError as error:
+                    issue = '动态草稿已保存，未完成的关联沿用原有配置：' + error.message
+                    condition_notes.append(issue); save_review.note(issue); linked_changes = {}
+                else:
+                    incoming = social_incoming
                 proposed = {**inherited, **incoming}
                 references = [] if name == "KZoneCommentCfg" else self.deletion_references(project, name, removed, proposed)
                 if references:
@@ -3027,11 +3034,13 @@ class StudioStore:
                         "updatedTables": [Path(path).stem for path in changes], "warnings": condition_notes + list(getattr(self, 'commit_warnings', []))}
             removed = set(previous) - set(incoming)
             if name != "TalkCfg" and removed.intersection(inherited):
-                raise ApiError("原版配置不能通过删除文件行停用。请修改其本地覆盖，或先移除使用该配置的引用。", 409, "base_row_delete")
+                issue = "原版配置不能通过删除本地行停用，保存后仍会继承原版记录。"
+                condition_notes.append(issue); save_review.note(issue)
             if name not in {"TalkCfg", "OptionCfg"}:
                 references = self.deletion_references(project, name, removed, incoming)
                 if references:
-                    raise ApiError("无法删除仍被引用的配置，请先调整以下位置：" + "；".join(references), 409, "referenced")
+                    issue = "已删除仍被引用的配置，以下关联需要自行调整：" + "；".join(references)
+                    condition_notes.append(issue); save_review.note(issue)
             alias = next((key for key, filename in TABLES.items() if filename == name + ".json"), None)
             if alias:
                 request = {"projectId": project.id, "revision": revision, alias: incoming, "_fullCatalogTable": name}
@@ -3166,55 +3175,20 @@ class StudioStore:
     def audio_cues(self, project, talks=None):
         data = read_json(safe_path(project.path, "StudentAgeStudio/audio-cues.json"), {})
         if not isinstance(data, dict):
-            raise ApiError("声音设置不是有效对象。", 422)
+            # The raw valid-JSON draft remains on disk; consumers get a usable
+            # empty view plus its original value, rather than losing the draft.
+            return {'version': 1, 'sfx': {}, 'bgm': [], 'unfinishedDraft': copy.deepcopy(data)}
         from native_audio import reconcile
         return reconcile({"version": 1, "sfx": {}, "bgm": [], **data},
                          talks if talks is not None else read_json(safe_path(project.path, "Cfgs/zh-cn/TalkCfg.json"), {}))
 
     def validate_audio_cues(self, data, all_maps, previous=None):
-        if not isinstance(data, dict) or data.get("version", 1) != 1 or not isinstance(data.get("sfx", {}), dict) or not isinstance(data.get("bgm", []), list):
-            raise ApiError("声音设置格式或版本无效。")
-        result = {**copy.deepcopy(previous or {}), **copy.deepcopy(data), "version": 1}
-        result.setdefault("sfx", {}); result.setdefault("bgm", [])
-        audios = {**self.catalog_rows("AudioCfg"), **all_maps.get("AudioCfg.json", {})}
-        talks = set(all_maps.get("TalkCfg.json", {})) | set(self.catalog_rows("TalkCfg"))
-        talks.update(str(value) for value in self.catalog().get("baseTalkIds", []) if valid_id(value))
-        def sound(cue, allow_continue=False, kind=None):
-            if not isinstance(cue, dict): raise ApiError('声音设置必须是对象。')
-            continuing = allow_continue and isinstance(cue, dict) and type(cue.get("audioId")) is int and cue["audioId"] == 0
-            if not continuing and (not isinstance(cue, dict) or not valid_id(cue.get("audioId")) or str(cue["audioId"]) not in audios):
-                save_review.warn(ApiError, "声音设置引用了不存在的音频，请重新选择。")
-            if not continuing and kind is not None and str(cue.get('audioId')) in audios:
-                actual = 2 if audios[str(cue['audioId'])].get('type') == 2 else 1
-                if actual != kind: save_review.warn(ApiError, '请选择音乐类型的 BGM。' if kind == 1 else '请选择音效类型的声音。')
-            if 'loop' in cue and not isinstance(cue['loop'], bool): raise ApiError('声音循环方式无效。')
-            volume = cue.get("volume", 1)
-            if isinstance(volume, bool) or not isinstance(volume, (float, int)) or not math.isfinite(volume) or volume < 0 or volume > 1:
-                save_review.warn(ApiError, "音量需要在 0 到 1 之间。")
-        for ident, cues in result["sfx"].items():
-            if not valid_id(ident) or str(ident) not in talks or not isinstance(cues, list) or len(cues) > 16:
-                raise ApiError("句子音效引用无效或同一句音效过多。")
-            for cue in cues: sound(cue, kind=2)
-        if "nativeAudio" in result:
-            if not isinstance(result["nativeAudio"], dict): raise ApiError("原有背景音乐记录格式无效。")
-            for ident, audio in result["nativeAudio"].items():
-                if not valid_id(ident) or str(ident) not in talks: raise ApiError("原有背景音乐引用了不存在的对话。")
-                sound({"audioId": audio})
-        occupied = set(); groups = set()
-        for group in result["bgm"]:
-            sound(group, allow_continue=True, kind=1)
-            if not isinstance(group.get("id"), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,120}", group["id"]) or group["id"] in groups:
-                raise ApiError("背景音乐范围标识无效或重复。")
-            groups.add(group["id"])
-            if not isinstance(group.get("loop"), bool) or not isinstance(group.get("talkIds"), list):
-                raise ApiError("请选择背景音乐的范围和循环方式。")
-            ids = group["talkIds"]
-            if any(not valid_id(ident) or str(ident) not in talks for ident in ids):
-                raise ApiError("背景音乐范围包含不存在的对话。")
-            ids = list(dict.fromkeys(int(ident) for ident in ids)); group["talkIds"] = ids
-            if occupied.intersection(ids):
-                raise ApiError("同一句不能属于两个背景音乐范围，请先替换原范围。")
-            occupied.update(ids)
+        from audio_drafts import issues
+        result = {**copy.deepcopy(previous or {}), **copy.deepcopy(data)} if isinstance(data, dict) else copy.deepcopy(data)
+        audios = {**self.catalog_rows('AudioCfg'), **all_maps.get('AudioCfg.json', {})}
+        talks = set(all_maps.get('TalkCfg.json', {})) | set(self.catalog_rows('TalkCfg'))
+        talks.update(str(i) for i in self.catalog().get('baseTalkIds', []) if valid_id(i))
+        for issue in issues(result, audios, talks, valid_id): save_review.note(issue)
         return result
 
     JSON_SOURCE_LIMIT = 16 * 1024 * 1024

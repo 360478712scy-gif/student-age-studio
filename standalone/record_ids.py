@@ -218,6 +218,23 @@ class RecordIds:
                 if table == 'TalkCfg' and name == 'studioLighting' and isinstance(value,dict):
                     row[name]={str(self.remap(int(k),mappings.get('PersonCfg',{}))):v for k,v in value.items()}
                     continue
+                if table == 'EvtCfg' and name == 'studioEventBindingDraft' and isinstance(value, dict):
+                    for binding in value.get('actions', []) if isinstance(value.get('actions', []), list) else []:
+                        if isinstance(binding, dict) and 'id' in binding:
+                            target = 'ActionCfg' if binding.get('mode') == 'direct' else 'ActionEvtCfg'
+                            binding['id'] = self.remap(binding['id'], mappings.get(target, {}))
+                    if isinstance(value.get('interactions'), list):
+                        value['interactions'] = [self.rewrite('InteractCfg', {'0': entry}, mappings)['0'] if isinstance(entry, dict) else entry for entry in value['interactions']]
+                        for entry in value['interactions']:
+                            if isinstance(entry, dict) and 'id' in entry: entry['id'] = self.remap(entry['id'], mappings.get('InteractCfg', {}))
+                    for binding in value.get('gifts', []) if isinstance(value.get('gifts', []), list) else []:
+                        if isinstance(binding, dict):
+                            for field, target in [('id', 'GiftEvtCfg'), ('npc', 'PersonCfg')]:
+                                if field in binding: binding[field] = self.remap(binding[field], mappings.get(target, {}))
+                            if 'item' in binding: binding['item'] = self.remap(binding['item'], {**mappings.get('ItemCfg', {}), **mappings.get('BookCfg', {})})
+                    if isinstance(value.get('social'), dict):
+                        value['social'] = self.rewrite('EvtCfg', {'0': {'studioSocial': value['social']}}, mappings)['0']['studioSocial']
+                    continue
                 if table == 'EvtCfg' and name == 'studioSocial' and isinstance(value,dict):
                     for field,target in [('actionId','ActionCfg'),('unlockedActionId','ActionCfg'),('interactionId','InteractCfg'),('minigameActionId','MinigameActionCfg'),('previousStartTalk','TalkCfg')]:
                         if field in value:value[field]=self.remap(value[field],mappings.get(target,{}))

@@ -20,6 +20,12 @@ jobs:
       - run: node standalone/tests/scene-scale-shadow.cjs
       - run: node standalone/tests/indexed-talks.cjs
       - run: node standalone/tests/remote-talks.cjs
+      - run: node standalone/tests/story-discard-exit.cjs
+      - run: node standalone/tests/branch-stale-metadata.cjs
+      - run: node standalone/tests/unfinished-page-save.cjs
+      - run: node standalone/tests/goals-incomplete-navigation.cjs
+      - run: node standalone/tests/messages-incomplete-navigation.cjs
+      - run: node standalone/tests/draft-save-inputs.cjs
       - run: node standalone/tests/remote-scene.cjs
       - run: node standalone/tests/event-list-cache.cjs
       - run: node standalone/tests/bulk-references.cjs
@@ -53,4 +59,7 @@ jobs:
           node standalone/tests/app-updates-poll.cjs
           node standalone/tests/up-video-ui.cjs
           node standalone/tests/condition-native-numeric.cjs
+          node standalone/tests/condition-talk-references.cjs
+          node standalone/tests/unfinished-draft-ui.cjs
+          node standalone/tests/social-comment-edit.cjs
       - run: python -B tools/build_update.py --out release/student-age-studio-update.zip

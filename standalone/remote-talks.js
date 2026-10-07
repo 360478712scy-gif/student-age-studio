@@ -3,7 +3,7 @@
  * Packed snapshots contain only field changes, not the shared source directory. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.StudentAgeRemoteTalks=api;})(typeof window==='object'?window:globalThis,()=>{
 'use strict';
-const tables=new WeakMap(),nodes=new WeakMap(),bases=new Map();let serial=0;
+const tables=new WeakMap(),nodes=new WeakMap(),referenceViews=new WeakMap(),bases=new Map();let serial=0;
 const own=(v,k)=>Object.prototype.hasOwnProperty.call(v,k),copy=v=>v===undefined?undefined:JSON.parse(JSON.stringify(v)),bytes=s=>new TextEncoder().encode(s).length;
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 function create(descriptor,request,revision){
@@ -91,6 +91,28 @@ function pack(value){const t=tables.get(value),n=nodes.get(value);if(t)return {_
 function revive(value){if(!value||typeof value!=='object')return value;const id=value.__studioRemoteTalks||value.__studioRemoteRow;if(!id)return value;const base=bases.get(id);if(!base)throw Error('对话底稿已过期，无法恢复草稿。');return value.__studioRemoteTalks?table(base,value.changes):table(base,{[value.id]:value.entry})[value.id];}
 async function ensure(value,ids,{pin=false,keep=false}={}){const t=tables.get(value);if(!t)return;const requested=[...new Set((ids||t.keys()).map(String))].filter(id=>id in value),sources=requested.map(id=>t.stateFor(id).source).filter(Boolean);if(pin)t.base.pinned=new Set(sources);t.base.ensureCount=(t.base.ensureCount||0)+1;try{await fetchRows(t.base,sources);if(keep)for(const id of sources)t.base.kept.set(id,text(t.base,id));}catch(e){for(const id of sources)t.base.failures.set(id,e);throw e;}finally{t.base.ensureCount--;}if(pin)prune(t.base);}
 function summary(row){const n=nodes.get(row);if(!n)return row?.content||'';const e=n.state();return own(e.set,'content')?e.set.content||'':e.remove.includes('content')?'':n.base.summaries[e.source]?.excerpt||'';}
+// Picker labels use directory metadata, without allocating a row proxy or loading text.
+function reference(value,id){
+ id=String(id);const view=referenceViews.get(value);
+ if(view)return reference(own(view.local,id)?view.local:view.base,id);
+ const t=tables.get(value);if(!t)return value?.[id];if(!(id in value))return undefined;
+ const e=t.stateFor(id);return {id:t.read(id,'id'),name:t.read(id,'name'),title:t.read(id,'title'),content:own(e.set,'content')?e.set.content||'':e.remove.includes('content')?'':t.base.summaries[e.source]?.excerpt||''};
+}
+function referenceIds(value){
+ const view=referenceViews.get(value);if(view)return [...new Set([...referenceIds(view.base),...referenceIds(view.local)])].sort((a,b)=>Number(a)-Number(b));
+ const t=tables.get(value);if(!t)return Object.keys(value||{});
+ if(t.referenceKeyVersion!==t.graphVersion){t.referenceKeys=t.keys();t.referenceKeyVersion=t.graphVersion;}
+ return t.referenceKeys;
+}
+function referenceView(base,local){
+ if(!base||base===local)return local;
+ const view=new Proxy({}, {
+  get(target,id){return own(local,id)?local[id]:own(base,id)?base[id]:Reflect.get(target,id);},
+  has(_,id){return own(local,id)||own(base,id)||id in Object.prototype;},
+  ownKeys(){return [...new Set([...Object.keys(base),...Object.keys(local)])].sort((a,b)=>Number(a)-Number(b));},
+  getOwnPropertyDescriptor(_,id){return own(local,id)||own(base,id)?{configurable:true,enumerable:true}:undefined;}
+ });referenceViews.set(view,{base,local});return view;
+}
 function hasText(row){const n=nodes.get(row);if(!n)return !!String(row?.content||'').trim();const e=n.state();return own(e.set,'content')?!!String(e.set.content||'').trim():!e.remove.includes('content')&&!!n.base.summaries[e.source]?.hasText;}
 const labelObservers=new WeakMap();
 function observeLabels(container,value,selector,identify){
@@ -130,5 +152,5 @@ function pin(value,id){const t=tables.get(value);if(!t)return;t.base.pinned=new 
 function retain(value){const active=tables.get(value)?.base;for(const [id,base]of bases)if(base!==active){base.closed=true;base.cache.clear();base.kept.clear();bases.delete(id);}}
 function safeNumbers(value){for(const token of value.match(/"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g)||[]){if(token[0]==='"')continue;const v=Number(token),digits=token.split(/[eE]/)[0].replace(/[^0-9]/g,'').replace(/^0+/,'');if(!Number.isFinite(v)||(Number.isInteger(v)&&!Number.isSafeInteger(v))||digits.length>15)throw Error('这句包含超出编辑精度的数值，已保留草稿和原文件，不能直接改写。');}}
 function stats(value){const t=tables.get(value);return t?{remote:true,total:t.keys().length,loaded:t.base.cache.size,cacheBytes:t.base.size,draftOriginals:t.base.kept.size,changes:Object.keys(t.state()).length,generation:t.base.token}:null;}
-return {create,pack,revive,ensure,summary,hasText,observeLabels,projection,sceneTable,routingTable,delta,changed,advance,stats,contentSearch,sceneRecord,ready,pin,retain,info:value=>tables.get(value),nodeInfo:value=>nodes.get(value)};
+return {create,pack,revive,ensure,summary,reference,referenceIds,referenceView,hasText,observeLabels,projection,sceneTable,routingTable,delta,changed,advance,stats,contentSearch,sceneRecord,ready,pin,retain,info:value=>tables.get(value),nodeInfo:value=>nodes.get(value)};
 });

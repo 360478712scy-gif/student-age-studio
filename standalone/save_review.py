@@ -1,8 +1,8 @@
-"""Request-scoped acknowledgement of editor validation warnings, before commit.
+"""Save unfinished configuration and return its validation messages as warnings.
 
 Map parsing, live revision reads, write locks and backups remain mandatory.
 External edits require acknowledgement tied to their exact current revision.
-Calls outside an explicit review request retain the original strict validation.
+Only an external disk revision change still asks for acknowledgement.
 """
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -11,11 +11,13 @@ _current = ContextVar('studio_save_review', default=None)
 
 
 def perform(writer, payload, error_type):
-    state = {'issues': [], 'confirmed': payload.get('_confirmedSaveWarnings', []), 'error': error_type}
+    state = {'issues': [], 'review': [], 'confirmed': payload.get('_confirmedSaveWarnings', []), 'error': error_type}
     token = _current.set(state)
     try:
         result = writer(payload)
         checkpoint()
+        if isinstance(result, dict) and state['issues']:
+            result['warnings'] = list(dict.fromkeys([*(result.get('warnings') or []), *state['issues']]))
         return result
     finally:
         _current.reset(token)
@@ -37,7 +39,17 @@ def warn(error_type, issue, status=400, code='invalid_request'):
         raise error_type(issue, status, code)
     if issue not in state['issues']:
         state['issues'].append(issue)
-    checkpoint()
+    if status == 409 and code == 'conflict':
+        if issue not in state['review']:
+            state['review'].append(issue)
+        checkpoint()
+
+
+def note(issue):
+    """Collect a configuration notice without interrupting a save."""
+    state = _current.get()
+    if state is not None and issue not in state['issues']:
+        state['issues'].append(issue)
 
 
 @contextmanager
@@ -58,8 +70,8 @@ def checkpoint():
     state = _current.get()
     if not state:
         return
-    pending = [issue for issue in state['issues'] if issue not in state['confirmed']]
+    pending = [issue for issue in state['review'] if issue not in state['confirmed']]
     if pending:
-        error = state['error']('当前配置还有未完成或不符合原版要求的内容。', 400, 'save_warnings')
+        error = state['error']('模组文件已被其他程序修改，请确认是否覆盖当前磁盘版本。', 400, 'save_warnings')
         error.warnings = pending
         raise error

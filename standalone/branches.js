@@ -62,15 +62,55 @@ function setContinuation(doc,folder,continuation){
  else {option.talkId=next;option.nextEvtId=continuation?.kind==='event'?Number(continuation.eventId):0;}
  folder.continuation=JSON.parse(JSON.stringify(continuation));
 }
+const sameIds=(a,b)=>JSON.stringify(ids(a))===JSON.stringify(ids(b));
+function conditionIntact(doc,folder){
+ if(!doc.talks?.[folder.parentTalkId])return false;
+ const hasText=row=>globalThis.StudentAgeRemoteTalks?.hasText?.(row)??!!String(row.content||'').trim();
+ const helpers=[folder.routerId,folder.exitId,folder.endId].map(Number);
+ if(helpers.some(id=>!Number.isInteger(id)||id<=0||id===Number(folder.parentTalkId))||new Set(helpers).size!==3)return false;
+ for(const id of helpers){const row=doc.talks[id];if(!row||hasText(row)||['roleIds','roles','option','effect','effect2','screenEffect','highlights','miniGame'].some(field=>row[field]?.length))return false;}
+ const exit=doc.talks[folder.exitId],end=doc.talks[folder.endId];
+ if(exit.check?.length||ids(exit.nextTalk2).length||end.check?.length||ids(end.nextTalk).length||ids(end.nextTalk2).length)return false;
+ return ids(folder.talkIds).every(id=>doc.talks[id]&&!helpers.includes(id));
+}
+// Editor ownership is disposable. Native rows and their current edges are the
+// authority after another editor changes or deletes a branch.
+function conditionKeys(doc,folders){
+ const groups=new Map(),kept=new Set();
+ for(const [key,f]of Object.entries(folders||{}))if(f?.kind==='condition'&&conditionIntact(doc,f)){const parent=Number(f.parentTalkId);if(!groups.has(parent))groups.set(parent,[]);groups.get(parent).push([key,f]);}
+ for(const [parent,group]of groups){
+  const row=doc.talks[parent],start=ids(row.nextTalk);if(start.length!==1||ids(row.nextTalk2).length||row.check?.length||ids(row.option).length||row.miniGame?.length)continue;
+  group.sort((a,b)=>Number(a[1].branchId)-Number(b[1].branchId));const at=group.findIndex(([,f])=>Number(f.routerId)===start[0]);if(at<0)continue;
+  const path=[];
+  for(let i=at;i<group.length;i++){
+   const [key,f]=group[i],router=doc.talks[f.routerId],exit=doc.talks[f.exitId],members=ids(f.talkIds),base=ids(f.baseNext),c=f.continuation;
+   const following=c?.kind==='following'?base:c?.kind==='talk'?[Number(c.talkId)]:c?.kind==='targets'?ids(c.targets):[];
+   if(!sameIds(router.nextTalk,[members[0]||Number(f.exitId)])||!sameIds(exit.nextTalk,following))break;
+   const custom=Array.isArray(f.failureNext),failure=custom?(ids(f.failureNext).length?f.failureNext:[f.endId]):i+1<group.length?[group[i+1][1].routerId]:base.length?base:[f.endId];
+   if(!sameIds(router.nextTalk2,failure))break;
+   path.push(key);
+   // An explicit failure override can bypass later, still-authored branches.
+   // Keep those drafts when their own native connectors remain consistent.
+   if(custom||i===group.length-1){for(const id of path)kept.add(id);path.length=0;}
+  }
+ }
+ return kept;
+}
 function cleanup(doc,folders,replacements={}){
  const deleted=id=>Object.prototype.hasOwnProperty.call(replacements,id);
+ const authored=new Set();
  const out={};for(const [id,old]of Object.entries(folders||{})){
+  if(!old||typeof old!=='object')continue;
   if(deleted(old.parentTalkId)||(old.kind!=='condition'&&doc.talks?.[old.parentTalkId]&&!ids(doc.talks[old.parentTalkId].option).includes(Number(old.optionId))))continue;
   const f=JSON.parse(JSON.stringify(old));f.talkIds=ids(f.talkIds).filter(t=>!deleted(t));
+  if(f.kind==='condition'&&ids(old.talkIds).some(deleted))authored.add(id);
   if(f.continuation?.kind==='talk'&&deleted(f.continuation.talkId)){const next=[...new Set(ids(replacements[f.continuation.talkId]).filter(t=>t>0&&!deleted(t)))];f.continuation=next.length===1?{kind:'talk',talkId:next[0]}:{kind:'end'};}
   if(Array.isArray(f.failureNext))f.failureNext=f.failureNext.flatMap(t=>deleted(t)?ids(replacements[t]):[t]);
   out[id]=f;
- }return out;
+ }
+ const conditions=conditionKeys(doc,out);
+ for(const [id,f]of Object.entries(out))if(f.kind==='condition'&&!conditions.has(id)&&!(authored.has(id)&&conditionIntact(doc,f)))delete out[id];
+ return out;
 }
-return {ids,key,optionParents,optionParentCounts,ownedBy,describe,initialContinuation,create,targets,insert,setContinuation,cleanup};
+return {ids,key,optionParents,optionParentCounts,ownedBy,describe,initialContinuation,create,targets,insert,setContinuation,conditionIntact,conditionKeys,cleanup};
 });

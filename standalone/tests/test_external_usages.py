@@ -93,11 +93,12 @@ class ExternalUsesTests(unittest.TestCase):
         self.assertEqual(after['705']['winTalk'],0)
         self.assertEqual(after['704'],before['704'])
 
-    def test_mini_orphan_person_is_rejected_without_writes(self):
+    def test_mini_orphan_person_saves_draft_without_native_binding(self):
         self.write('PersonCfg',{'4':{'id':4,'name':'人物乙'}})
         before=self.read('MinigameActionCfg')
-        with self.assertRaisesRegex(b.ApiError,'人物不存在'):
-            self.save([self.use('mini-start',npc=3,level=1)])
+        result=self.save([self.use('mini-start',npc=3,level=1)])
+        self.assertTrue(any('人物不存在' in issue for issue in result['warnings']))
+        self.assertEqual(result['folders']['one']['uses'][0]['npc'],3)
         self.assertEqual(self.read('MinigameActionCfg'),before)
 
     def test_gift_native_selection_and_next_dialogue(self):
@@ -140,21 +141,24 @@ class ExternalUsesTests(unittest.TestCase):
             self.assertEqual([row[k] for k in ('startTalk','winTalk','loseTalk')],[9001]*3)
             self.assertEqual(row['parms'],[3,7]);self.assertEqual(row['effect'],[[1,100,3]])
         self.assertEqual(self.read('PersonGrowCfg')['3']['minigame'],7)
-    def test_missing_game_or_stage_and_sixth_level_rejected_without_writes(self):
+    def test_missing_game_or_stage_and_sixth_level_save_drafts_without_binding(self):
         before=self.read('MinigameActionCfg')
         for npc,level in ((3,6),(3,0),(999,1)):
-            with self.assertRaises(b.ApiError):self.save([self.use('mini-start',npc=npc,level=level)])
+            result=self.save([self.use('mini-start',npc=npc,level=level)])
+            self.assertTrue(result['warnings']);self.assertEqual(result['folders']['one']['uses'][0]['level'],level)
+            self.assertEqual(self.read('MinigameActionCfg'),before)
         self.write('MinigameActionCfg',{'701':before['701']})
-        with self.assertRaises(b.ApiError):self.save([self.use('mini-start',npc=3,level=5)])
+        result=self.save([self.use('mini-start',npc=3,level=5)]);self.assertTrue(result['warnings'])
         self.assertEqual(self.read('MinigameActionCfg'),{'701':before['701']})
-    def test_shared_game_conflict_is_rejected_atomically(self):
+    def test_shared_game_conflict_saves_text_and_draft_without_binding(self):
         one=self.use('mini-start',npc=3,level=1);two=self.use('mini-start',npc=4,level=1);two['id']='two'
-        p=self.request([one,two]);p['talks']['9001']['content']='must rollback'
-        with self.assertRaises(b.ApiError):ext.save(self.store,p,b)
-        self.assertEqual(self.read('TalkCfg')['9001']['content'],'开场');self.assertEqual(self.read('MinigameActionCfg')['701']['startTalk'],0)
+        p=self.request([one,two]);p['talks']['9001']['content']='unfinished binding text'
+        result=ext.save(self.store,p,b);self.assertTrue(result['warnings'])
+        self.assertEqual(self.read('TalkCfg')['9001']['content'],'unfinished binding text');self.assertEqual(self.read('MinigameActionCfg')['701']['startTalk'],0)
+        self.assertEqual(result['folders']['one']['uses'],[one,two])
     def test_duplicate_gift_rules_not_silently_shadowed(self):
         self.write('GiftEvtCfg',{str(i):{'id':i,'item':10,'npc':[3],'talkId':[[i]],'cond':[]} for i in (1,2)})
-        with self.assertRaises(b.ApiError):self.save([self.use('gift',npc=3,item=10,giftMode=0)])
+        result=self.save([self.use('gift',npc=3,item=10,giftMode=0)]);self.assertTrue(result['warnings'])
         self.assertEqual(self.read('GiftEvtCfg')['1']['talkId'],[[1]])
     def test_gender_branch_keeps_other_entry_and_unlinks(self):
         self.write('IntentCfg',{'1':{'id':1,'finishTalk':[8011,8012],'reward':[[1,2,3]]}})
@@ -172,13 +176,16 @@ class ExternalUsesTests(unittest.TestCase):
     def test_foreign_edit_conflict_can_detach_without_overwriting(self):
         d=self.save([self.use('mini-start',npc=3,level=1)])
         r=self.read('MinigameActionCfg');r['701']['startTalk']=9999;self.write('MinigameActionCfg',r)
-        with self.assertRaises(b.ApiError):self.save(d['folders']['one']['uses'])
+        result=self.save(d['folders']['one']['uses']);self.assertTrue(result['warnings'])
+        self.assertEqual(self.read('MinigameActionCfg')['701']['startTalk'],9999)
         self.save([]);self.assertEqual(self.read('MinigameActionCfg')['701']['startTalk'],9999)
-    def test_bound_entry_cannot_be_deleted_without_reassigning(self):
+    def test_bound_entry_deletion_saves_draft_and_keeps_safe_deletion_redirect(self):
         d=self.save([self.use('mini-start',npc=3,level=1)])
         p=self.request(d['folders']['one']['uses']);del p['talks']['9001'];p['folders']['one']['talkIds']=[9002]
-        with self.assertRaises(b.ApiError):ext.save(self.store,p,b)
-        self.assertIn('9001',self.read('TalkCfg'))
+        result=ext.save(self.store,p,b);self.assertTrue(result['warnings'])
+        self.assertNotIn('9001',self.read('TalkCfg'))
+        self.assertEqual(self.read('MinigameActionCfg')['701']['startTalk'],9002)
+        self.assertEqual(result['folders']['one']['uses'][0]['entryId'],9001)
     def test_sequence_batch_deletion_reassigns_gift_and_minigame_then_unlinks(self):
         rows=self.read('TalkCfg');rows['9002']['nextTalk']=[9003]
         rows['9003']={'id':9003,'content':'保留末句','nextTalk':[],'future':'keep'};self.write('TalkCfg',rows)
@@ -202,8 +209,8 @@ class ExternalUsesTests(unittest.TestCase):
         r=self.read('MinigameActionCfg');r['701']['startTalk']=9002;self.write('MinigameActionCfg',r)
         p=self.request(d['folders']['one']['uses']);del p['talks']['9001']
         p['folders']['one']['talkIds']=[9002];p['folders']['one']['uses'][0]['entryId']=9002
-        with self.assertRaises(b.ApiError):ext.save(self.store,p,b)
-        self.assertIn('9001',self.read('TalkCfg'))
+        result=ext.save(self.store,p,b);self.assertTrue(result['warnings'])
+        self.assertNotIn('9001',self.read('TalkCfg'))
         self.assertEqual(self.read('MinigameActionCfg')['701']['startTalk'],9002)
     def test_existing_event_callback_keeps_folder_visible_after_save(self):
         self.write('EvtCfg',{'7':{'id':7,'talkId':[7001]}})
@@ -219,8 +226,10 @@ class ExternalUsesTests(unittest.TestCase):
         self.write('ItemCfg',{'10':{'id':10,'value':11}})
         with self.assertRaises(b.ApiError) as e:ext.save(self.store,p,b)
         self.assertEqual(e.exception.status,409);self.assertEqual(self.read('MinigameActionCfg')['701']['startTalk'],0)
-    def test_reserved_dead_cfg_not_offered_as_working_trigger(self):
-        with self.assertRaises(b.ApiError):self.save([self.use('love-greeting',recordId=1)])
+    def test_reserved_dead_cfg_saves_draft_without_working_trigger(self):
+        result=self.save([self.use('love-greeting',recordId=1)])
+        self.assertTrue(result['warnings']);self.assertEqual(result['folders']['one']['uses'][0]['kind'],'love-greeting')
+        self.assertEqual(self.read('LoveGreetingCfg'),{})
 
     def test_rename_updates_real_refs_and_binding_ledger(self):
         self.save([self.use('mini-start',npc=3,level=1)])

@@ -143,7 +143,7 @@ class SharedDialogueDeletionTests(unittest.TestCase):
 
 
 class TruncatedSaveTests(unittest.TestCase):
-    """A full talks map missing rows without declaring them must abort."""
+    """A partial talks map preserves unsubmitted rows and returns a warning."""
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -158,14 +158,13 @@ class TruncatedSaveTests(unittest.TestCase):
                      '9002': {'id': 9002, 'content': '乙'}}
         server.atomic_write(self.project.path/'Cfgs/zh-cn/TalkCfg.json', server.json_bytes(self.rows))
 
-    def test_missing_row_without_declaration_is_rejected(self):
+    def test_missing_row_without_declaration_is_preserved(self):
         target = self.project.path/'Cfgs/zh-cn/TalkCfg.json'
-        before = target.read_bytes()
-        with self.assertRaises(server.ApiError) as caught:
-            self.store.save({'projectId': self.ident, 'revision': self.store.revision(self.project),
-                             'talks': {'9001': self.rows['9001']}})
-        self.assertEqual(caught.exception.status, 409)
-        self.assertEqual(target.read_bytes(), before)
+        import save_review
+        result=save_review.perform(self.store.save,{'projectId': self.ident, 'revision': self.store.revision(self.project),
+                             'talks': {'9001': {**self.rows['9001'],'content':'修改甲'}}},server.ApiError)
+        self.assertTrue(result['warnings'])
+        self.assertEqual(server.read_json(target),{'9001':{**self.rows['9001'],'content':'修改甲'},'9002':self.rows['9002']})
 
     def test_declared_deletion_still_saves(self):
         self.store.save({'projectId': self.ident, 'revision': self.store.revision(self.project),

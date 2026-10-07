@@ -49,6 +49,7 @@ def needs_text_compile(project, payload, api):
     state = api.read_json(state_path, {})
     if not isinstance(state, dict): return True
     snapshot = state.get('nativeSnapshot', {})
+    if not isinstance(snapshot, dict): return True
     if state.get('runtimeVersion') != 1 or not snapshot:
         if (api.file_fingerprint(path), api.file_fingerprint(state_path)) != stamps: return True
         _remember_text_audio(key, stamps)
@@ -70,8 +71,10 @@ def remap(cues, mapping):
     cues = copy.deepcopy(cues)
     def key(value): return str(mapping.get(str(value), value))
     for field in ('sfx', 'nativeAudio', 'nativeSnapshot'):
-        if field in cues: cues[field] = {key(k): v for k, v in cues[field].items()}
-    for group in cues.get('bgm', []): group['talkIds'] = [int(key(i)) for i in group['talkIds']]
+        if isinstance(cues.get(field), dict): cues[field] = {key(k): v for k, v in cues[field].items()}
+    for group in cues.get('bgm', []) if isinstance(cues.get('bgm', []), list) else []:
+        if isinstance(group, dict) and isinstance(group.get('talkIds'), list) and all(type(i) is int for i in group['talkIds']):
+            group['talkIds'] = [int(key(i)) for i in group['talkIds']]
     tracked = cues.get('upAudio', {})
     if isinstance(tracked, dict) and isinstance(tracked.get('effects'), dict):
         tracked['effects'] = {key(k): v for k, v in tracked['effects'].items()}

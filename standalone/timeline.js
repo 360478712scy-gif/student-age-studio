@@ -1,6 +1,7 @@
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.StudentAgeTimeline=api;})(typeof window==='object'?window:globalThis,()=>{
+(function(root,factory){const api=factory(typeof module==='object'&&module.exports?require('./branches.js'):root.StudentAgeBranches);if(typeof module==='object'&&module.exports)module.exports=api;else root.StudentAgeTimeline=api;})(typeof window==='object'?window:globalThis,Branches=>{
 'use strict';
 const ids=v=>Array.isArray(v)?v.map(Number).filter(Number.isFinite):[],copy=v=>JSON.parse(JSON.stringify(v));
+const branchApi=()=>Branches||globalThis.StudentAgeBranches;
 const entries=(folders,parent)=>Object.entries(folders||{}).filter(([,f])=>f.kind==='condition'&&Number(f.parentTalkId)===Number(parent)).sort((a,b)=>a[1].branchId-b[1].branchId);
 const internals=folders=>new Set(Object.values(folders||{}).filter(f=>f.kind==='condition').flatMap(f=>[f.routerId,f.exitId,f.endId]).map(Number));
 const owner=(folders,id)=>Object.entries(folders||{}).find(([,f])=>ids(f.talkIds).includes(Number(id)))?.[0]||null;
@@ -10,14 +11,19 @@ function targets(doc,c){
  if(c?.kind==='targets')return ids(c.targets);
  return [];
 }
-function sync(doc,folders,parent){
+function reconcile(doc,folders){
+ const kept=branchApi().cleanup(doc,folders),removed=[];
+ for(const key of Object.keys(folders))if(!Object.hasOwn(kept,key)){delete folders[key];removed.push(key);}return removed;
+}
+function sync(doc,folders,parent,trusted=false){
+ if(!trusted)reconcile(doc,folders);
+ else for(const [key,f]of entries(folders,parent))if(!branchApi().conditionIntact(doc,f))delete folders[key];
  const group=entries(folders,parent);if(!group.length)return;
  const first=group[0][1],base=ids(first.baseNext),row=doc.talks[parent];if(!row)return;
  row.nextTalk=[first.routerId];row.nextTalk2=[];row.check=[];
  group.forEach(([,f],i)=>{
   f.baseNext=base.slice();f.endId=first.endId;
   const router=doc.talks[f.routerId],exit=doc.talks[f.exitId];
-  if(!router||!exit)throw Error('分支连接不完整，请撤销后重试。');
   router.nextTalk=[ids(f.talkIds)[0]||f.exitId];
   router.nextTalk2=Array.isArray(f.failureNext)?(ids(f.failureNext).length?ids(f.failureNext):[f.endId]):i+1<group.length?[group[i+1][1].routerId]:base.length?base.slice():[f.endId];
   exit.nextTalk=f.continuation?.kind==='following'?base.slice():targets(doc,f.continuation);
@@ -26,15 +32,16 @@ function sync(doc,folders,parent){
 function setFailure(doc,folders,folder,value){
  if(folder.kind!=='condition')throw Error('请选择条件分支。');
  if(value!==null&&(!Array.isArray(value)||ids(value).some(id=>!doc.talks[id]||id===Number(folder.parentTalkId)||internals(folders).has(id))))throw Error('请选择有效的失败对话。');
- folder.failureNext=value===null?null:ids(value);sync(doc,folders,folder.parentTalkId);
+ folder.failureNext=value===null?null:ids(value);sync(doc,folders,folder.parentTalkId,true);
 }
 function setNext(doc,folders,id,value){
  const group=entries(folders,id);
- if(group.length){for(const [,f]of group)f.baseNext=ids(value);sync(doc,folders,id);}
+ if(group.length){for(const [,f]of group)f.baseNext=ids(value);sync(doc,folders,id,true);}
  else doc.talks[id].nextTalk=ids(value);
 }
 const blank=id=>({id,content:'',roleIds:[],roles:[],option:[],check:[],effect:[],effect2:[],nextTalk:[],nextTalk2:[],highlights:[],screenEffect:[]});
 function addCondition(doc,folders,parent,allocate){
+ reconcile(doc,folders);
  const row=doc.talks[parent];if(!row)throw Error('请先选择一句对话。');
  if(ids(row.option).length||row.miniGame?.length)throw Error('这句已有玩家选项或小游戏，请在对应对话夹内添加条件分支。');
  let group=entries(folders,parent);
@@ -51,7 +58,7 @@ function addCondition(doc,folders,parent,allocate){
   base=ids(row.nextTalk);endId=allocate();doc.talks[endId]=blank(endId);
   if(row.check?.length){const success=base.slice();base=ids(row.nextTalk2);if(!base.length||!base[0])base=success.slice();make(row.check,{kind:'targets',targets:success},base,endId);}
  }
- const result=make([],{kind:'following'},base,endId);sync(doc,folders,parent);return result;
+ const result=make([],{kind:'following'},base,endId);sync(doc,folders,parent,true);return result;
 }
 function insert(doc,folders,folder,row,after=null){
  const members=ids(folder.talkIds),index=after===null?members.length-1:members.indexOf(Number(after));
@@ -63,13 +70,13 @@ function insert(doc,folders,folder,row,after=null){
  if(!row.nextTalk.length&&folder.continuation?.kind==='talk')row.nextTalk=targets(doc,folder.continuation);
  if(previous)setNext(doc,folders,previous.id,[row.id]);else if(option){option.talkId=[row.id];option.nextEvtId=0;}
  doc.talks[row.id]=row;members.splice(index+1,0,row.id);folder.talkIds=members;
- if(folder.kind==='condition')sync(doc,folders,folder.parentTalkId);
+ if(folder.kind==='condition')sync(doc,folders,folder.parentTalkId,true);
 }
 function setContinuation(doc,folders,folder,c){
  const members=ids(folder.talkIds),last=members.at(-1),dest=targets(doc,c);
  if(dest.some(id=>members.includes(id)||id===folder.parentTalkId||!doc.talks[id]))throw Error('请选择对话夹以外的有效接续对话。');
  if(c.kind==='event'&&!doc.events[c.eventId])throw Error('后续事件不存在。');
- if(folder.kind==='condition'){folder.continuation=copy(c);sync(doc,folders,folder.parentTalkId);return;}
+ if(folder.kind==='condition'){folder.continuation=copy(c);sync(doc,folders,folder.parentTalkId,true);return;}
  if(last){const t=doc.talks[last];if(ids(t.option).length||t.miniGame?.length||(!entries(folders,last).length&&(t.check?.length||ids(t.nextTalk2).length)))throw Error('末句已有子分支，请设置子分支的接续。');setNext(doc,folders,last,c.kind==='following'?next(doc,folders,folder.parentTalkId):dest);}
  else {doc.options[folder.optionId].talkId=c.kind==='following'?next(doc,folders,folder.parentTalkId):dest;doc.options[folder.optionId].nextEvtId=c.kind==='event'?c.eventId:0;}
  folder.continuation=copy(c);
@@ -109,7 +116,7 @@ function reorder(doc,folders,order,source,target,after=false){
  // position of this sequence; references to other lines keep their identities.
  replace(doc,folders,segment[0],[sorted[0]],new Set([...segment,...hidden]));
  for(let i=0;i<sorted.length;i++)setNext(doc,folders,sorted[i],i+1<sorted.length?[sorted[i+1]]:tail);
- if(lane){const f=folders[lane],a=f.talkIds.indexOf(segment[0]);f.talkIds.splice(a,segment.length,...sorted);if(f.kind==='condition')sync(doc,folders,f.parentTalkId);else doc.options[f.optionId].talkId=[f.talkIds[0]];}
+ if(lane){const f=folders[lane],a=f.talkIds.indexOf(segment[0]);f.talkIds.splice(a,segment.length,...sorted);if(f.kind==='condition')sync(doc,folders,f.parentTalkId,true);else doc.options[f.optionId].talkId=[f.talkIds[0]];}
  const newLane=all.slice(),laneSet=new Set(all);newLane.splice(lo,segment.length,...sorted);let at=0;
  return order.map(id=>laneSet.has(id)?newLane[at++]:id);
 }
@@ -126,14 +133,17 @@ function moveToFolder(doc,folders,order,source,key){
  const following=next(doc,folders,source);
  if(following.includes(source))throw Error('这句有循环连接，不能直接移动。');
  replace(doc,folders,source,following,new Set([source]));
- if(lane){const old=folders[lane];old.talkIds=ids(old.talkIds).filter(id=>id!==source);if(old.kind==='condition')sync(doc,folders,old.parentTalkId);}
+ if(lane){const old=folders[lane];old.talkIds=ids(old.talkIds).filter(id=>id!==source);if(old.kind==='condition')sync(doc,folders,old.parentTalkId,true);}
  insert(doc,folders,folder,row);
  const result=order.filter(id=>Number(id)!==source),previous=folder.talkIds.at(-2)??folder.parentTalkId;
  result.splice(result.indexOf(Number(previous))+1,0,source);
  folder.collapsed=false;return result;
 }
 function removeFolder(doc,folders,key){
- const parentId=Number(key.split(':')[0]),parent=doc.talks[parentId];
+ const removed=reconcile(doc,folders);
+ const parentId=Number(key.split(':')[0]);
+ if(removed.includes(key)||(key.includes(':branch:')&&!folders[key]))return {parentId,deleted:[],replacements:{}};
+ const parent=doc.talks[parentId];
  if(!parent)throw Error('所属对话已不存在。');
  if(key.endsWith(':legacy')){parent.nextTalk=ids(parent.nextTalk2).filter(id=>id>0).length?ids(parent.nextTalk2):ids(parent.nextTalk);parent.nextTalk2=[];parent.check=[];return {parentId,deleted:[],replacements:{}};}
  const root=folders[key],conditional=root?.kind==='condition',optionId=Number(key.split(':')[1]);
@@ -153,9 +163,9 @@ function removeFolder(doc,folders,key){
  for(const id of dead){delete doc.talks[id];replacements[id]=continuation.slice();replace(doc,folders,id,continuation);}
  for(const oid of optionIds)if(!sharedOption(oid))delete doc.options[oid];
  if(conditional&&!entries(folders,parentId).length){parent.nextTalk=continuation;parent.nextTalk2=[];parent.check=[];}
- for(const id of new Set(Object.values(folders).filter(f=>f.kind==='condition').map(f=>f.parentTalkId)))sync(doc,folders,id);
+ for(const id of new Set(Object.values(folders).filter(f=>f.kind==='condition').map(f=>f.parentTalkId)))sync(doc,folders,id,true);
  return {parentId,deleted:[...dead],replacements};
 }
 
-return {ids,entries,internals,owner,next,setNext,setFailure,sync,blank,addCondition,insert,setContinuation,replace,replaceMany,reorder,moveToFolder,removeFolder};
+return {ids,entries,internals,owner,next,setNext,setFailure,reconcile,sync,blank,addCondition,insert,setContinuation,replace,replaceMany,reorder,moveToFolder,removeFolder};
 });

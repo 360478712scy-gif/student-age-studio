@@ -63,13 +63,10 @@ class EventReimportTests(unittest.TestCase):
         save_review.perform(self.store.save,{**payload,'_confirmedSaveWarnings':second.exception.warnings},b.ApiError)
         self.assertEqual(b.read_json(self.cfg/'TalkCfg.json')['1500000001']['content'],'用户草稿')
 
-    def test_missing_rows_ask_then_preserve_disk_rows(self):
-        original=(self.cfg/'TalkCfg.json').read_bytes()
+    def test_missing_rows_warn_and_preserve_disk_rows(self):
         payload={'projectId':self.ident,'revision':self.store.revision(self.project),'talks':{'1500000001':{'id':1500000001,'content':'新正文'}}}
-        with self.assertRaises(b.ApiError) as error:save_review.perform(self.store.save,payload,b.ApiError)
-        self.assertEqual(error.exception.code,'save_warnings')
-        self.assertEqual((self.cfg/'TalkCfg.json').read_bytes(),original)
-        save_review.perform(self.store.save,{**payload,'_confirmedSaveWarnings':error.exception.warnings},b.ApiError)
+        result=save_review.perform(self.store.save,payload,b.ApiError)
+        self.assertTrue(result['warnings'])
         rows=b.read_json(self.cfg/'TalkCfg.json')
         self.assertEqual(rows['1003001']['content'],'模组改写的丙')
         self.assertEqual(rows['1500000001']['content'],'新正文')
@@ -90,13 +87,10 @@ class EventReimportTests(unittest.TestCase):
         self.assertEqual(saved['1500000001']['content'],'确认的草稿')
         self.assertEqual(saved['1003001']['content'],'外部修改其他句')
 
-    def test_semantic_manifest_warning_can_be_confirmed(self):
+    def test_semantic_manifest_warning_saves_without_confirmation(self):
         payload={'projectId':self.ident,'revision':self.store.revision(self.project),'manifest':{'description':'字'*20001}}
-        before=(self.project.path/'manifest.json').read_bytes()
-        with self.assertRaises(b.ApiError) as error:save_review.perform(self.store.manifest_save,payload,b.ApiError)
-        self.assertEqual(error.exception.code,'save_warnings')
-        self.assertEqual(before,(self.project.path/'manifest.json').read_bytes())
-        save_review.perform(self.store.manifest_save,{**payload,'_confirmedSaveWarnings':error.exception.warnings},b.ApiError)
+        result=save_review.perform(self.store.manifest_save,payload,b.ApiError)
+        self.assertTrue(result['warnings'])
         self.assertEqual(b.read_json(self.project.path/'manifest.json')['description'],'字'*20001)
 
     def test_raw_json_save_can_acknowledge_external_edit(self):
@@ -112,7 +106,6 @@ class EventReimportTests(unittest.TestCase):
         import romance_settings
         row={'enabled':True,'male':False,'female':False,'minGrade':7,'minRelation':4,'minFavor':1,'favorWeight':.5,'attrWeight':.5}
         writer=lambda payload:romance_settings.validate({'3':row},{'3':{}},set(),{},b)
-        with self.assertRaises(b.ApiError) as error:save_review.perform(writer,{},b.ApiError)
-        self.assertEqual(error.exception.code,'save_warnings')
-        result=save_review.perform(writer,{'_confirmedSaveWarnings':error.exception.warnings},b.ApiError)
+        result=save_review.perform(writer,{},b.ApiError)
+        self.assertTrue(result['warnings'])
         self.assertEqual(result['3'],row)

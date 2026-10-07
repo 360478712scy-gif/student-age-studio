@@ -78,8 +78,14 @@ class BgmRanges(unittest.TestCase):
         self.assertEqual(self.store.load(self.id)['audioCues']['bgm'][1]['audioId'],first['id'])
         with self.assertRaises(b.ApiError):self.store.silent_bgm({'projectId':self.id,'revision':first['revision']})
 
-    def test_zero_not_allowed_as_sound_effect_or_invalid_volume(self):
+    def test_unfinished_sound_or_volume_saves_draft_without_changing_native_audio(self):
         for cues in [{'sfx':{'1':[{'audioId':0}]},'bgm':[]},{'sfx':{},'bgm':[{**self.group('zero',0,[1]),'volume':2}]}]:
-            with self.assertRaises(b.ApiError):self.save(audioCues=cues)
+            import save_review
+            before=self.native()
+            result=save_review.perform(lambda payload:self.save(**payload),{'audioCues':cues},b.ApiError)
+            self.assertTrue(result['warnings'])
+            self.assertEqual(self.native(),before)
+            self.assertEqual(self.store.load(self.id)['audioCues']['sfx'],cues['sfx'])
+            self.assertEqual(self.store.load(self.id)['audioCues']['bgm'],cues['bgm'])
 
 if __name__=='__main__':unittest.main()

@@ -18,7 +18,7 @@ await page.click('[data-social="choose-comment-author"]');await page.click('[dat
 assert.deepEqual(await page.evaluate(()=>social.state.comments[10102].roles),[1,3]);
 await page.click('[data-comment-card="10102"] .social-comment-text');assert.equal(await page.locator('#social-current-comment').inputValue(),'已有回复');
 await page.fill('[data-social-comment-delay]','1');assert.equal(await page.evaluate(()=>social.state.comments[10101].comments[0][1]),1);
-await page.fill('[data-social-comment-delay]','-2');assert.equal(await page.evaluate(()=>social.state.comments[10101].comments[0][1]),1);assert.equal(await page.evaluate(()=>lastStatus.error),true);
+await page.fill('[data-social-comment-delay]','-2');assert.equal(await page.evaluate(()=>social.state.comments[10101].comments[0][1]),-2);
 await page.fill('[data-social-comment-delay]','2');await page.click('[data-comment-card="10103"] .social-comment-text');await page.fill('[data-social-comment-delay]','1');await page.fill('#social-current-comment','修改继承的回复');
 assert.deepEqual(await page.evaluate(()=>social.state.comments[10103].future),{original:true});
 await page.evaluate(async()=>{await social.save();await social.load();});

@@ -399,12 +399,13 @@ async function renameEvent(oldId,newId){
 }
 window.STUDIO_RENAME_EVENT=renameEvent;
 async function renumberEvent(eventId){
-  if(renumberPending||S.saving||document.querySelector('#record-id-dialog[open]')||!editable())return false;
+  if(renumberPending||S.saving||conditionEditing()||document.querySelector('#record-id-dialog[open]')||!editable())return false;
   const plan=renumberPlan(eventId);if(!plan)return false;
   return runRenumber(plan);
 }
+function conditionEditing(){return !!document.querySelector('.condition-library[open],#modal[open] #route-condition-editor');}
 async function runRenumber(plan,label=null){
-  if(!editable())return false;const preparationStamp=currentSignature();
+  if(!editable()||conditionEditing())return false;const preparationStamp=currentSignature();
   const oldIds=[...Object.keys(plan.TalkCfg||{}),...Object.keys(plan.OptionCfg||{}),...Object.keys(plan.EvtCfg||{})];if(!oldIds.length)return false;
   const pattern=new RegExp('(?<![0-9])('+oldIds.join('|')+')(?![0-9])');
   const tables={};
@@ -413,10 +414,10 @@ async function runRenumber(plan,label=null){
     for(const [id,row]of Object.entries(S.doc[key]||{})){if(base?.has(String(id))&&!local.has(Number(id)))continue;if((domain&&domain[id]!==undefined)||pattern.test(JSON.stringify(table==='TalkCfg'?Remote.projection(row):row)))rows[id]=row;}
     if(Object.keys(rows).length)tables[table]=rows;
   }
-  await Remote.ensure(S.doc.talks,Object.keys(tables.TalkCfg||{}));if(currentSignature()!==preparationStamp){scheduleRenumber();return false;}
+  await Remote.ensure(S.doc.talks,Object.keys(tables.TalkCfg||{}));if(conditionEditing()||currentSignature()!==preparationStamp){scheduleRenumber();return false;}
   const stamp=currentSignature();if(renumberPending)return false;renumberPending=true;
   let result;try{result=await api('/api/story/renumber',{projectId:S.project.id,mappings:plan,tables});}finally{renumberPending=false;}
-  if(!S.doc||currentSignature()!==stamp){scheduleRenumber();return false;}
+  if(!S.doc||conditionEditing()||currentSignature()!==stamp){scheduleRenumber();return false;}
   if(label)history(label);
   applyRenumber(result);
   return true;
@@ -581,7 +582,7 @@ async function deleteTalkChecked(requested) {
     for(const key of folderKeys)delete S.branchFolders[key];
     const usedOptions=new Set([...values(S.doc.talks).flatMap(t=>ids(t.option)),...values(S.doc.events).flatMap(e=>ids(e.options))]);
     for(const oid of optionIds)if(!usedOptions.has(oid))delete S.doc.options[oid];
-    S.branchFolders=Branches.cleanup(S.doc,S.branchFolders,S.replacements);for(const parent of new Set(values(S.branchFolders).filter(f=>f.kind==='condition').map(f=>f.parentTalkId)))Timeline.sync(S.doc,S.branchFolders,parent);
+    S.branchFolders=Branches.cleanup(S.doc,S.branchFolders,S.replacements);for(const parent of new Set(values(S.branchFolders).filter(f=>f.kind==='condition').map(f=>f.parentTalkId)))Timeline.sync(S.doc,S.branchFolders,parent,true);
     const visible=visibleIds();S.selected=visible.includes(S.selected)?S.selected:(replacements[selected[0]]?.find(id=>visible.includes(id))||visible[Math.min(index,visible.length-1)]||null);S.activeFolder=Branches.ownedBy(S.branchFolders,S.selected);
   });
 }
@@ -734,7 +735,7 @@ function importDialogueRows(rows){
     f=Branches.create(S.doc,S.branchFolders,parent.id,optionId);key=Branches.key(parent.id,optionId);
    }else{
     const result=Timeline.addCondition(S.doc,S.branchFolders,parent.id,newTalkId);f=result.folder;key=result.key;
-    if(spec.number!==null){if(Timeline.entries(S.branchFolders,parent.id).some(([k,g])=>k!==key&&g.branchId===spec.number))throw Error('同一句下面的分支编号重复。');delete S.branchFolders[key];f.branchId=spec.number;key=parent.id+':branch:'+spec.number;S.branchFolders[key]=f;Timeline.sync(S.doc,S.branchFolders,parent.id);}
+    if(spec.number!==null){if(Timeline.entries(S.branchFolders,parent.id).some(([k,g])=>k!==key&&g.branchId===spec.number))throw Error('同一句下面的分支编号重复。');delete S.branchFolders[key];f.branchId=spec.number;key=parent.id+':branch:'+spec.number;S.branchFolders[key]=f;Timeline.sync(S.doc,S.branchFolders,parent.id,true);}
    }
    S.folderOpen[key]=true;sectionFolders.set(index,f);states.set(index,states.get('row:'+spec.parent)||stageAt(parent.id));return f;
   }
@@ -830,12 +831,7 @@ window.STUDIO_RETRY_CONDITIONS=()=>loadConditionCatalog(true);
 function conditionMarkup(scope,id,field,title,description,forceOpen=false){return `<details class="condition-section" ${forceOpen||(S.doc?.[scope]?.[id]?.[field]||[]).length?'open':''}><summary>${h(title)} <span>${S.doc?.[scope]?.[id]?.[field]?.length||0} 项</span></summary><div data-condition-scope="${scope}" data-condition-id="${id}" data-condition-field="${field}" data-condition-description="${h(description)}"></div></details>`;}
 // Reference consumers read rows by ID; merge on access so mounting an empty
 // condition editor does not instantiate every dialogue in a segmented table.
-function talkReferenceView(base,local){if(!base||base===local)return local;return new Proxy({}, {
- get(_,id){return Object.hasOwn(local,id)?local[id]:Object.hasOwn(base,id)?base[id]:Reflect.get(_,id);},
- has(_,id){return Object.hasOwn(local,id)||Object.hasOwn(base,id)||id in Object.prototype;},
- ownKeys(){return [...new Set([...Object.keys(base),...Object.keys(local)])].sort((a,b)=>Number(a)-Number(b));},
- getOwnPropertyDescriptor(_,id){return Object.hasOwn(local,id)||Object.hasOwn(base,id)?{configurable:true,enumerable:true}:undefined;}
- });}
+function talkReferenceView(base,local){return Remote.referenceView(base,local);}
 function mountConditionEditors(root){
   root.querySelectorAll('[data-condition-scope]').forEach(node=>{const scope=node.dataset.conditionScope,id=Number(node.dataset.conditionId),field=node.dataset.conditionField,row=S.doc?.[scope]?.[id];if(!row)return;
     Conditions.mount(node,{rows:row[field]||[],templates:allConditionTemplates(),refs:{...S.conditionRefs,EvtCfg:{...S.conditionRefs.EvtCfg,...S.doc.events},OptionCfg:{...S.conditionRefs.OptionCfg,...S.doc.options},TalkCfg:talkReferenceView(S.conditionRefs.TalkCfg,S.doc.talks)},localIds:S.conditionLocalIds,readOnly:S.project?.readOnly||S.conditionsLoading,description:node.dataset.conditionDescription,onChange:rows=>{mutate('修改剧情条件',()=>row[field]=rows,null,false);node.closest('details')?.querySelector('summary span')?.replaceChildren(document.createTextNode(rows.length+' 项'));renderList();scenePlayer?.refresh();}});
@@ -885,11 +881,11 @@ function toggleFolder(key){const d=key.endsWith(':legacy')?{}:folderDescription(
 let pendingModalSave=null;
 function modal(title,body,buttons) {
   const d=$('#modal');if(d.open)d.close();
-  pendingModalSave=['事件设置','新建事件','导入对话'].includes(title)?buttons.find(b=>b.primary)?.run:null;
+  pendingModalSave=['事件设置','新建事件','创建事件','导入对话'].includes(title)?buttons.find(b=>b.primary)?.run:null;
   $('#modal-content').innerHTML=`<div class="modal-header"><h2>${h(title)}</h2><button class="close-icon" id="modal-close" aria-label="关闭">×</button></div><div class="modal-body">${body}</div><div class="modal-footer">${buttons.map((b,i)=>`<button data-modal-button="${i}" class="${b.danger?'danger-button':b.primary?'primary':''}">${h(b.label)}</button>`).join('')}</div>`;
   $('#modal-close').onclick=closeModal;$$('[data-modal-button]',d).forEach(b=>b.onclick=async()=>{if(b.disabled)return;b.disabled=true;try{await buttons[Number(b.dataset.modalButton)].run();}catch(error){fail(error);}finally{if(b.isConnected)b.disabled=false;}});d.showModal();
 }
-function closeModal() {pendingModalSave=null;$('#modal').close();}
+function closeModal() {pendingModalSave=null;$('#modal').close();scheduleRenumber();}
 async function commitOpenEditor(){if($('#modal').open&&$('#dialogue-import-text')&&!$('#dialogue-import-text').value.trim()){closeModal();return;}if($('#modal').open&&pendingModalSave){const commit=pendingModalSave;await commit();if($('#modal').open)throw Error('当前编辑尚未保存，请检查填写内容。');}}
 async function unsaved(next) {
   if(!S.dirty){await next();return;}
@@ -955,7 +951,7 @@ function newProject(copy=false,sourceId=null) {
   const title=copy?'创建副本':'新建模组';
   modal(title,`<p>${copy?'将复制剧情、配置与素材，保留其他编辑器的扩展数据。独立副本可单独编辑；原模组保持原样。':'填写模组名称。工作台会在游戏的本地模组目录中创建项目。'}</p><label class="field-label">模组名称</label><input id="project-name" maxlength="80" placeholder="例如：我的模组" value="${copy?h(source.name+' · 副本'):''}">`,[
     {label:'取消',run:closeModal},{label:copy?'创建副本':'创建模组',primary:true,run:async()=>{
-      const name=$('#project-name').value.trim();if(!name){toast('给模组起一个名字。','note');return;}
+      const name=$('#project-name').value.trim()||'未命名模组';
       if(copy&&S.project?.id===source.id&&S.dirty&&!(await save()))return;
       const data=await api(copy?'/api/copy':'/api/create',copy?{projectId:source.id,name}:{name});closeModal();
       const id=data.project?.id||data.id||data.projectId;await refreshProjects(id);if(id)await selectProjectHome(id);window.dispatchEvent(new CustomEvent('studio-project-created'));toast(copy?'已创建独立副本，可以开始编辑。':'模组已创建。');if(data.warnings?.length)projectFeedback(data.warnings.join('；'),true);
@@ -982,6 +978,7 @@ function changedStoryPayloadFrom(baseline=S.saved?IndexedTalks.parse(S.saved):[]
 async function save() {
   if(!editable()||S.saving)return false;document.activeElement?.blur?.();if(textDirtyTimer!==null)updateDirty();const invalid=document.querySelector('.effect-editor [data-effect-invalid]');if(invalid){for(let parent=invalid.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;toast('有效果参数尚未填好（'+invalid.dataset.effectInvalid+'），已按上一次有效值保存。','note');}if(!S.dirty)return true;
   StudentAgeEventBindings.syncSocialEffects(S.doc);
+  S.branchFolders=Branches.cleanup(S.doc,S.branchFolders,S.replacements);if(S.activeFolder&&!S.branchFolders[S.activeFolder])S.activeFolder=null;
   for(const id of Timeline.internals(S.branchFolders)){const t=S.doc.talks[id];if(!t)continue;if(Remote.hasText(t)||t.roles?.length||t.option?.length||t.effect?.length||t.screenEffect?.length){t.content='';t.roles=[];t.option=[];t.effect=[];t.screenEffect=[];}}S.saving=true;renderChrome();const submittedSignature=currentSignature();
   const sentMappings=S.idMappings;S.idMappings={};
   try{const parts=IndexedTalks.parse(submittedSignature),savedSignature=S.saved,baseline=IndexedTalks.parse(savedSignature),submitted=parts[0],before=baseline[0];await Remote.ensure(submitted.talks,Remote.changed(submitted.talks,before.talks));const live={doc:S.doc,order:S.order,deleted:S.deleted,replacements:S.replacements,premises:S.premises,branchFolders:S.branchFolders,pinned:S.pinned};let payload;try{Object.assign(S,{doc:submitted,order:parts[1],deleted:parts[2],replacements:parts[3],premises:parts[4],branchFolders:parts[5],pinned:Object.fromEntries(Object.entries(parts[6]).map(([k,v])=>[k,new Set(v)]))});payload=changedStoryPayload.call(null,sentMappings,S.saved===savedSignature?baseline:undefined);}finally{Object.assign(S,live);}const data=await api('/api/save',payload);for(const [id,claim]of storyClaims)if(claim.project===payload.projectId&&submitted[claim.key]?.[id]){STUDIO_IDS.commitClaims([id]);storyClaims.delete(id);}if(data.talkGenerationAdvanced)Remote.advance(S.doc.talks,data.revision);S.revision=data.revision??S.revision;const inverse=Object.fromEntries(Object.entries(sentMappings||{}).map(([t,m])=>[t,Object.fromEntries(Object.entries(m).map(([a,b])=>[b,Number(a)]))]));for(const entry of [...S.undo,...S.redo])entry.idMappings=composeMappings(inverse,entry.idMappings||{});const unchanged=currentSignature()===submittedSignature;if(data.branchFolders&&unchanged)S.branchFolders=clone(data.branchFolders);if(data.premises&&unchanged)S.premises=clone(data.premises);S.saved=unchanged?currentSignature():submittedSignature;S.dirty=currentSignature()!==S.saved;if(data.warnings?.length)toast('已保存。'+data.warnings.join(' '),'note');else toast(S.dirty?'已保存此前的修改，继续编辑的内容仍待保存。':'模组已保存，修改前的文件已备份。');return !S.dirty;}
@@ -1036,30 +1033,32 @@ function eventDetails(id=S.event,creation=null) {
   const eventTalkIds=new Set(graphOrder(ids(e.talkId))),initialBindings={actions:[...values(S.doc.actionEvents).filter(r=>ids(r.evts).includes(Number(e.id))).map(r=>({id:Number(r.id),rate:r.rate??1,mode:'pool'})),...values(S.doc.actions).filter(r=>Number(r.evtId)===Number(e.id)).map(r=>({id:Number(r.id),mode:'direct',rate:1}))],interactions:values(S.doc.interactions).filter(r=>eventTalkIds.has(Number(r.talkId))).map(clone)};
   initialBindings.gifts=StudentAgeEventBindings.giftsForEvent(S.doc,e);
   if(e.studioSocial)initialBindings.social=StudentAgeEventBindings.socialDraft(e);
-  let bindings=clone(initialBindings),bindingsChanged=false,socialApplied=clone(e.studioSocial||{});
+  let bindings=clone(e.studioEventBindingDraft||initialBindings),bindingsChanged=!!e.studioEventBindingDraft,socialApplied=clone(e.studioSocial||{});
   const referenceOptions=(table,selected,empty)=>{const rows={...(table==='EvtTypeCfg'?window.StudentAgeEventTypes:{}),...S.conditionRefs[table]};let out=`<option value="0" ${Number(selected||0)===0?'selected':''}>${h(empty)}</option>`;for(const row of values(rows))if(Number(row.id)!==0)out+=`<option ${StudentAgeRecordLabels.option(row.id)} value="${row.id}" ${Number(row.id)===Number(selected)?'selected':''}>${h(row.name||row.title||row.desc||'未命名')}</option>`;if(selected&&!rows[selected])out+=`<option value="${selected}" selected>保留原有设置</option>`;return out;};
   modal(creation?'创建事件':readOnly?'事件信息':'事件设置',`<fieldset ${readOnly?'disabled':''} class="event-settings-fields"><div class="field-grid event-name-grid"><label><span class="field-label">事件名称</span><input id="event-title" value="${h(e.title||'')}"></label><label><span class="field-label">事件 ID</span><input id="event-id" type="number" min="1" max="2147483647" step="1" value="${h(e.id)}" ${!creation&&(S.catalogIds?.events?.has(String(e.id))||S.project?.originalMode)?'disabled title="原版事件的编号不能修改"':''}><small class="helper">1–2147483647 之间的任意整数均可；对话编号随之变为 事件号×1000+序号；与原版或本模组其他事件重复时不会拒绝，只在事件卡上标出。</small></label></div><div class="field-grid"><label><span class="field-label">事件类型</span><button id="event-type" value="${Number(e.type)||0}">${h(StudentAgeCharacterUI.eventName(StudentAgeEventBindings.displayType(e),S.conditionRefs.EvtTypeCfg))} ▾</button></label><label><span class="field-label">发生地点</span><select id="event-map">${referenceOptions('MapCfg',e.mapId,'不限地点')}</select></label></div><p id="event-type-note" class="event-type-note">${h(StudentAgeCharacterUI.eventDescription(e.type||0))}</p><input id="event-npc" type="hidden" value="${Number(e.npc)||0}"><div id="event-parameters" class="field-grid"></div><div class="field-grid"><label><span class="field-label">触发概率（%）</span><input id="event-rate" type="number" min="0" max="100" step="any" value="${h((e.rate??1)*100)}"></label><label><span class="field-label">最多发生次数</span><input id="event-maxcount" type="number" step="1" value="${h(e.maxcount??1)}"></label></div><label class="field-label">从哪句开始</label><select id="event-first">${talkOptions(ids(e.talkId)[0]||(creation?0:firstOwnedEventTalk(e))||0).replace('结束这段对话','默认从本事件第一句开始')}</select><p class="helper">默认使用本事件第一句；尚无对话时，添加第一句后自动设置，也可以手动选择其他入口。</p>${ids(e.talkId).length>1?`<label class="field-label">女主角从哪句开始</label><select id="event-first-female">${talkOptions(ids(e.talkId)[1]||0)}</select><p class="helper">第一项为男主角入口；保留原有其他入口。</p>`:''}</fieldset><h3 class="event-condition-title">事件触发条件</h3><div id="event-conditions"></div><section id="event-effects-section"><h3 class="event-condition-title">事件效果</h3><p class="helper" id="event-effects-note" hidden>这个事件在游戏里播放对话，不会执行事件本身的效果。要让效果生效，请在对话里选中一句，在「本句效果」中添加：游戏显示这句对话时执行。社交绑定自动生成的效果已写在对话末句，不受影响。</p><div id="event-effects"></div><button type="button" class="danger-text" id="event-effects-clear" hidden>清除这些不生效的事件效果</button></section>`,readOnly?[{label:'关闭',run:closeModal}]:[{label:'取消',run:closeModal},{label:creation?'创建':'应用',primary:true,run:async()=>{
     const title=$('#event-title').value.trim(),first=Number($('#event-first').value)||(creation?0:firstOwnedEventTalk(e))||Number(creation?.entry)||0,type=Number($('#event-type').value),npc=Number($('#event-npc').value),mapId=Number($('#event-map').value),rate=Number($('#event-rate').value)/100,maxcount=Number($('#event-maxcount').value),female=$('#event-first-female')?Number($('#event-first-female').value):null;
-    const invalid=$('#event-effects-section').hidden?null:$('#event-effects [data-effect-invalid]');if(invalid){invalid.focus();throw Error(invalid.dataset.effectInvalid||'请检查事件效果。');}if(!title)throw Error('请填写事件名称。');if(!Number.isFinite(rate)||rate<0||rate>1||!Number.isInteger(maxcount))throw Error('概率应为 0 到 100，发生次数应为整数。');
-    const wantedId=Number($('#event-id').value);if(!Number.isInteger(wantedId)||wantedId<=0||wantedId>2147483647)throw Error('事件 ID 应为 1 到 2147483647 之间的整数。');if(creation&&S.doc.events[wantedId]&&(S.localIds.events||[]).map(Number).includes(wantedId)){const moved=nextId(S.doc.events,1000000);await renameEvent(wantedId,moved);toast('本模组原有事件 '+wantedId+' 已改为 '+moved+'，新事件使用 '+wantedId+'。','note');}
+    const warnings=[],notice=message=>warnings.push(message);
+    const invalid=$('#event-effects-section').hidden?null:$('#event-effects [data-effect-invalid]');if(invalid)notice('效果参数未填完，保留上一次可解析值。');if(!title)notice('事件尚未命名。');if(!Number.isFinite(rate)||rate<0||rate>1||!Number.isInteger(maxcount))notice('概率或发生次数尚未设置完整。');
+    const idInput=Number($('#event-id').value),validId=Number.isInteger(idInput)&&idInput>0&&idInput<=2147483647,wantedId=validId?idInput:Number(e.id);if(!validId)notice('事件编号尚未填写完整，暂用 '+wantedId+'。');if(creation&&S.doc.events[wantedId]&&(S.localIds.events||[]).map(Number).includes(wantedId)){const moved=nextId(S.doc.events,1000000);await renameEvent(wantedId,moved);toast('本模组原有事件 '+wantedId+' 已改为 '+moved+'，新事件使用 '+wantedId+'。','note');}
     if(creation)e.id=wantedId;
     if(!creation&&S.doc.events[id]!==e)throw Error('事件已变化，请重新打开设置。');
     if(creation?.entry&&!new Set(unassignedTalkIds()).has(creation.entry))throw Error('这句对话已归属其他事件，请重新选择。');
-    if(bindingsChanged&&!bindings.social&&type===4&&bindings.actions.some(r=>r.mode==='direct'&&Number((S.doc.actions[r.id]||S.conditionRefs.ActionCfg?.[r.id])?.evtId)>0&&Number((S.doc.actions[r.id]||S.conditionRefs.ActionCfg[r.id]).evtId)!==Number(e.id)))throw Error('所选行动已有固定剧情，请选择随机剧情池，或先调整原来的固定剧情。');
-    if(bindingsChanged&&!bindings.social&&[2,21,22,522].includes(type)&&bindings.interactions.some(r=>!String(r.text||'').trim()))throw Error('请填写社交互动的进度条文字。');
+    const actionsReady=!(bindingsChanged&&!bindings.social&&type===4&&bindings.actions.some(r=>r.mode==='direct'&&Number((S.doc.actions[r.id]||S.conditionRefs.ActionCfg?.[r.id])?.evtId)>0&&Number((S.doc.actions[r.id]||S.conditionRefs.ActionCfg[r.id]).evtId)!==Number(e.id)));if(!actionsReady)notice('行动已有固定剧情，已保留本次绑定草稿，原绑定暂不改动。');
+    if(bindingsChanged&&!bindings.social&&[2,21,22,522].includes(type)&&bindings.interactions.some(r=>!String(r.text||'').trim()))notice('社交互动的进度条文字尚未填写。');
     const gifts=type===110?(bindings.gifts||[]):[];
-    if(type===110&&(!gifts.length||gifts.some(r=>!Number.isInteger(r.npc)||r.npc<=0||!Number.isInteger(r.item)||r.item<=0)))throw Error('请在事件类型中选择收礼人和礼物物品。');
-    if(gifts.length)StudentAgeEventBindings.resolveGiftSlots(S.doc,e,initialBindings.gifts,gifts);
+    let giftsReady=!(type===110&&(!gifts.length||gifts.some(r=>!Number.isInteger(r.npc)||r.npc<=0||!Number.isInteger(r.item)||r.item<=0)));if(!giftsReady)notice('收礼人或物品尚未选择，已保留送礼绑定草稿。');
+    if(giftsReady&&gifts.length)try{StudentAgeEventBindings.resolveGiftSlots(S.doc,e,initialBindings.gifts,gifts);}catch(error){giftsReady=false;notice(error.message+' 本次绑定已保存为草稿，原绑定暂不改动。');}
     const phoneBg=Number($('#event-phone-bg')?.value)||phoneChange?.bg||e.studioPhoneBackground||phoneHome(npc);
-    if(bindings.social)StudentAgeEventBindings.validateSocial(S.doc,{...e,npc,maxcount,talkId:first?[first]:[]},bindings,S.conditionRefs);
+    let socialReady=true;if(bindings.social)try{StudentAgeEventBindings.validateSocial(S.doc,{...e,npc,maxcount,talkId:first?[first]:[]},bindings,S.conditionRefs);}catch(error){socialReady=false;notice(error.message+' 本次配置已保留为草稿。');}
     closeModal();mutate(creation?'创建事件':'修改事件与触发条件',()=>{
       const wasPhone=[70,71].includes(Number(e.type)),oldCaller=Number(e.npc)||0;
-      Object.assign(e,{title,type,npc,mapId,rate,maxcount,condition:conditions,effect:effects});
+      Object.assign(e,{title,type,npc,mapId,rate:Number.isFinite(rate)?rate:e.rate??1,maxcount:Number.isFinite(maxcount)?maxcount:e.maxcount??1,condition:conditions,effect:effects});
+      if(actionsReady&&giftsReady&&socialReady)delete e.studioEventBindingDraft;else e.studioEventBindingDraft=clone(bindings);
       if(wasPhone&&![70,71].includes(type)){for(const tid of graphOrder(ids(e.talkId))){const row=S.doc.talks[tid];if(Number(row.screenEffect?.[0])===4007){row.bg=e.studioPhoneBackground||100;row.screenEffect=[];if(oldCaller>0)row.roles.push([oldCaller,1002,1,1,0]);}else if(Number(row.screenEffect?.[0])===4008)row.screenEffect=[];}delete e.studioPhoneBackground;}
       if(female!==null){e.talkId=ids(e.talkId);e.talkId[0]=first;e.talkId[1]=female;}else if(first!==(ids(e.talkId)[0]||0))e.talkId=first?[first]:[];
       if(creation){S.doc.events[e.id]=e;S.event=e.id;S.selected=null;S.activeFolder=null;if(!(S.localIds.events||[]).map(Number).includes(Number(e.id)))(S.localIds.events??=[]).push(Number(e.id));}
       if(!creation&&wantedId!==Number(e.id))setTimeout(()=>renameEvent(Number(e.id),wantedId).catch(fail),0);
-      if(bindingsChanged){
+      if(bindingsChanged&&actionsReady&&socialReady){
         const selectedActions=type===4&&!bindings.social?bindings.actions:[];
         for(const before of initialBindings.actions){if(before.mode==='direct'){if(Number(S.doc.actions[before.id]?.evtId)===Number(e.id))S.doc.actions[before.id].evtId=0;}else if(S.doc.actionEvents[before.id])S.doc.actionEvents[before.id].evts=ids(S.doc.actionEvents[before.id].evts).filter(id=>id!==Number(e.id));}
         for(const binding of selectedActions){if(binding.mode==='direct'){S.doc.actions[binding.id]={...clone(S.doc.actions[binding.id]||S.conditionRefs.ActionCfg[binding.id]),evtId:e.id};}else{const row=S.doc.actionEvents[binding.id]||clone(S.conditionRefs.ActionEvtCfg?.[binding.id]||{id:binding.id,evts:[],rate:1});row.evts=[...new Set([...ids(row.evts),e.id])];row.rate=binding.rate;S.doc.actionEvents[binding.id]=row;}}
@@ -1068,13 +1067,13 @@ function eventDetails(id=S.event,creation=null) {
         if(interactions.some(r=>!r.talkId)&&!ids(e.talkId)[0]){const tid=STUDIO_IDS.allocate('TalkCfg',S.doc.talks,e.id);S.doc.talks[tid]=normalizeTalk({id:tid,content:'',bg:0,roleIds:[]});e.talkId=[tid];S.order.push(tid);}
         for(const row of interactions)S.doc.interactions[row.id]={...clone(row),npc,name:row.name||title,talkId:row.talkId||ids(e.talkId)[0]};
       }
-      if(gifts.length&&!ids(e.talkId)[0]){const tid=STUDIO_IDS.allocate('TalkCfg',S.doc.talks,e.id);S.doc.talks[tid]=normalizeTalk({id:tid,content:'',bg:0,roleIds:[]});e.talkId=[tid];S.order.push(tid);}
-      if(gifts.length||initialBindings.gifts.length)StudentAgeEventBindings.applyGifts(S.doc,e,initialBindings.gifts,gifts,rows=>STUDIO_IDS.allocate('GiftEvtCfg',rows));
-      if(bindings.social?.kind==='minigame'&&!e.talkId?.[0]){const tid=STUDIO_IDS.allocate('TalkCfg',S.doc.talks,e.id);S.doc.talks[tid]=normalizeTalk({id:tid,content:'',bg:0,roleIds:[]});e.talkId=[tid];S.order.push(tid);}
-      e.studioSocial={...(e.studioSocial||{}),...socialApplied,conditions:socialApplied.conditions||[],effects:socialApplied.effects||[]};
-      StudentAgeEventBindings.applySocial(S.doc,e,bindings,S.conditionRefs,(table,rows)=>STUDIO_IDS.allocate(table,rows));
+      if(giftsReady&&gifts.length&&!ids(e.talkId)[0]){const tid=STUDIO_IDS.allocate('TalkCfg',S.doc.talks,e.id);S.doc.talks[tid]=normalizeTalk({id:tid,content:'',bg:0,roleIds:[]});e.talkId=[tid];S.order.push(tid);}
+      if(giftsReady&&(gifts.length||initialBindings.gifts.length))StudentAgeEventBindings.applyGifts(S.doc,e,initialBindings.gifts,gifts,rows=>STUDIO_IDS.allocate('GiftEvtCfg',rows));
+      if(socialReady&&bindings.social?.kind==='minigame'&&!e.talkId?.[0]){const tid=STUDIO_IDS.allocate('TalkCfg',S.doc.talks,e.id);S.doc.talks[tid]=normalizeTalk({id:tid,content:'',bg:0,roleIds:[]});e.talkId=[tid];S.order.push(tid);}
+      if(socialReady){e.studioSocial={...(e.studioSocial||{}),...socialApplied,conditions:socialApplied.conditions||[],effects:socialApplied.effects||[]};
+      StudentAgeEventBindings.applySocial(S.doc,e,bindings,S.conditionRefs,(table,rows)=>STUDIO_IDS.allocate(table,rows));}
       if([70,71].includes(type)){e.studioPhoneBackground=phoneBg;configurePhone(e,npc,phoneBg);}
-    });window.STUDIO_EVENTS?.refresh();
+    });window.STUDIO_EVENTS?.refresh();if(warnings.length)toast('已保留事件草稿：'+[...new Set(warnings)].join(' '),'note');
   }}]);
   function parameters(){
     const type=Number($('#event-type').value),spec=StudentAgeCharacterUI.eventParameter(type),npc=Number($('#event-npc').value),phone=[70,71].includes(type),root=$('#event-parameters');
@@ -2201,8 +2200,8 @@ window.STUDIO_COMMIT_OPEN_EDITOR=commitOpenEditor;
 window.STUDIO_HAS_OPEN_DRAFT=()=>!!($('#modal').open&&pendingModalSave);
 window.STUDIO_DISCARD_STORY=()=>{
  closeModal();if(!S.dirty)return;
- const [doc,order,deleted,replacements,premises,branchFolders]=IndexedTalks.parse(S.saved);
- S.undo=[];S.redo=[];restore({doc,order,deleted,replacements,premises,branchFolders,selected:doc.talks[S.selected]?S.selected:order[0]||null,event:S.event==='all'||doc.events[S.event]?S.event:'all'});window.STUDIO_EVENTS?.refresh();
+ const [doc,order,deleted,replacements,premises,branchFolders,pinnedIds]=IndexedTalks.parse(S.saved);
+ S.undo=[];S.redo=[];restore({doc,order:{whole:order},deleted,replacements,premises,branchFolders,pinnedIds,selected:doc.talks[S.selected]?S.selected:order[0]||null,event:S.event==='all'||doc.events[S.event]?S.event:'all'});window.STUDIO_EVENTS?.refresh();
 };
 window.STUDIO_BEFORE_WORKSHOP=async()=>{if(!S.project)return false;const options={dirty:()=>S.dirty||window.STUDIO_HAS_OPEN_DRAFT(),save:async()=>{await commitOpenEditor();return !S.dirty||await save();},discard:window.STUDIO_DISCARD_STORY};return window.STUDIO_NAV?window.STUDIO_NAV.prepareLeave(options):options.save();};
 window.STUDIO_REQUEST_CLOSE=async()=>{await commitOpenEditor();const deadline=Date.now()+45000;while(S.saving||S.projectOpening){if(Date.now()>deadline)throw Error('读取或保存尚未完成，请稍后重试。');await new Promise(r=>setTimeout(r,50));}return !S.dirty||await save();};

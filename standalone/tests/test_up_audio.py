@@ -244,17 +244,17 @@ class UpAudioSaveTests(unittest.TestCase):
         self.assertEqual(error.exception.status, 409)
         self.assertEqual((self.cfg / 'TalkCfg.json').read_bytes(), before)
 
-    def test_invalid_sound_type_uses_existing_confirmable_warning_flow(self):
+    def test_invalid_sound_type_saves_draft_with_warning(self):
         import save_review
         before = (self.cfg / 'TalkCfg.json').read_bytes()
         payload = {'projectId': self.ident, 'revision': self.store.revision(self.project),
                    'audioCues': {'sfx': {'1': [{'audioId': 7}]}, 'bgm': []}}
-        with self.assertRaises(b.ApiError) as error: save_review.perform(self.store.save, payload, b.ApiError)
-        self.assertEqual(error.exception.code, 'save_warnings')
-        self.assertEqual((self.cfg / 'TalkCfg.json').read_bytes(), before)
-        payload['_confirmedSaveWarnings'] = error.exception.warnings
         result = save_review.perform(self.store.save, payload, b.ApiError)
         self.assertTrue(result['ok'])
+        self.assertTrue(any('音效' in issue for issue in result['warnings']))
+        self.assertEqual((self.cfg / 'TalkCfg.json').read_bytes(), before)
+        cues = b.read_json(self.project.path / 'StudentAgeStudio/audio-cues.json')
+        self.assertEqual(cues['sfx'], payload['audioCues']['sfx'])
 
     def test_compiled_text_only_edit_retains_fast_path(self):
         self.save(audioCues={'sfx': {'2': [{'audioId': 9}]}, 'bgm': [self.group()]})
@@ -305,17 +305,18 @@ class UpAudioSaveTests(unittest.TestCase):
         self.assertEqual(self.read()['2']['audio'], 8)
         self.assertNotIn(2, self.store.load(self.ident)['audioCues']['bgm'][0]['talkIds'])
 
-    def test_confirmed_missing_sound_reference_keeps_draft_readable(self):
+    def test_missing_sound_reference_keeps_draft_readable_without_generated_command(self):
         import save_review
+        before = self.read()['1']
         payload = {'projectId': self.ident, 'revision': self.store.revision(self.project),
                    'audioCues': {'sfx': {'1': [{'audioId': 12345, 'volume': .3}]}, 'bgm': []}}
-        with self.assertRaises(b.ApiError) as error: save_review.perform(self.store.save, payload, b.ApiError)
-        payload['_confirmedSaveWarnings'] = error.exception.warnings
-        self.assertTrue(save_review.perform(self.store.save, payload, b.ApiError)['ok'])
-        self.assertEqual(self.read()['1']['effect'], [[1163, 3, 12345, 1]])
+        result = save_review.perform(self.store.save, payload, b.ApiError)
+        self.assertTrue(result['ok'])
+        self.assertTrue(any('不存在的音频' in issue for issue in result['warnings']))
+        self.assertEqual(self.read()['1'], before)
         cues = b.read_json(self.project.path / 'StudentAgeStudio/audio-cues.json')
         self.assertEqual(cues['sfx']['1'][0]['volume'], .3)
-        self.assertEqual(cues['upAudio']['aliases'], {})
+        self.assertNotIn('upAudio', cues)
         self.assertFalse((self.project.path / 'BetterAudio/BetterAudio.json').exists())
 
     def test_large_source_id_gets_float_exact_alias_for_up(self):

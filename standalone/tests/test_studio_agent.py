@@ -81,6 +81,20 @@ class StudioAgentTests(unittest.TestCase):
         self.assertNotIn('1500000', doc['events'])
         self.assertFalse({str(t) for t in created['lineIds']} & {str(k) for k in doc['localIds'].get('talks', [])})
 
+    def test_empty_names_and_unfinished_external_use_save_via_agent(self):
+        created=self.studio.create_mod('')
+        self.assertTrue(created['created'])
+        self.assertTrue(self.store.project(created['mod']['id']).path.is_dir())
+        event=self.studio.create_event(self.mod,'',[{'text':'unfinished title'}],event_id=1500000)
+        self.assertTrue(event['saved']);self.assertEqual(self.store.load(self.mod)['events']['1500000']['title'],'')
+        use={'kind':'mini-start','npc':'unselected','level':None,'params':None,'future':{'keep':7}}
+        result=self.studio.create_external_dialogue(self.mod,'',[{'text':'unfinished folder'}],uses=[None,use])
+        self.assertTrue(result['saved']);self.assertTrue(result['warnings'])
+        path=self.store.project(self.mod).path/'StudentAgeStudio/editor-state.json'
+        folder=server.read_json(path)['externalDialogueFolders'][result['folder']]
+        self.assertEqual(folder['name'],'');self.assertIsNone(folder['uses'][0])
+        for key,value in use.items():self.assertEqual(folder['uses'][1][key],value)
+
     def test_staging_follows_the_game_rules(self):
         s, mod = self.studio, self.mod
         cfgs = self.store.project(mod).path / 'Cfgs' / 'zh-cn'
@@ -165,8 +179,7 @@ class StudioAgentTests(unittest.TestCase):
         with self.assertRaises(studio_agent.AgentError) as missing:
             self.studio.event(self.mod, 1)
         self.assertIn('找不到事件', missing.exception.message)
-        with self.assertRaises(studio_agent.AgentError):
-            self.studio.create_event(self.mod, '', [{'text': 'x'}])
+        self.assertTrue(self.studio.create_event(self.mod, '', [{'text': 'x'}])['saved'])
         with self.assertRaises(studio_agent.AgentError) as speaker:
             self.studio.create_event(self.mod, '人物', [{'speaker': '不存在的人', 'text': 'x'}])
         self.assertIn('找不到名为', speaker.exception.message)

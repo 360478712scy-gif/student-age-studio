@@ -658,8 +658,6 @@ class Studio:
         project, doc = self._load(mod)
         if project.get('readOnly'):
             raise AgentError('订阅模组只读，不能修改。可先在编辑器中创建副本。')
-        if not str(title or '').strip():
-            raise AgentError('请填写事件名称。')
         before = self._snapshot(doc)
         ident = _int(event_id, '事件编号') if event_id else self._new_event_id(project, doc)
         if str(ident) in doc['events']:
@@ -669,7 +667,7 @@ class Studio:
         npc_id = self._speaker(doc, npc) if npc not in (None, 0, '0', '') else 0
         first, talks, options, order, cues = self._build_lines(doc, ident, lines, project_id=project['id'])
         self._apply_cues(doc, order, cues)
-        doc['events'][str(ident)] = {'id': ident, 'title': str(title).strip(), 'type': _int(type, '事件类型'), 'talkId': [first],
+        doc['events'][str(ident)] = {'id': ident, 'title': title, 'type': _int(type, '事件类型'), 'talkId': [first],
                                      'rate': float(rate) if float(rate) != int(float(rate)) else int(float(rate)), 'npc': npc_id,
                                      'maxcount': _int(maxcount, '最多发生次数'), 'mapId': _int(map_id, '地点'),
                                      'effect': list(effect or []), 'condition': list(condition or []), 'displayType': 0,
@@ -1078,8 +1076,6 @@ class Studio:
 
     def create_mod(self, name, copy_from=None):
         """A new empty local mod, or a local copy of an existing one (subscribed mods included)."""
-        if not str(name or '').strip():
-            raise AgentError('请填写模组名称。')
         if copy_from:
             source = self._project(copy_from)
             created = self._call(self.store.duplicate, source['id'], str(name).strip())
@@ -1207,8 +1203,6 @@ class Studio:
         project, doc = self._load(mod)
         if project.get('readOnly'):
             raise AgentError('订阅模组只读，不能修改。')
-        if not str(name or '').strip():
-            raise AgentError('请填写对话夹名称。')
         data = self._call(external_dialogues.load, self.store, project['id'], server)
         block = self._new_event_id(project, doc)
         first, talks, options, order, cues = self._build_lines(doc, block, lines, project_id=project['id'])
@@ -1217,23 +1211,20 @@ class Studio:
         folder_id = 'ai-' + uuid.uuid4().hex[:12]
         bound = []
         for use in uses or []:
-            if not isinstance(use, dict) or use.get('kind') not in external_usages.KINDS or external_usages.KINDS[use['kind']].get('disabled'):
-                raise AgentError('用途 kind 无效。可用 list_assets(kind="dialogue_uses") 查看。')
-            item = {'id': uuid.uuid4().hex, 'kind': use['kind'], 'entryId': first, 'gender': use.get('gender', 'both')}
-            for key in ('recordId', 'item', 'level', 'giftMode', 'answer'):
-                if use.get(key) not in (None, ''):
-                    item[key] = use[key]
+            if not isinstance(use, dict):
+                bound.append(copy.deepcopy(use)); continue
+            item = {**copy.deepcopy(use), 'id': use.get('id') or uuid.uuid4().hex,
+                    'entryId': use.get('entryId', first), 'gender': use.get('gender', 'both')}
             if use.get('npc') not in (None, ''):
-                item['npc'] = self._speaker(doc, use['npc'])
-            if use.get('params'):
-                item['params'] = use['params']
+                try: item['npc'] = self._speaker(doc, use['npc'])
+                except AgentError: pass  # Keep the unfinished reference for the save warning.
             bound.append(item)
-        folders = {**data['folders'], folder_id: {'name': str(name).strip(), 'talkIds': order, 'uses': bound, 'sequence': False}}
+        folders = {**data['folders'], folder_id: {'name': name, 'talkIds': order, 'uses': bound, 'sequence': False}}
         payload = {'projectId': project['id'], 'revision': data['revision'], 'talks': {**data['talks'], **talks}, 'folders': folders}
         if confirm:
             payload['_confirmedSaveWarnings'] = list(confirm)
         if dry_run:
-            return {'dryRun': True, 'folder': folder_id, 'lineIds': order, 'uses': [u['kind'] for u in bound]}
+            return {'dryRun': True, 'folder': folder_id, 'lineIds': order, 'uses': [u.get('kind') if isinstance(u, dict) else None for u in bound]}
         try:
             result = save_review.perform(lambda value: external_dialogues.save(self.store, value, server), payload, server.ApiError)
         except server.ApiError as error:
@@ -1248,7 +1239,7 @@ class Studio:
             self._save(project2, doc2, before)
         saved = result['folders'].get(folder_id, {})
         return {'saved': True, 'folder': folder_id, 'lineIds': order,
-                'uses': [{'kind': u.get('kind'), 'recordId': u.get('recordId')} for u in saved.get('uses', [])], 'warnings': result.get('warnings', [])}
+                'uses': [{'kind': u.get('kind'), 'recordId': u.get('recordId')} if isinstance(u, dict) else copy.deepcopy(u) for u in saved.get('uses', [])], 'warnings': result.get('warnings', [])}
 
     def backup(self, mod):
         project = self._project(mod)

@@ -1,0 +1,33 @@
+'use strict';
+// Exercise production save/dirty functions: incomplete text must not trap exit.
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const root=path.resolve(__dirname,'..'),checks=[];
+const source=name=>fs.readFileSync(path.join(root,name),'utf8');
+const functionLine=(text,name)=>text.slice(text.indexOf('async function '+name+'(')).split('\n')[0];
+(async()=>{
+ const text=source('characters.js'),invalid=[{dataset:{personRaw:'PersonCfg.1.url'},value:'"unfinished'}];
+ let saves=0,fail=false,rendered=0;
+ const S={data:{},tables:{PersonCfg:{1:{id:1,name:'',future:{keep:true}}}},outfits:{},romance:{},revision:'r1',undo:[1],redo:[],saved:''};
+ const c=vm.createContext({S,host:{querySelectorAll:()=>invalid,querySelector:()=>invalid[0]||null},options:{project:{id:'isolated'},status:()=>{}},copy:structuredClone,readonly:()=>false,notify:()=>{},render:()=>{rendered++;},window:{STUDIO_NOTIFY:()=>{}},snapshot:()=>JSON.stringify({tables:S.tables,outfits:S.outfits,romance:S.romance}),api:async()=>{saves++;if(fail)throw Error('actual I/O failure');return {tables:S.tables,outfits:S.outfits,romance:S.romance,revision:'r2'};}});
+ S.saved=c.snapshot();
+ const raw=text.slice(text.indexOf("let acceptedRaw="),text.indexOf('\nconst $='));
+ const dirty=text.slice(text.indexOf('dirty=()=>'),text.indexOf('\nconst notify='));
+ vm.runInContext(raw+'\nconst '+dirty+'\n'+functionLine(text,'save'),c);
+ assert.equal(vm.runInContext('dirty()',c),true);await vm.runInContext('save()',c);
+ assert.equal(vm.runInContext('dirty()',c),false);assert.equal(invalid[0].value,'"unfinished');assert.equal(rendered,0);assert.equal(saves,1);assert.deepEqual(S.tables.PersonCfg[1].future,{keep:true});
+ invalid[0].value='"changed';assert.equal(vm.runInContext('dirty()',c),true);fail=true;await assert.rejects(vm.runInContext('save()',c),/actual I\/O failure/);assert.equal(vm.runInContext('dirty()',c),true);assert.equal(invalid[0].value,'"changed');checks.push('character raw draft is acknowledged only after successful save; later edits and I/O failures remain dirty');
+ const wText=source('workshop.js'),W={project:{id:'isolated'},mode:'table',selected:'1',table:{name:'TraitsCfg',rows:{}},rows:{1:{id:1,name:'',effect:[[0]],future:{keep:true}}},saved:'',revision:'r1',busy:false,info:{tables:[{name:'TraitsCfg'}]},refs:{},undo:[],redo:[]};
+ const input={value:'0,unfinished',hasAttribute:k=>k==='data-command-raw',getAttribute:k=>k==='data-command-raw'?'effect.0':k==='aria-invalid'?'true':null};
+ let writes=0,wFail=false;
+ const w=vm.createContext({W,host:{hidden:false,querySelector:()=>input},CSS:{escape:s=>s},document:{activeElement:null},draftTable:()=>false,special:()=>false,readonly:()=>false,readonlyMessage:()=>'',renderStatus:()=>{},renderPreview:()=>{},status:()=>{},clone:structuredClone,query:()=>'?projectId=isolated',snapshot:()=>JSON.stringify(W.rows),window:{STUDIO_NOTIFY:()=>{},STUDIO_SAVE_REVIEW:{confirm:()=>{throw Error('unexpected completeness confirmation');}}},api:async(url,data)=>{if(url.startsWith('/api/table?'))return {rows:W.rows,referenceRows:{}};writes++;if(wFail)throw Error('actual HTTP write failure');return {rows:W.rows,revision:'r2'};}});
+ W.saved=w.snapshot();
+ const helpers=wText.slice(wText.indexOf('const formDrafts='),wText.indexOf('\nconst special='));
+ const wDirty=wText.slice(wText.indexOf('const dirty=()=>'),wText.indexOf('\nfunction reportError'));
+ const check=wText.slice(wText.indexOf('function checkCommandInputs()'),wText.indexOf("\nwindow.addEventListener('studio-assets-imported'"));
+ const flush=wText.slice(wText.indexOf('async function flush(){'),wText.indexOf('\nfunction discard(){'));
+ vm.runInContext(helpers+'\n'+wDirty+'\n'+check+'\n'+functionLine(wText,'save')+'\n'+flush,w);
+ vm.runInContext('rememberRaw(input)',Object.assign(w,{input}));assert.equal(vm.runInContext('dirty()',w),true);
+ assert.equal(await vm.runInContext('flush()',w),true);assert.equal(writes,1);assert.equal(vm.runInContext('dirty()',w),false);assert.equal(input.value,'0,unfinished');assert.deepEqual(W.rows[1].effect,[[0]]);
+ input.value='0,changed';vm.runInContext('rememberRaw(input)',w);assert.equal(vm.runInContext('dirty()',w),true);wFail=true;await assert.rejects(vm.runInContext('flush()',w),/actual HTTP write failure/);assert.equal(vm.runInContext('dirty()',w),true);assert.equal(input.value,'0,changed');checks.push('ordinary workshop save and flush keep unparseable text without confirmation, acknowledge successful save, and propagate HTTP failure');
+ console.log(JSON.stringify({status:'passed',checks},null,2));
+})().catch(error=>{console.error(error);process.exitCode=1;});

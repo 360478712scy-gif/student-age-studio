@@ -7,6 +7,9 @@ const request=async(_,body)=>{requests++;await new Promise(r=>setTimeout(r,1));r
 (async()=>{
  const remote=R.create({version:1,generation:'test',ids:Object.keys(originals),summaries},request,'r1'),full=I.create(Object.entries(strings));
  assert.throws(()=>remote[1].content,/尚未读取/);assert.equal(remote[1].nextTalk[0],2);assert.equal(R.summary(remote[250]),originals[250].content);assert.throws(()=>JSON.stringify(remote),/尚未读取/);
+ const refs=R.referenceView({1:{id:1,content:'原版被覆盖'},1001:{id:1001,content:'原版独有'}},remote);
+ assert.equal(R.reference(refs,1).content,originals[1].content);assert.equal(R.reference(refs,1001).content,'原版独有');assert.equal(R.reference(refs,99999),undefined);
+ assert.equal(R.referenceIds(refs).length,251);remote[99999]={id:99999,content:'新草稿'};assert(R.referenceIds(refs).includes('99999'));delete remote[99999];assert(!R.referenceIds(refs).includes('99999'));assert.equal(requests,0);
  const saved=I.clone(remote);remote[240].roles[0][3]=2;remote[240].future.nested[1].keep='changed';
  assert.equal(requests,0);await R.ensure(remote,[240]);assert.deepEqual(I.delta(remote,saved).upsert[240],{...originals[240],roles:[[3,1002,1,2,0],[4,3004,5]],future:{nested:[1,{keep:'changed'}]}});
  await R.ensure(remote);for(const id of Object.keys(originals))remote[id]=I.clone(saved[id]);

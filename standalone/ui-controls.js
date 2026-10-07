@@ -184,20 +184,43 @@ function createPopup(){
   const button=document.elementFromPoint(x,y)?.closest('.uc-trigger');if(button)open(byButton.get(button));
  });
 }
+function providedRow(row,index,select){
+ const option={value:String(row.value),label:row.label,selected:select.multiple?Array.from(select.selectedOptions).some(o=>o.value===String(row.value)):select.value===String(row.value),dataset:{...(row.labelId!=null?{labelId:row.labelId}:{}),...(row.hoverTip?{hoverTip:row.hoverTip}:{})}};
+ return {option,index,label:optionText(option),rawLabel:row.label,provided:true,hidden:!!row.hidden,group:row.group||'',disabled:!!row.disabled};
+}
+// Optional synchronous source: only the requested page becomes popup rows.
+// The provider owns filtering/order and reports total matching rows, not page length.
+function readProviderPage(page=0,focus='first'){
+ if(!active?.pageProvider)return;
+ const select=active.info.select,query=search.value.trim();let result;
+ try{
+  result=active.pageProvider({query,offset:page*PAGE,limit:PAGE});
+  if(!result||!Array.isArray(result.rows)||!Number.isSafeInteger(result.total)||result.total<0)throw Error('选项分页返回的数据无效。');
+  const last=Math.max(0,Math.ceil(result.total/PAGE)-1);
+  if(page>last){page=last;result=active.pageProvider({query,offset:page*PAGE,limit:PAGE});if(!result||!Array.isArray(result.rows)||!Number.isSafeInteger(result.total)||result.total<0)throw Error('选项分页返回的数据无效。');}
+  active.pageError='';active.total=result.total;active.page=page;active.filtered=result.rows.slice(0,PAGE).map((row,index)=>providedRow(row,page*PAGE+index,select));
+  const selected=focus==='selected'?active.filtered.findIndex(row=>row.option.selected):-1;
+  active.focused=typeof focus==='number'?Math.min(focus,active.filtered.length-1):selected>=0?selected:active.filtered.findIndex(row=>!row.disabled);
+ }catch(error){active.pageError=error.message||'选项读取失败';active.total=0;active.page=0;active.filtered=[];active.focused=-1;}
+ renderRows();
+}
 function readRows(){
  const {select}=active.info;
+ active.pageProvider=typeof select.studioSelectPage==='function'?args=>select.studioSelectPage(args):null;
+ if(active.pageProvider){active.rows=[];search.hidden=select.dataset.noSearch==='true';if(search.hidden)search.value='';return;}
+
  const provided=window.STUDIO_SELECT_ROWS?.(select);
  active.rows=provided?provided.map((row,index)=>{const option={value:String(row.value),label:row.label,selected:select.value===String(row.value),dataset:{...(row.labelId!=null?{labelId:row.labelId}:{}),...(row.hoverTip?{hoverTip:row.hoverTip}:{})}};return {option,index,label:optionText(option),rawLabel:row.label,provided:true,hidden:!!row.hidden,group:row.group||'',disabled:!!row.disabled};}):Array.from(select.options,(option,index)=>({option,index,label:optionText(option),hidden:option.hidden||option.parentElement.hidden,group:option.parentElement instanceof HTMLOptGroupElement?option.parentElement.label:'',disabled:option.disabled||(option.parentElement instanceof HTMLOptGroupElement&&option.parentElement.disabled)}));
  search.hidden=select.dataset.search==='always'?false:(select.dataset.noSearch==='true'||active.rows.filter(row=>!row.hidden).length<10);if(search.hidden)search.value='';
 }
 function filterRows(initial){
- if(!active)return;const query=search.value.trim().toLocaleLowerCase();
+ if(!active)return;if(active.pageProvider){readProviderPage(0,initial?'selected':'first');return;}const query=search.value.trim().toLocaleLowerCase();
  active.filtered=active.rows.filter(row=>!row.hidden&&(!query||StudentAgeSearch.matches(query,row.label,row.group,row.option.dataset.labelId)));
  const selected=initial?active.filtered.findIndex(row=>row.option.selected):-1;
  active.focused=selected>=0?selected:active.filtered.findIndex(row=>!row.disabled);active.page=Math.floor(Math.max(0,active.focused)/PAGE);renderRows();
 }
 function renderRows(){
- clearTip();if(!active)return;const start=active.page*PAGE,fragment=document.createDocumentFragment();let group=null;
+ clearTip();if(!active)return;const start=active.pageProvider?0:active.page*PAGE,fragment=document.createDocumentFragment();let group=null;
  for(let index=start;index<Math.min(start+PAGE,active.filtered.length);index++){
   const row=active.filtered[index];if(row.group!==group){group=row.group;if(group){const heading=document.createElement('div');heading.className='uc-optgroup';heading.textContent=group;heading.setAttribute('role','presentation');fragment.append(heading)}}
   const item=document.createElement('button');item.type='button';item.className='uc-option'+(index===active.focused?' uc-focused':'');item.id='uc-option-'+row.index;item.tabIndex=-1;item.setAttribute('role','option');item.setAttribute('aria-selected',String(row.option.selected));item.disabled=row.disabled;item.dataset.ucIndex=String(row.index);
@@ -207,8 +230,8 @@ function renderRows(){
   if(row.option.dataset.hoverTip){item.addEventListener('pointerenter',()=>armTip(item,row.option.dataset.hoverTip));item.addEventListener('pointerleave',clearTip);}
   item.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();choose(row)});fragment.append(item);
  }
- if(!active.filtered.length){const empty=document.createElement('p');empty.className='uc-empty';empty.textContent='没有匹配的选项';fragment.append(empty)}
- list.replaceChildren(fragment);const pages=Math.max(1,Math.ceil(active.filtered.length/PAGE));summary.textContent=active.filtered.length+' 项'+(pages>1?' · '+(active.page+1)+' / '+pages:'');previous.hidden=next.hidden=pages<=1;previous.disabled=active.page===0;next.disabled=active.page>=pages-1;
+ if(!active.filtered.length){const empty=document.createElement('p');empty.className='uc-empty';empty.textContent=active.pageError||'没有匹配的选项';fragment.append(empty)}
+ list.replaceChildren(fragment);const total=active.pageProvider?active.total:active.filtered.length,pages=Math.max(1,Math.ceil(total/PAGE));summary.textContent=total+' 项'+(pages>1?' · '+(active.page+1)+' / '+pages:'');previous.hidden=next.hidden=pages<=1;previous.disabled=active.page===0;next.disabled=active.page>=pages-1;
  list.setAttribute('aria-multiselectable',String(active.info.select.multiple));paintFocus();position();
 }
 function paintFocus(){
@@ -270,13 +293,27 @@ function choose(row){
  if(changed){select.dispatchEvent(new Event('input',{bubbles:true}));select.dispatchEvent(new Event('change',{bubbles:true}))}
  if(multiple&&active){if(connected(info)){readRows();filterRows(false);search.focus({preventScroll:true})}else close(false)}else focusBack(info);
 }
+function moveProviderFocus(amount,edge){
+ const count=active.total;if(!count)return;
+ const old=active.page*PAGE+Math.max(0,active.focused),step=edge==='end'||amount<0?-1:1;
+ let index=edge==='start'?0:edge==='end'?count-1:Math.min(count-1,Math.max(0,old+amount));
+ while(index>=0&&index<count){
+  const page=Math.floor(index/PAGE),local=index%PAGE;
+  if(page!==active.page)readProviderPage(page,local);
+  if(active.pageError||page!==active.page)return;
+  const row=active.filtered[local];if(!row)return;
+  if(!row.disabled){active.focused=local;paintFocus();document.getElementById('uc-option-'+row.index)?.scrollIntoView({block:'nearest'});return;}
+  index+=step;
+ }
+}
 function moveFocus(amount,edge){
+ if(active?.pageProvider){moveProviderFocus(amount,edge);return;}
  if(!active?.filtered.length)return;const count=active.filtered.length;let index=edge==='start'?0:edge==='end'?count-1:Math.min(count-1,Math.max(0,active.focused+amount)),step=edge==='end'||amount<0?-1:1;
  while(index>=0&&index<count&&active.filtered[index].disabled)index+=step;if(index<0||index>=count)return;
  active.focused=index;const page=Math.floor(index/PAGE);if(page!==active.page){active.page=page;renderRows()}else paintFocus();
  document.getElementById('uc-option-'+active.filtered[index].index)?.scrollIntoView({block:'nearest'});
 }
-function changePage(delta){if(!active)return;const page=Math.max(0,Math.min(Math.ceil(active.filtered.length/PAGE)-1,active.page+delta));active.focused=page*PAGE;active.page=page;renderRows();search.focus({preventScroll:true})}
+function changePage(delta){if(!active)return;if(active.pageProvider){readProviderPage(Math.max(0,Math.min(Math.max(0,Math.ceil(active.total/PAGE)-1),active.page+delta)));search.focus({preventScroll:true});return;}const page=Math.max(0,Math.min(Math.ceil(active.filtered.length/PAGE)-1,active.page+delta));active.focused=page*PAGE;active.page=page;renderRows();search.focus({preventScroll:true})}
 window.addEventListener('keydown',event=>{
  // Let Chinese input methods finish composing before using Enter or Escape.
  if(event.isComposing||event.keyCode===229)return;

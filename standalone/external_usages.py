@@ -1,6 +1,7 @@
 """Native entry bindings for event-less dialogue folders. Writes join Store.save's transaction."""
 import copy
 import json
+import save_review
 from pathlib import Path
 
 META = 'externalDialogueFolders'
@@ -98,24 +99,67 @@ def _int(value, label, api, minimum=1, maximum=2147483647):
 def entry_values(groups, all_maps):
     """Capture only bound paths around the store's deletion-reference normalization."""
     values = {}
-    for fid, folder in groups.items():
-        for use in folder.get('uses', []):
+    for fid, folder in (groups.items() if isinstance(groups, dict) else []):
+        if not isinstance(folder, dict): continue
+        for use in folder.get('uses', []) if isinstance(folder.get('uses', []), list) else []:
+            if not isinstance(use, dict): continue
             definition = KINDS.get(use.get('kind')); target = use.get('_target')
-            if not definition or not target: continue
+            if not definition or not isinstance(target, dict) or 'recordId' not in target or not isinstance(target.get('path'), list): continue
             row = all_maps.get(definition['table'] + '.json', {}).get(str(target['recordId']))
             if row is not None: values[(fid, use['id'])] = read_path(row, target['path'])
     return values
 
 
+def apply_draft(store, project, groups, previous, all_maps, touched, api, normalized_entries=None):
+    """Keep raw drafts and retain existing CFGs if their new bindings are incomplete."""
+    from external_dialogues import folders
+    notes = []
+    draft = folders(groups, all_maps.get('TalkCfg.json', {}), api, notes)
+    working, changed = dict(all_maps), set(touched)
+    if isinstance(draft, dict) and any(isinstance(f, dict) and f.get('sequence') for f in draft.values()):
+        talks = working['TalkCfg.json'] = dict(all_maps.get('TalkCfg.json', {}))
+        for folder in draft.values():
+            if not isinstance(folder, dict) or not isinstance(folder.get('talkIds'), list): continue
+            for ident in folder['talkIds']:
+                if str(ident) in talks: talks[str(ident)] = copy.deepcopy(talks[str(ident)])
+    try:
+        if notes: raise api.ApiError(notes[0])
+        result = apply(store, project, draft, previous if isinstance(previous, dict) else {}, working, changed, api, normalized_entries)
+    except api.ApiError as error:
+        semantic = error.__cause__ is None and error.__context__ is None and (error.status in (400, 422) and error.code == 'invalid_request'
+            or error.message.startswith(('已绑定的配置被移除', '用途对应的游戏入口已被其他编辑修改')))
+        if not semantic: raise
+        notes.append(error.message)
+    except (TypeError, KeyError, IndexError, AttributeError, ValueError) as error:
+        notes.append('用途参数尚未完成：' + str(error))
+    else:
+        all_maps.update(working); touched.update(changed)
+        return result, []
+    # Retain the previous ownership ledger even when a partially edited use no
+    # longer includes it. It describes CFGs left untouched by this failed plan.
+    if isinstance(draft, dict) and isinstance(previous, dict):
+        for fid, folder in draft.items():
+            if not isinstance(folder, dict) or not isinstance(folder.get('uses'), list): continue
+            old = previous.get(fid, {})
+            old_uses = {u.get('id'): u for u in old.get('uses', []) if isinstance(u, dict)} if isinstance(old, dict) and isinstance(old.get('uses', []), list) else {}
+            for use in folder['uses']:
+                if isinstance(use, dict) and isinstance(use.get('id'), str) and '_target' in old_uses.get(use['id'], {}):
+                    use['_target'] = copy.deepcopy(old_uses[use['id']]['_target'])
+    notes = list(dict.fromkeys([*notes, '用途草稿已保存，未完成的绑定沿用原有游戏配置。']))
+    for issue in notes: save_review.note(issue)
+    return draft, notes
+
+
 def apply(store,project,groups,previous,all_maps,touched,api,normalized_entries=None):
     """Resolve real CFG targets, merge only edited fields, reject collisions, then write atomically."""
     groups=copy.deepcopy(groups)
+    previous={fid:folder for fid,folder in previous.items() if isinstance(folder,dict)}
     from external_sequence import compile_sequences
     compile_sequences(store,groups,previous,all_maps,touched,api)
     old={}
     for fid,folder in previous.items():
-        for u in folder.get('uses',[]):
-            if isinstance(u,dict) and u.get('id'):old[(fid,u['id'])]=u
+        for u in folder.get('uses',[]) if isinstance(folder.get('uses',[]),list) else []:
+            if isinstance(u,dict) and isinstance(u.get('id'),str) and u['id']:old[(fid,u['id'])]=u
     refs={}; changed={}; claims=[]; result=[]; seen=set(); gift_modes={}
     def table(name):
         if name not in refs:refs[name]={**rows_for(store,project,name),**copy.deepcopy(all_maps.get(name+'.json',{}))}

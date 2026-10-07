@@ -81,18 +81,15 @@ class LoveGiftTableTests(unittest.TestCase):
                 self.assertEqual(table['rows'][key], row, (name, key))
             self.assertIn(key, table['localIds'] if isinstance(table.get('localIds'), list) else table['rows'])
 
-    def test_probability_parameter_warning_can_be_confirmed(self):
+    def test_probability_parameter_warning_saves_unfinished_draft(self):
         import save_review
         payload = {'projectId': self.ident, 'revision': self.store.revision(self.project),
                    'name': 'LoveVindicateRateCfg', 'scope': 'local',
                    'rows': {'101': {'id': 101, 'favorParms': [], 'attrParms': [.3, .01, 1, 1, 1]}}}
-        with self.assertRaises(b.ApiError) as raised:
-            save_review.perform(self.store.table_save, payload, b.ApiError)
-        self.assertEqual(raised.exception.code, 'save_warnings')
-        self.assertFalse((self.project.path / 'Cfgs/zh-cn/LoveVindicateRateCfg.json').exists())
-        payload['_confirmedSaveWarnings'] = raised.exception.warnings
         result = save_review.perform(self.store.table_save, payload, b.ApiError)
         self.assertTrue(result['ok'])
+        self.assertTrue(result['warnings'])
+        self.assertEqual(b.read_json(self.project.path / 'Cfgs/zh-cn/LoveVindicateRateCfg.json'), payload['rows'])
 
     def test_native_schema_contracts(self):
         schemas = load_json('catalog-schema.json')['schemas']

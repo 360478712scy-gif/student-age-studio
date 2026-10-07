@@ -5,6 +5,13 @@ from collections import deque
 
 def reconcile(cues, talks):
     cues = copy.deepcopy(cues)
+    # Unfinished, valid-JSON drafts are retained until the author completes them.
+    # Reconciliation must never discard empty ranges or fail while opening them.
+    if (not isinstance(cues.get('sfx', {}), dict) or not isinstance(cues.get('nativeAudio', {}), dict)
+            or not isinstance(cues.get('nativeSnapshot', {}), dict) or not isinstance(cues.get('bgm', []), list)
+            or any(not isinstance(g, dict) or 'audioId' not in g or not isinstance(g.get('talkIds'), list)
+                   or not isinstance(g.get('loop'), bool) or not g.get('talkIds') for g in cues.get('bgm', []))):
+        return cues
     snapshot = cues.get('nativeSnapshot', {})
     expected = {str(i):g['audioId'] for g in cues.get('bgm', []) for i in g.get('talkIds', [])}
     expected.update({k:v for k,v in cues.get('nativeAudio', {}).items() if k not in expected})
