@@ -11,18 +11,21 @@ const socialNames={2:'社交触发事件',22:'恋爱话题事件',11:'约会事�
 const socialKinds={2:'favor',22:'topic',11:'date',521:'date',20:'relation',[-24]:'minigame'};
 function displayType(e){return e?.studioSocial?.kind==='talk'?-2:e?.studioSocial?.kind==='date'||Number(e?.type)===521?11:Number(e?.type)||0;}
 function socialDraft(event={}){const old=event.studioSocial||{},kind=old.kind||socialKinds[event.type];return {...old,kind,text:old.text||'',favor:old.favor??event.condition?.find(r=>r[0]===7&&r[1]===1&&r[2]===event.npc)?.[3]??0,title:event.title||'',maxcount:event.maxcount??1,repeat:(event.maxcount??1)>1,intimacy:old.intimacy??event.effect?.find(r=>r[0]===1&&r[1]===520)?.[2]??0,actionId:old.actionId||0,level:old.level||1};}
+function removedKeys(owned,current,remembered=[]){const present=new Set((current||[]).map(JSON.stringify)),keys=new Set(remembered);for(const row of owned||[])if(Array.isArray(row)&&!present.has(JSON.stringify(row)))keys.add(row.slice(0,2).join(':'));return keys;}
 function socialCommands(event,draft,npc){
  const previous=event.studioSocial||{},same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
  const condition=(event.condition||[]).filter(r=>!([...(previous.conditions||[]),...(previous.entryConditions||[])]).some(v=>same(v,r))),effect=(event.effect||[]).filter(r=>!(previous.effects||[]).some(v=>same(v,r)));
- const disabled=new Set([...(previous.disabledConditions||[]),...(draft.disabledConditions||[])]);for(const r of [...(previous.conditions||[]),...(previous.entryConditions||[])])if(!(event.condition||[]).some(v=>same(v,r)))disabled.add(r.slice(0,2).join(':'));
+ const disabled=removedKeys([...(previous.conditions||[]),...(previous.entryConditions||[])],event.condition,[...(previous.disabledConditions||[]),...(draft.disabledConditions||[])]);
+ const disabledEffects=removedKeys(previous.effects,event.effect,[...(previous.disabledEffects||[]),...(draft.disabledEffects||[])]);
  const generatedConditions=[],generatedEffects=[];
  if(draft.kind==='favor')generatedConditions.push([7,1,npc,Number(draft.favor)||0]);
  if(['topic','loveTalk','date'].includes(draft.kind))generatedConditions.push([7,0,npc,520]);
  if(draft.kind==='topic'&&Number(draft.intimacy))generatedEffects.push([1,520,Number(draft.intimacy)]);
  for(let i=generatedConditions.length-1;i>=0;i--)if(disabled.has(generatedConditions[i].slice(0,2).join(':')))generatedConditions.splice(i,1);
+ for(let i=generatedEffects.length-1;i>=0;i--)if(disabledEffects.has(generatedEffects[i].slice(0,2).join(':')))generatedEffects.splice(i,1);
  for(const r of generatedConditions)if(!condition.some(v=>same(v,r)))condition.push(r);
  for(const r of generatedEffects)if(!effect.some(v=>same(v,r)))effect.push(r);
- return {condition,effect,studioSocial:{...draft,disabledConditions:[...disabled],entryConditions:[],conditions:generatedConditions,effects:generatedEffects}};
+ return {condition,effect,studioSocial:{...draft,disabledConditions:[...disabled],disabledEffects:[...disabledEffects],entryConditions:[],conditions:generatedConditions,effects:generatedEffects}};
 }
 function socialMount(node,state,parameters,options){
  const kind=socialKinds[options.type];if(!kind)return false;
@@ -51,6 +54,18 @@ function syncSocialEffects(doc){
   }
  }
  const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b),talks=doc.talks||{};
+ // Respect deletions from the dialogue editor before relocating owned effects.
+ for(const id of StudentAgeIndexedTalks.keysWithField(talks,'studioSocialEffects')){
+  const t=talks[id];for(const [eventId,owned] of Object.entries(t.studioSocialEffects||{})){
+   const e=doc.events?.[eventId],social=e?.studioSocial;if(!social)continue;
+   const removed=(owned||[]).filter(r=>(social.effects||[]).some(v=>same(v,r))&&!(t.effect||[]).some(v=>same(v,r)));
+   if(!removed.length)continue;
+   social.disabledEffects=[...new Set([...(social.disabledEffects||[]),...removed.map(r=>r.slice(0,2).join(':'))])];
+   social.effects=(social.effects||[]).filter(r=>!removed.some(v=>same(v,r)));
+   e.effect=(e.effect||[]).filter(r=>!removed.some(v=>same(v,r)));
+  }
+ }
+
  for(const id of StudentAgeIndexedTalks.keysWithField(talks,'studioSocialEffects')){const t=talks[id];
   for(const [eventId,rows] of Object.entries(t.studioSocialEffects))for(const r of rows){const event=doc.events?.[eventId],manual=(event?.effect||[]).some(v=>same(v,r))&&!(event?.studioSocial?.effects||[]).some(v=>same(v,r));if(manual)continue;const i=(t.effect||[]).findIndex(v=>same(v,r));if(i>=0)t.effect.splice(i,1);}t.studioSocialEffects={};
  }
@@ -70,7 +85,7 @@ function syncSocialEffects(doc){
 }
 function syncSocialEntry(event){
  const old=event.studioSocial.entryConditions||[],same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
- const disabled=new Set(event.studioSocial.disabledConditions||[]);for(const r of old)if(!(event.condition||[]).some(v=>same(v,r)))disabled.add(r.slice(0,2).join(':'));event.studioSocial.disabledConditions=[...disabled];
+ const disabled=removedKeys([...(event.studioSocial.conditions||[]),...old],event.condition,event.studioSocial.disabledConditions||[]);event.studioSocial.disabledConditions=[...disabled];
  event.condition=(event.condition||[]).filter(r=>!old.some(v=>same(v,r)));
  const rows=[];if(event.mapId>0&&event.npc>0)rows.push([7,101,event.npc,event.mapId]);
  if(Number.isFinite(event.rate)&&event.rate<1)rows.push([0,1,event.rate<=0?-1:event.rate]);
@@ -102,7 +117,7 @@ function clearSocialBindings(doc,event,keep={}){const old=event.studioSocial||{}
 function applySocial(doc,event,state,refs,allocate){const r=state.social,previous=event.studioSocial;
  const miniId=r?.kind==='minigame'?Number(refs.PersonGrowCfg[event.npc].minigame)*100+Number(r.level):0;
  clearSocialBindings(doc,event,{...r,minigameActionId:miniId});
- if(!r){event.studioSocial={};return;}
+ if(!r){Object.assign(event,socialCommands(event,{},event.npc));return;}
  const chosen=copy(r);if(r.kind==='relation'&&!r.actionId)delete chosen.unlockedActionId;Object.assign(event,socialCommands(event,chosen,event.npc));
  if(r.kind==='talk'){
   const id=previous?.interactionId||allocate('InteractCfg',doc.interactions);event.studioSocial.interactionId=id;syncChat(doc,event);

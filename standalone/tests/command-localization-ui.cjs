@@ -1,0 +1,23 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const root=path.resolve(__dirname,'..'),templates=JSON.parse(fs.readFileSync(path.join(root,'condition-templates.json'),'utf8')),effects=JSON.parse(fs.readFileSync(path.join(root,'effect-templates.json'),'utf8'));
+(async()=>{const browser=await chromium.launch({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});try{
+ const page=await browser.newPage(),errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('PAGE',e.message)});
+ await page.route('http://commands.test/**',route=>{const url=new URL(route.request().url());if(url.pathname==='/')return route.fulfill({contentType:'text/html; charset=utf-8',body:'<html lang="zh-CN"><body><div id="effects"></div><script src="/conditions.js"></script><script src="/condition-library.js"></script><script src="/effects.js"></script><script src="/search.js"></script></body></html>'});if(url.pathname.startsWith('/api/'))return route.fulfill({json:url.pathname==='/api/table'?{rows:{}}:{templates:[],entries:[]}});return route.fulfill({contentType:'text/javascript; charset=utf-8',body:fs.readFileSync(path.join(root,url.pathname.slice(1)),'utf8')});});
+ await page.goto('http://commands.test/');await page.addStyleTag({path:path.join(root,'styles.css')});
+ await page.evaluate(({templates,effects})=>{window.qaOptions={projectId:'synthetic',templates,refs:{PersonCfg:{111234:{id:111234,name:'测试人物'}},MapCfg:{3:{id:3,name:'学校操场'},12:{id:12,name:'客运站'}}}};window.STUDIO_PROJECTS=()=>[];window.qaResult=null;StudentAgeConditionLibrary.open({...qaOptions,rows:[[7,101,111234,3,12],[1,97,77],[100,99,4]]}).then(v=>qaResult=v);window.qaEffects=effects;},{templates,effects});
+ const cards=page.locator('.condition-selected-card');await cards.first().waitFor({timeout:5000});assert.equal(await cards.count(),3);
+ assert.match(await cards.nth(0).textContent(),/人物所在地点/);assert.match(await cards.nth(0).textContent(),/学校操场/);assert.match(await cards.nth(0).textContent(),/客运站/);
+ assert.equal(await cards.nth(0).locator('[data-library-param]').count(),3);
+ assert.equal(await cards.nth(1).locator('[data-library-param="2"]').inputValue(),'77');
+ assert.match(await cards.nth(2).textContent(),/原版未实现/);
+ await page.locator('[data-library-apply]').click();assert.deepEqual(await page.evaluate(()=>qaResult),[[7,101,111234,3,12],[1,97,77],[100,99,4]]);
+ await page.evaluate(()=>{qaResult=null;StudentAgeConditionLibrary.open({...qaOptions,rows:[[7,101,111234,3]]}).then(v=>qaResult=v);});
+ await page.locator('[data-library-delete]').click();await page.locator('[data-library-apply]').click();assert.deepEqual(await page.evaluate(()=>qaResult),[]);
+ await page.evaluate(()=>{qaResult=null;StudentAgeConditionLibrary.open({...qaOptions,rows:[]}).then(v=>qaResult=v);});
+ await page.locator('.condition-library-search').fill('人物所在地点');await page.locator('[data-library-key="native:7:101:4"]').click();
+ assert.equal(await cards.count(),1);assert.equal(await cards.locator('[data-library-param]').count(),2);
+ await page.locator('[data-library-cancel]').click();
+ assert.deepEqual(errors,[]);console.log('PASS: real condition UI labels, multi-location fields, unknown value roundtrip, delete/apply and add');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

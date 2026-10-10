@@ -2208,5 +2208,955 @@
         }
       }
     ]
+  },
+  {
+    "label": "人物所在地点",
+    "template": [
+      7,
+      101,
+      100,
+      1
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "所在地点（任意一个满足即可）",
+        "type": "int",
+        "range": {
+          "table": "MapCfg"
+        }
+      }
+    ],
+    "match": {
+      "0": 7,
+      "1": 101
+    },
+    "source": "Condition.ConditionerRelation",
+    "repeatFrom": 3,
+    "description": "检查人物在游戏地图上的实际位置，不是对话背景。手动删除后不会因事件类型再次添加。"
+  },
+  {
+    "label": "人物关系",
+    "template": [
+      7,
+      0,
+      100,
+      1
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "关系",
+        "type": "int",
+        "range": {
+          "table": "OtherRelationCfg"
+        }
+      }
+    ],
+    "match": {
+      "0": 7,
+      "1": 0
+    },
+    "source": "Condition.ConditionerRelation"
+  },
+  {
+    "label": "指定关系的人数 ≥",
+    "template": [
+      7,
+      5,
+      4,
+      3
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "关系",
+        "type": "int",
+        "range": {
+          "table": "OtherRelationCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "人数",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 7,
+      "1": 5
+    },
+    "source": "Condition.ConditionerRelation"
+  },
+  {
+    "label": "拥有性格状态",
+    "template": [
+      6,
+      1,
+      506
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "状态",
+        "type": "int",
+        "range": {
+          "table": "PersonStateCfg"
+        }
+      }
+    ],
+    "match": {
+      "0": 6,
+      "1": 1
+    },
+    "source": "Condition.ConditionerCharacter"
+  },
+  {
+    "label": "指定年龄回合",
+    "template": [
+      1,
+      0,
+      6,
+      7
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "年龄",
+        "type": "float"
+      },
+      {
+        "index": 3,
+        "label": "月份参数",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 1,
+      "1": 0
+    },
+    "source": "Condition.ConditionerAge",
+    "description": "原版将年龄加 1995 得到年份，月份按 (参数＋1) % 12＋1 换算后，检查对应回合。"
+  },
+  {
+    "label": "是否已分科",
+    "template": [
+      1,
+      97,
+      1
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "状态",
+        "type": "int",
+        "choices": [
+          {
+            "id": 1,
+            "label": "已经分科"
+          },
+          {
+            "id": 0,
+            "label": "尚未分科"
+          }
+        ]
+      }
+    ],
+    "match": {
+      "0": 1,
+      "1": 97
+    },
+    "source": "Condition.ConditionerAge"
+  },
+  {
+    "label": "主角生日",
+    "template": [
+      2,
+      101,
+      1
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "保留参数（原版忽略）",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 2,
+      "1": 101
+    },
+    "source": "Condition.ConditionerDate"
+  },
+  {
+    "label": "属性相对本回合基准 ≥",
+    "template": [
+      4,
+      44,
+      4,
+      2
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "属性",
+        "type": "int",
+        "range": {
+          "table": "PersonAttrCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "基准倍数",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 4,
+      "1": 44
+    },
+    "source": "Condition.ConditionerAttr",
+    "description": "将本回合基准乘以倍数后取整，再与当前属性比较。"
+  },
+  {
+    "label": "属性相对本回合基准 ≤",
+    "template": [
+      4,
+      -44,
+      4,
+      2
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "属性",
+        "type": "int",
+        "range": {
+          "table": "PersonAttrCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "基准倍数",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 4,
+      "1": -44
+    },
+    "source": "Condition.ConditionerAttr",
+    "description": "将本回合基准乘以倍数后取整，再与当前属性比较。"
+  },
+  {
+    "label": "属性不低于指定人物",
+    "template": [
+      4,
+      40,
+      1,
+      4,
+      100
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "保留参数（原版忽略）",
+        "type": "float"
+      },
+      {
+        "index": 3,
+        "label": "属性",
+        "type": "int",
+        "range": {
+          "table": "PersonAttrCfg"
+        }
+      },
+      {
+        "index": 4,
+        "label": "人物",
+        "type": "int",
+        "range": {
+          "table": "PersonCfg"
+        }
+      }
+    ],
+    "match": {
+      "0": 4,
+      "1": 40
+    },
+    "source": "Condition.ConditionerAttr"
+  },
+  {
+    "label": "最高属性是",
+    "template": [
+      4,
+      99,
+      4
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "属性",
+        "type": "int",
+        "range": {
+          "table": "PersonAttrCfg"
+        }
+      }
+    ],
+    "match": {
+      "0": 4,
+      "1": 99
+    },
+    "source": "Condition.ConditionerAttr"
+  },
+  {
+    "label": "主要性格属性",
+    "template": [
+      4,
+      101,
+      2,
+      101
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "判断方式",
+        "type": "int",
+        "choices": [
+          {
+            "id": 2,
+            "label": "主性格是指定属性"
+          },
+          {
+            "id": 1,
+            "label": "原版组合判断"
+          },
+          {
+            "id": 0,
+            "label": "原版反向组合判断"
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "label": "属性",
+        "type": "int",
+        "range": {
+          "table": "PersonAttrCfg"
+        }
+      }
+    ],
+    "match": {
+      "0": 4,
+      "1": 101
+    },
+    "source": "Condition.ConditionerAttr"
+  },
+  {
+    "label": "本回合尚未完成作业",
+    "template": [
+      10,
+      -100
+    ],
+    "parameters": [],
+    "match": {
+      "0": 10,
+      "1": -100
+    },
+    "source": "Condition.ConditionerKnowledge"
+  },
+  {
+    "label": "累计未做作业次数 ≥",
+    "template": [
+      10,
+      -33,
+      1
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "次数",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 10,
+      "1": -33
+    },
+    "source": "Condition.ConditionerKnowledge"
+  },
+  {
+    "label": "考试评价等级 ≤",
+    "template": [
+      10,
+      99,
+      1
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "评价等级",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 10,
+      "1": 99
+    },
+    "source": "Condition.ConditionerKnowledge"
+  },
+  {
+    "label": "考试评价等级 ≥",
+    "template": [
+      10,
+      100,
+      1
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "评价等级",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 10,
+      "1": 100
+    },
+    "source": "Condition.ConditionerKnowledge"
+  },
+  {
+    "label": "累计行动次数 ≥",
+    "template": [
+      12,
+      1,
+      3122,
+      10
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "行动",
+        "type": "int",
+        "range": {
+          "table": "ActionCfg"
+        }
+      },
+      {
+        "index": 3,
+        "label": "次数",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 12,
+      "1": 1
+    },
+    "source": "Condition.ConditionerAction"
+  },
+  {
+    "label": "行动练习已解锁",
+    "template": [
+      12,
+      6
+    ],
+    "parameters": [],
+    "match": {
+      "0": 12,
+      "1": 6
+    },
+    "source": "Condition.ConditionerAction",
+    "description": "检查原版行动练习开关是否已启用。"
+  },
+  {
+    "label": "程良的考试排名",
+    "template": [
+      22,
+      203,
+      1,
+      300
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "比较方式",
+        "type": "int",
+        "choices": [
+          {
+            "id": 1,
+            "label": "排名数值小于"
+          },
+          {
+            "id": -1,
+            "label": "排名数值大于等于"
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "label": "排名",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 22,
+      "1": 203
+    },
+    "source": "Condition.ConditionerNpc"
+  },
+  {
+    "label": "已通关游戏数量 ≥",
+    "template": [
+      34,
+      4,
+      1,
+      5
+    ],
+    "parameters": [
+      {
+        "index": 3,
+        "label": "数量",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 34,
+      "1": 4,
+      "2": 1
+    },
+    "source": "Condition.ConditionerGame"
+  },
+  {
+    "label": "没有同性恋人",
+    "template": [
+      52,
+      -22
+    ],
+    "parameters": [],
+    "match": {
+      "0": 52,
+      "1": -22
+    },
+    "source": "Condition.ConditionerLove2",
+    "description": "没有恋人或恋人为异性时满足。"
+  },
+  {
+    "label": "漫展时段",
+    "template": [
+      90,
+      3,
+      0,
+      1
+    ],
+    "parameters": [
+      {
+        "index": 3,
+        "label": "时段",
+        "type": "int",
+        "choices": [
+          {
+            "id": 1,
+            "label": "13 点之前"
+          },
+          {
+            "id": 0,
+            "label": "13 点及以后"
+          }
+        ]
+      }
+    ],
+    "match": {
+      "0": 90,
+      "1": 3,
+      "2": 0
+    },
+    "source": "Condition.ConditionerParty"
+  },
+  {
+    "label": "游戏记录开关已开启",
+    "template": [
+      100,
+      10,
+      20101
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "记录开关编号",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 100,
+      "1": 10
+    },
+    "source": "Condition.ConditionerOtherAttr"
+  },
+  {
+    "label": "游戏记录开关未开启",
+    "template": [
+      100,
+      -10,
+      20101
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "记录开关编号",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 100,
+      "1": -10
+    },
+    "source": "Condition.ConditionerOtherAttr"
+  },
+  {
+    "label": "功能已开放",
+    "template": [
+      101,
+      1,
+      46
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "功能",
+        "type": "int",
+        "range": {
+          "table": "FuncCfg"
+        }
+      }
+    ],
+    "match": {
+      "0": 101,
+      "1": 1
+    },
+    "source": "Condition.ConditionerUI"
+  },
+  {
+    "label": "功能未开放",
+    "template": [
+      101,
+      -1,
+      46
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "功能",
+        "type": "int",
+        "range": {
+          "table": "FuncCfg"
+        }
+      }
+    ],
+    "match": {
+      "0": 101,
+      "1": -1
+    },
+    "source": "Condition.ConditionerUI"
+  },
+  {
+    "label": "引导状态",
+    "template": [
+      101,
+      10,
+      88
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "状态",
+        "type": "int",
+        "choices": [
+          {
+            "id": 88,
+            "label": "引导中"
+          },
+          {
+            "id": 99,
+            "label": "引导中（兼容值）"
+          },
+          {
+            "id": -88,
+            "label": "非引导或开发模式"
+          },
+          {
+            "id": -99,
+            "label": "非引导或开发模式（兼容值）"
+          }
+        ]
+      }
+    ],
+    "match": {
+      "0": 101,
+      "1": 10
+    },
+    "source": "Condition.ConditionerUI"
+  },
+  {
+    "label": "历史结局包含任意指定片段",
+    "template": [
+      200,
+      10,
+      820101001
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "结局片段编号",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 200,
+      "1": 10
+    },
+    "source": "Condition.ConditionerEnding",
+    "repeatFrom": 2
+  },
+  {
+    "label": "历史结局不包含指定片段",
+    "template": [
+      200,
+      -10,
+      820101001
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "结局片段编号",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 200,
+      "1": -10
+    },
+    "source": "Condition.ConditionerEnding",
+    "repeatFrom": 2
+  },
+  {
+    "label": "跨周目剧情记录",
+    "template": [
+      200,
+      3,
+      1,
+      720642
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "记录类型",
+        "type": "int",
+        "choices": [
+          {
+            "id": 1,
+            "label": "事件已发生"
+          },
+          {
+            "id": -1,
+            "label": "事件未发生"
+          },
+          {
+            "id": 2,
+            "label": "选项已选择"
+          },
+          {
+            "id": -2,
+            "label": "选项未选择"
+          },
+          {
+            "id": 3,
+            "label": "对话已到达"
+          },
+          {
+            "id": -3,
+            "label": "对话未到达"
+          },
+          {
+            "id": 5,
+            "label": "结局片段未出现"
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "label": "记录编号",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 200,
+      "1": 3
+    },
+    "source": "Condition.ConditionerEnding",
+    "description": "编号含义随记录类型变化，请填写对应事件、选项、对话或结局片段编号。"
+  },
+  {
+    "label": "已解锁荣誉",
+    "template": [
+      999,
+      200,
+      702
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "荣誉编号",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 999,
+      "1": 200
+    },
+    "source": "Condition.ConditionerSpecial"
+  },
+  {
+    "label": "未解锁荣誉",
+    "template": [
+      999,
+      -200,
+      702
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "荣誉编号",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 999,
+      "1": -200
+    },
+    "source": "Condition.ConditionerSpecial"
+  },
+  {
+    "label": "扩展内容持有状态",
+    "template": [
+      999,
+      2,
+      -1
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "状态",
+        "type": "int",
+        "choices": [
+          {
+            "id": 1,
+            "label": "拥有第一项扩展内容"
+          },
+          {
+            "id": -1,
+            "label": "未拥有第一项扩展内容"
+          }
+        ]
+      }
+    ],
+    "match": {
+      "0": 999,
+      "1": 2
+    },
+    "source": "Condition.ConditionerSpecial"
+  },
+  {
+    "label": "年龄旧指令（原版未实现）",
+    "template": [
+      1,
+      21,
+      1,
+      9
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "原始参数 1",
+        "type": "float"
+      },
+      {
+        "index": 3,
+        "label": "原始参数 2",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 1,
+      "1": 21
+    },
+    "source": "Condition.ConditionerAge",
+    "displayOnly": true,
+    "description": "已核对的原版判断器没有实现此指令；如由插件提供，请以该插件说明为准。可以保留、修改或删除。"
+  },
+  {
+    "label": "旧条件类型（原版未实现）",
+    "template": [
+      20,
+      2,
+      102,
+      4
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "原始参数 1",
+        "type": "float"
+      },
+      {
+        "index": 3,
+        "label": "原始参数 2",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 20,
+      "1": 2
+    },
+    "source": "Condition.Conditioner",
+    "displayOnly": true,
+    "description": "已核对的原版判断器没有实现此指令；如由插件提供，请以该插件说明为准。可以保留、修改或删除。"
+  },
+  {
+    "label": "记录旧指令（原版未实现）",
+    "template": [
+      100,
+      99,
+      4
+    ],
+    "parameters": [
+      {
+        "index": 2,
+        "label": "原始参数 1",
+        "type": "float"
+      }
+    ],
+    "match": {
+      "0": 100,
+      "1": 99
+    },
+    "source": "Condition.ConditionerOtherAttr",
+    "displayOnly": true,
+    "description": "已核对的原版判断器没有实现此指令；如由插件提供，请以该插件说明为准。可以保留、修改或删除。"
   }
 ]

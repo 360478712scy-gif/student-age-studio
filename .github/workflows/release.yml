@@ -23,6 +23,8 @@ jobs:
       - run: python -m pip install 'certifi>=2026.2.25' 'Pillow==12.3.0' 'numpy>=2,<3' 'imageio-ffmpeg>=0.6,<0.7'
       - run: python -B -m unittest discover -s standalone/tests
       - run: node standalone/tests/relation-optional-action.cjs
+      - run: node standalone/tests/automatic-command-removal.cjs
+      - run: node standalone/tests/command-localization.cjs
       - run: node standalone/tests/indexed-talks.cjs
       - run: node standalone/tests/remote-talks.cjs
       - run: node standalone/tests/story-discard-exit.cjs
@@ -70,6 +72,7 @@ jobs:
           node standalone/tests/up-video-ui.cjs
           node standalone/tests/condition-native-numeric.cjs
           node standalone/tests/condition-talk-references.cjs
+          node standalone/tests/command-localization-ui.cjs
           node standalone/tests/unfinished-draft-ui.cjs
           node standalone/tests/social-comment-edit.cjs
   publish:
@@ -123,7 +126,7 @@ jobs:
           import hashlib,json,os
           from pathlib import Path
           p=Path('/tmp/studio-feed/student-age-studio-update.zip');data=p.read_bytes()
-          feed={'format':1,'runtimeAbi':1,'version':os.environ['RELEASE_TAG'],'commit':os.environ['PAYLOAD_COMMIT'],'sha256':hashlib.sha256(data).hexdigest(),'size':len(data),'notes':Path('docs/releases/v1414.md').read_text(encoding='utf-8')}
+          feed={'format':1,'runtimeAbi':1,'version':os.environ['RELEASE_TAG'],'commit':os.environ['PAYLOAD_COMMIT'],'sha256':hashlib.sha256(data).hexdigest(),'size':len(data),'notes':Path('docs/releases/v1415.md').read_text(encoding='utf-8')}
           Path('/tmp/studio-feed/latest.json').write_text(json.dumps(feed,ensure_ascii=False,indent=2),encoding='utf-8')
           PYFEED
           git -C /tmp/studio-feed add latest.json
