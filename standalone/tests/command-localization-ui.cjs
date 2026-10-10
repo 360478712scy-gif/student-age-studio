@@ -19,8 +19,9 @@ const root=path.resolve(__dirname,'..'),templates=JSON.parse(fs.readFileSync(pat
  await page.locator('.condition-library-search').fill('人物所在地点');await page.locator('[data-library-key="native:7:101:4"]').click();
  assert.equal(await cards.count(),1);assert.equal(await cards.locator('[data-library-param]').count(),2);
  await page.locator('[data-library-cancel]').click();
- await page.evaluate(()=>{StudentAgeEffects.mountInline(document.querySelector('#effects'),{templates:qaEffects,rows:[[4,99,77]],onChange:rows=>window.qaEffectResult=rows});});
+ await page.evaluate(()=>{window.StudentAgeLibraries={premiseOptions:async o=>o};StudentAgeEffects.open({templates:qaEffects,rows:[[4,99,77]],getPremises:()=>({})}).then(rows=>window.qaEffectResult=rows);});
+ await page.locator('[data-effect-row="0"][data-effect-param="2"]').waitFor();
  assert.equal(await page.locator('[data-effect-row="0"][data-effect-param="2"]').inputValue(),'77');
- assert.match(await page.locator('#effects').textContent(),/原值 77/);
+ assert.match(await page.locator('.effect-card').textContent(),/原值 77/);
  assert.deepEqual(errors,[]);console.log('PASS: real condition UI labels, multi-location fields, unknown value roundtrip, delete/apply and add');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
