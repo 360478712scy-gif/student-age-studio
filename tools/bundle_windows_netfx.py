@@ -183,7 +183,7 @@ def main() -> None:
         if not args.base_zip or not args.output:
             parser.error("--base-zip and --output are required for ZIP bundling")
         result = bundle(args.base_zip, args.installer, args.output, args.installer_sha256, args.base_sha256)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(json.dumps(result, ensure_ascii=True, indent=2))
 
 
 if __name__ == "__main__":
