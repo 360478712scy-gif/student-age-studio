@@ -67,8 +67,6 @@ TABLES = {
 TALK_FIELDS = {"nextTalk", "nextTalk2", "talkId", "talkId2", "startTalks", "finishTalk", "failTalk", "startTalk", "winTalk", "loseTalk", "talk"}
 MAX_JSON = 96 * 1024 * 1024
 MAX_IMAGE = 24 * 1024 * 1024
-MAX_PIXELS = 16 * 1024 * 1024
-MAX_DIMENSION = 4096
 # Positive-only cache for audio converter lookups (negatives re-resolve).
 _afconvert_path = None
 _ffmpeg_path = None
@@ -3908,8 +3906,8 @@ def normalize_image(raw, maximum=MAX_IMAGE):
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
             with Image.open(io.BytesIO(raw)) as source:
-                if source.format not in ("PNG", "JPEG", "WEBP", "BMP", "TGA") or source.width > MAX_DIMENSION or source.height > MAX_DIMENSION or source.width * source.height > MAX_PIXELS:
-                    raise ApiError("请使用不超过 4096 边长的 PNG、JPEG、WebP、BMP 或 TGA 图片。")
+                if source.format not in ("PNG", "JPEG", "WEBP", "BMP", "TGA"):
+                    raise ApiError("请使用 PNG、JPEG、WebP、BMP 或 TGA 图片。")
                 source.verify()
             with Image.open(io.BytesIO(raw)) as source:
                 source.load()
