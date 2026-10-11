@@ -372,7 +372,7 @@ class Publisher:
             binding = {}
             try:
                 binding = read_sidecar(project)
-                binding_check = {'ok': True, 'publishedFileId': str(binding.get('publishedFileId') or (manifest.get('metadata') or {}).get('id') or 0)}
+                binding_check = {'ok': True, 'publishedFileId': str(binding.get('publishedFileId', (manifest.get('metadata') or {}).get('id')) or 0)}
             except PublishError as error:
                 binding_check = {'ok': False, 'reason': str(error), 'publishedFileId': '0'}
             pending_path = project.path / 'StudentAgeStudio/workshop-pending.json'
@@ -423,7 +423,7 @@ class Publisher:
                 fields['packageId'] = str(metadata.get('packageId') or project.package)
                 fields['version'] = str(metadata.get('version') or manifest.get('version') or '1.0.0')
                 try:
-                    fields['existingId'] = int(binding.get('publishedFileId') or metadata.get('id') or 0)
+                    fields['existingId'] = int(binding.get('publishedFileId', metadata.get('id')) or 0)
                     if not 0 <= fields['existingId'] < 2 ** 64:
                         raise ValueError()
                 except (ValueError, TypeError):
@@ -474,6 +474,24 @@ class Publisher:
                 self._write_sidecar(api, project, int(value), {})
                 (project.path / 'StudentAgeStudio/workshop-pending.json').unlink(missing_ok=True)
             return {'publishedFileId': value, 'revision': store.revision(project)}
+
+    def unbind(self, store, api, payload):
+        """Explicit local reset; zero overrides a legacy manifest Workshop id."""
+        with self._lock:
+            if self.busy() or self._closing:
+                raise PublishError('请等待当前发布结束。', 409, 'publish_busy')
+            project = store.project(payload.get('projectId'), writable=True)
+            with store.lock:
+                if payload.get('revision') != store.revision(project):
+                    raise PublishError('模组已变化，请重新检查发布内容。', 409, 'conflict')
+                if (project.path / 'StudentAgeStudio/workshop-pending.json').exists():
+                    raise PublishError('上次创建结果尚未确认，请先在 Steam 核实并关联该条目，再解除关联。', 409, 'publish_result_unconfirmed')
+                target = project.path / SIDECAR
+                if target.exists():
+                    api.atomic_write(target.with_name('workshop-binding-backup.json'), target.read_bytes())
+                target.parent.mkdir(parents=True, exist_ok=True)
+                api.atomic_write(target, api.json_bytes({'publishedFileId': 0, 'unlinkedAt': _utcnow()}))
+            return {'publishedFileId': '0', 'revision': store.revision(project)}
 
     def recover_binding(self, store, api, payload):
         with self._lock:
@@ -551,7 +569,7 @@ class Publisher:
             result = self._submit_once(bridge, job, staged)
             if result != ERESULT_OK:
                 code = 'steam_item_missing' if result == ERESULT_FILE_NOT_FOUND else 'steam_submit_failed'
-                raise PublishError('Steam 未完成上传：' + bridge.describe_result(result) + '。' + ('请先核实该条目，编辑器不会自动另建。' if result == ERESULT_FILE_NOT_FOUND else ''), 502, code)
+                raise PublishError('Steam 未完成上传：' + bridge.describe_result(result) + '。' + ('条目可能已删除。确认后可在“工坊条目关联”中解除关联，再发布为新条目。' if result == ERESULT_FILE_NOT_FOUND else ''), 502, code)
             # SubmitItemUpdate callback is the completion authority. Status 0 afterwards is normal.
             self._bind(store, api, project, job)
             job.state, job.phase, job.percent = 'done', '上传完成', 100

@@ -261,6 +261,54 @@ class PublishHarness(unittest.TestCase):
         self.assertEqual(fake.created, 0)
         self.assertEqual(pub.read_sidecar(self.project)['publishedFileId'], 555)
 
+    def test_unlink_deleted_item_then_publish_new_and_reuse(self):
+        manifest_path = self.project.path / 'manifest.json'
+        manifest = b.read_json(manifest_path, {})
+        manifest.setdefault('metadata', {})['id'] = 555
+        b.atomic_write(manifest_path, b.json_bytes(manifest))
+        original = manifest_path.read_bytes()
+        pub.Publisher._write_sidecar(self.api, self.project, 555, {})
+        result = self.run_job(FakeBridge(submit_results=[9]), self.payload())
+        self.assertEqual(result['error']['code'], 'steam_item_missing')
+        self.publisher.unbind(self.store, self.api, self.payload())
+        self.assertEqual(manifest_path.read_bytes(), original)
+        self.assertEqual(pub.read_sidecar(self.project)['publishedFileId'], 0)
+        self.assertEqual(b.read_json(self.project.path / 'StudentAgeStudio/workshop-binding-backup.json', {})['publishedFileId'], 555)
+        fake = FakeBridge()
+        with patch.object(self.publisher, '_bridge_instance', return_value=fake):
+            report = self.publisher.prereq(self.store, self.api, self.ident, self.payload())
+        self.assertEqual(report['binding']['publishedFileId'], '0')
+        result = self.run_job(fake, self.payload())
+        self.assertEqual(result['state'], 'done')
+        self.assertEqual(fake.created, 1)
+        self.assertEqual(result['publishedFileId'], '7654321')
+        second = FakeBridge()
+        self.assertEqual(self.run_job(second, self.payload())['state'], 'done')
+        self.assertEqual(second.created, 0)
+
+    def test_unlink_manifest_only_and_rebind(self):
+        manifest_path = self.project.path / 'manifest.json'
+        manifest = b.read_json(manifest_path, {})
+        manifest.setdefault('metadata', {})['id'] = 555
+        b.atomic_write(manifest_path, b.json_bytes(manifest))
+        self.publisher.unbind(self.store, self.api, self.payload())
+        self.publisher.bind_existing(self.store, self.api, self.payload(publishedFileId='777'))
+        fake = FakeBridge()
+        self.assertEqual(self.run_job(fake, self.payload())['publishedFileId'], '777')
+        self.assertEqual(fake.created, 0)
+
+    def test_unlink_rejects_stale_revision_and_unconfirmed_creation(self):
+        pub.Publisher._write_sidecar(self.api, self.project, 555, {})
+        with self.assertRaises(PublishError):
+            self.publisher.unbind(self.store, self.api, self.payload(revision='stale'))
+        self.assertEqual(pub.read_sidecar(self.project)['publishedFileId'], 555)
+        pending = self.project.path / 'StudentAgeStudio/workshop-pending.json'
+        b.atomic_write(pending, b.json_bytes({'pending': True}))
+        with self.assertRaises(PublishError):
+            self.publisher.unbind(self.store, self.api, self.payload())
+        self.assertEqual(pub.read_sidecar(self.project)['publishedFileId'], 555)
+        self.assertTrue(pending.exists())
+
     def test_submit_failure_reports_steam_message(self):
         fake = FakeBridge(submit_results=[3])
         result = self.run_job(fake, self.payload())

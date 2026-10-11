@@ -63,6 +63,7 @@ jobs:
           node standalone/tests/condition-native-numeric.cjs
           node standalone/tests/condition-talk-references.cjs
           node standalone/tests/command-localization-ui.cjs
+          node standalone/tests/workshop-unbind-ui.cjs
           node standalone/tests/unfinished-draft-ui.cjs
           node standalone/tests/social-comment-edit.cjs
       - run: python -B tools/build_update.py --out release/student-age-studio-update.zip

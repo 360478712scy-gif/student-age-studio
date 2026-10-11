@@ -4940,6 +4940,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self.send_json(self.server.publisher.cover(self.server.store, sys.modules[__name__], payload))
             if route == "/api/publish-recover":
                 return self.send_json(self.server.publisher.recover_binding(self.server.store, sys.modules[__name__], payload))
+            if route == "/api/publish-unbind":
+                return self.send_json(self.server.publisher.unbind(self.server.store, sys.modules[__name__], payload))
             if route == "/api/publish-bind":
                 return self.send_json(self.server.publisher.bind_existing(self.server.store, sys.modules[__name__], payload))
             if route == "/api/publish":
