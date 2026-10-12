@@ -55,13 +55,19 @@ def needs_text_compile(project, payload, api):
         _remember_text_audio(key, stamps)
         return False
     from text_record_save import index
-    offsets = index(path, api)
-    if offsets is None: return True
-    with path.open('rb') as stream:
-        for key, expected in snapshot.items():
-            if key not in offsets: return True
-            start, end = offsets[key]; stream.seek(start)
-            if json.loads(stream.read(end - start)).get('audio', 0) != expected: return True
+    try:
+        offsets = index(path, api)
+        if offsets is None: return True
+        with path.open('rb') as stream:
+            for key, expected in snapshot.items():
+                if key not in offsets: return True
+                start, end = offsets[key]; stream.seek(start)
+                if json.loads(stream.read(end - start)).get('audio', 0) != expected: return True
+    except (ValueError, UnicodeError, IndexError):
+        # The normal reader supports literal controls, comments and trailing
+        # commas in game-written JSON. A fast-path parse failure must fall back
+        # to that reader rather than abort the author's save.
+        return True
     if (api.file_fingerprint(path), api.file_fingerprint(state_path)) != stamps: return True
     _remember_text_audio(_text_audio_key(project, path), stamps)
     return False
