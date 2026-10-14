@@ -149,7 +149,7 @@ async function deletePremise(rowOrId){
 }
 window.STUDIO_DELETE_PREMISE=deletePremise;
 function eventRoots(e){return [...ids(e.talkId),...ids(e.options).flatMap(id=>[...ids(S.doc.options[id]?.talkId),...ids(S.doc.options[id]?.talkId2)])];}
-function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);displayMemo=null;const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));const entryBefore=talk()&&!talk().roles?.length?{...talk(),roles:[],roleIds:[...(talk().roleIds||[])]}:null;fn();displayMemo=null;if(entryBefore&&talk()?.id===entryBefore.id&&talk().roles?.length){const beforeDoc={...S.doc,talks:{...S.doc.talks,[entryBefore.id]:entryBefore}};StudentAgeScene.preserveImplicitEntries(entryBefore,talk(),currentStage(false,beforeDoc));}cacheEventDisplay(StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds));syncExternal(beforeIds);cleanLostPremises(writers);reconcileStoryClaims();updateDirty();if(redraw)render();scheduleRenumber();return true;}
+function mutate(label, fn, key=null, redraw=true) {if(!editable())return false;history(label,key);displayMemo=null;const writers=premiseHolders(S.doc);const beforeIds=new Set(Object.keys(S.doc.talks));const entryBefore=talk()&&!talk().roles?.length?{...talk(),roles:[],roleIds:[...(talk().roleIds||[])]}:null;fn();displayMemo=null;if(entryBefore&&talk()?.id===entryBefore.id&&talk().roles?.length){const beforeDoc={...S.doc,talks:{...S.doc.talks,[entryBefore.id]:entryBefore}};StudentAgeScene.preserveImplicitEntries(entryBefore,talk(),currentStage(false,beforeDoc));}syncOwnership(beforeIds);syncExternal(beforeIds);cleanLostPremises(writers);reconcileStoryClaims();updateDirty();if(redraw)render();scheduleRenumber();return true;}
 let textDirtyTimer=null,textSearchTimer=null;
 function updateTextDirty(){
  // Input changes the live row immediately. Full-document comparison waits for a pause.
@@ -177,14 +177,31 @@ function initialOrder() {
   return ordered;
 }
 // One render pass asks for the same ownership map several times; reuse it until the current task ends.
+// The map follows links only: which lines exist, where they and the options lead, event entries and folders.
+// While those agree it is also kept across tasks, so selecting a line or opening an event does not walk the
+// whole mod again. In-place edits are invisible to an identity check, hence the stamp (segmented tables only).
 let displayMemo=null;
-function cacheEventDisplay(value){
-  const memo={doc:S.doc,folders:S.branchFolders,value};displayMemo=memo;
+let displayKept=null,ownersSynced=null;
+function linkStamp(){const info=Remote.info(S.doc?.talks);return info?info.linkVersion+'|'+IndexedTalks.stringify([S.doc.options,S.doc.events,Object.entries(S.branchFolders).map(([key,{collapsed,...folder}])=>[key,folder])]):null;}
+function cacheEventDisplay(value,stamp=linkStamp()){
+  const memo={doc:S.doc,folders:S.branchFolders,value};displayMemo=memo;displayKept=stamp===null?null:{talks:S.doc.talks,stamp,value};
   queueMicrotask(()=>{if(displayMemo===memo)displayMemo=null;});return value;
 }
 function eventDisplay(){
   if(displayMemo?.doc===S.doc&&displayMemo.folders===S.branchFolders)return displayMemo.value;
-  return cacheEventDisplay(StudentAgeEventOwnership.display(S.doc,S.branchFolders));
+  const stamp=linkStamp();
+  if(stamp!==null&&displayKept?.talks===S.doc.talks&&displayKept.stamp===stamp)return cacheEventDisplay(displayKept.value,stamp);
+  return cacheEventDisplay(StudentAgeEventOwnership.display(S.doc,S.branchFolders),stamp);
+}
+// Ownership follows the same links, and recomputing it from its own result changes nothing unless the edit
+// added lines (a new line is anchored to the current event once). An edit that leaves links alone, such as a
+// speaker, staging or effect change, therefore keeps the map of the previous edit.
+function syncOwnership(beforeIds){
+  const stamp=linkStamp(),kept=ownersSynced;
+  if(stamp!==null&&kept&&kept.talks===S.doc.talks&&kept.owners===S.doc.talkOwners&&kept.stamp===stamp&&displayKept?.talks===S.doc.talks&&displayKept.stamp===stamp)return cacheEventDisplay(displayKept.value,stamp);
+  const report={},display=StudentAgeEventOwnership.sync(S.doc,S.branchFolders,S.event,beforeIds,report);
+  ownersSynced=stamp===null||report.anchored?null:{talks:S.doc.talks,owners:S.doc.talkOwners,stamp};
+  return cacheEventDisplay(display,stamp);
 }
 function shownWith(eventId){
   const display=eventDisplay(),want=eventId==='all'?null:Number(eventId),memo=displayMemo,owners=S.doc.talkOwners,key=String(want);
@@ -343,23 +360,26 @@ function eventTraversal(eventId){
   for(const id of S.order)if(!seen.has(id)&&S.doc.talks[id]){seen.add(id);out.push(id);}
   return out.filter(owned);
 }
+// Every dialogue's option list, read as raw fields so a segmented table allocates no row proxies.
+function talkOptionLists(){const info=Remote.info(S.doc.talks);return IndexedTalks.keysWithField(S.doc.talks,'option').map(id=>[Number(id),ids(info?info.read(id,'option'):S.doc.talks[id].option)]);}
 function localStoryIds(key){const local=new Set((S.localIds?.[key]||[]).map(Number));return new Set(Object.keys(S.doc?.[key]||{}).filter(id=>local.has(Number(id))||!S.catalogIds?.[key]?.has(id)).map(Number));}
 function renumberPlan(eventId){
   if(!S.doc?.events?.[eventId]||S.catalogIds?.events?.has(String(eventId))||S.project?.originalMode||eventId*1000>2147483647)return null;
   const talksInOrder=eventTraversal(eventId);if(!talksInOrder.length)return null;
-  const localTalks=localStoryIds('talks'),localOptions=localStoryIds('options');
+  const localOptions=localStoryIds('options');
   // Hand-set IDs are never touched; sequential numbers skip anything a pinned row or another local row holds.
   // An original (catalogue) row with the same number is allowed: the mod row overrides it and the card says so.
   const missingEntries=values(S.doc.events).flatMap(e=>ids(e.talkId)).filter(id=>id>0&&!S.doc.talks[id]);
-  const talkMap={},domain=new Set(talksInOrder),takenTalks=new Set([...S.pinned.talks,...missingEntries,...Object.keys(S.doc.talks).map(Number).filter(id=>!domain.has(id))]);
+  const talkMap={},domain=new Set(talksInOrder),reservedTalks=new Set([...S.pinned.talks,...missingEntries]),takenTalks={has:id=>reservedTalks.has(id)||!domain.has(id)&&String(id) in S.doc.talks};
   // A pinned line still occupies its position in the sequence, so the lines around it keep their numbers.
   let n=0;for(const id of talksInOrder){if(S.pinned.talks.has(id)){n++;continue;}let fresh;do{n++;fresh=eventId*1000+n;}while(takenTalks.has(fresh)&&fresh!==id);
     if(n>999||fresh>2147483647){if(!renumberWarned.has(eventId)){renumberWarned.add(eventId);toast('本事件对话超过 999 句，无法继续自动编号。','note');}return null;}
     if(fresh!==id)talkMap[id]=fresh;}
-  const foreignOptions=new Set();for(const t of values(S.doc.talks))if(!domain.has(Number(t.id)))for(const oid of ids(t.option))foreignOptions.add(oid);
-  const optionMap={},optionOrder=[];const seenOptions=new Set();
-  for(const id of talksInOrder)for(const oid of ids(S.doc.talks[id]?.option)){if(seenOptions.has(oid))continue;seenOptions.add(oid);const row=S.doc.options[oid];if(!row||!localOptions.has(oid)||S.pinned.options.has(oid))continue;
-    if(foreignOptions.has(oid))continue;optionOrder.push(oid);}
+  const optionMap={},candidates=[];const seenOptions=new Set();
+  for(const id of talksInOrder)for(const oid of ids(S.doc.talks[id]?.option)){if(seenOptions.has(oid))continue;seenOptions.add(oid);const row=S.doc.options[oid];if(!row||!localOptions.has(oid)||S.pinned.options.has(oid))continue;candidates.push(oid);}
+  // Only an event with options of its own needs to know which of them dialogue elsewhere also lists.
+  const foreignOptions=new Set();if(candidates.length)for(const [id,list]of talkOptionLists())if(!domain.has(id))for(const oid of list)foreignOptions.add(oid);
+  const optionOrder=candidates.filter(oid=>!foreignOptions.has(oid));
   const optionDomain=new Set(optionOrder),takenOptions=new Set([...S.pinned.options,...Object.keys(S.doc.options).map(Number).filter(id=>!optionDomain.has(id))]);
   let j=0;for(const oid of optionOrder){let fresh;do{j++;fresh=eventId*100+j;}while(takenOptions.has(fresh)&&fresh!==oid);if(j>99)break;if(fresh!==oid)optionMap[oid]=fresh;}
   if(!Object.keys(talkMap).length&&!Object.keys(optionMap).length)return null;
@@ -374,12 +394,12 @@ async function renameEvent(oldId,newId){
   // Each renamed event's automatically numbered lines and options move into its new range together, so a
   // swap between two local events is one simultaneous permutation and nothing collides.
   const ranges=[[oldId,newId],...(otherLocal?[[newId,oldId]]:[])];
-  const localTalks=localStoryIds('talks'),localOptions=localStoryIds('options');
+  const localTalks=localStoryIds('talks'),localOptions=localStoryIds('options'),optionLists=talkOptionLists();
   const groups=ranges.map(([from,to])=>{
     const traversal=eventTraversal(from),domain=new Set(traversal);
     const talks=traversal.filter(id=>!S.pinned.talks.has(id));
     const options=[...new Set(traversal.flatMap(id=>ids(S.doc.talks[id]?.option)))].filter(oid=>
-      localOptions.has(oid)&&!S.pinned.options.has(oid)&&values(S.doc.talks).every(t=>!ids(t.option).includes(oid)||domain.has(Number(t.id))));
+      localOptions.has(oid)&&!S.pinned.options.has(oid)&&optionLists.every(([id,list])=>!list.includes(oid)||domain.has(id)));
     return {to,talks,options};
   });
   const movingTalks=new Set(groups.flatMap(g=>g.talks)),movingOptions=new Set(groups.flatMap(g=>g.options));
@@ -563,10 +583,11 @@ async function deleteTalkChecked(requested) {
   const resolved=new Map();
   const resolve=start=>{let id=start;const seen=new Set();while(removed.has(id)&&!seen.has(id)&&!resolved.has(id)){seen.add(id);id=successors[id]?.[0];}const target=resolved.get(id)||(!removed.has(id)&&S.doc.talks[id]?[id]:[]);for(const n of seen)resolved.set(n,target);return target;};
   const replacements=Object.fromEntries([...removed].map(id=>[id,resolve(id)]));
-  const signature=currentSignature(),project=S.project.id,created=premiseHolders({talks:Object.fromEntries([...removed].map(id=>[id,S.doc.talks[id]]))}),remaining=premiseHolders({...S.doc,talks:Object.fromEntries(Object.entries(S.doc.talks).filter(([id])=>!removed.has(Number(id))))});
+  // The rest of the mod is searched for other holders only when the removed lines create a premise at all.
+  const project=S.project.id,created=premiseHolders({talks:Object.fromEntries([...removed].map(id=>[id,S.doc.talks[id]]))}),remaining=created.size?premiseHolders({...S.doc,talks:Object.fromEntries(Object.entries(S.doc.talks).filter(([id])=>!removed.has(Number(id))))}):new Set();
   const removedPremises=Object.entries(S.premises).filter(([,p])=>created.has(p.eventId+':'+p.slot)&&!remaining.has(p.eventId+':'+p.slot));
   if(removedPremises.length){
-    const references=await Promise.all(removedPremises.map(async([key,p])=>({key,p,...await api('/api/premises/references',{projectId:project,eventId:p.eventId,slot:p.slot,talkId:p.talkId,...Object.fromEntries(MAPS.map(k=>[k,S.doc[k]]))})})));
+    const signature=currentSignature(),references=await Promise.all(removedPremises.map(async([key,p])=>({key,p,...await api('/api/premises/references',{projectId:project,eventId:p.eventId,slot:p.slot,talkId:p.talkId,...Object.fromEntries(MAPS.map(k=>[k,S.doc[k]]))})})));
     const used=references.filter(r=>r.references.length);
     if(used.length&&!await new Promise(resolve=>{const d=document.createElement('dialog');d.className='save-review-dialog';d.innerHTML='<h2>删除对话及其前提？</h2>'+used.map(r=>'<p>'+h(r.references.join('、'))+' 引用了该对话创造的前提「'+h(r.p.name)+'」。</p>').join('')+'<p>确定删除后，会一并移除这些前提和对应的前提条件；其他条件保留。</p><footer><button data-delete-premise-cancel>取消</button><button data-delete-premise-confirm class="danger-button">确定删除</button></footer>';document.body.append(d);const end=v=>{d.close();d.remove();resolve(v);};d.querySelector('[data-delete-premise-cancel]').onclick=()=>end(false);d.querySelector('[data-delete-premise-confirm]').onclick=()=>end(true);d.oncancel=e=>{e.preventDefault();end(false);};d.showModal();}))return false;
     if(project!==S.project.id||signature!==currentSignature())throw Error('对话内容已变化，未执行删除，请重新点击。');
@@ -580,8 +601,8 @@ async function deleteTalkChecked(requested) {
     Object.assign(S.replacements,replacements);Timeline.replaceMany(S.doc,S.branchFolders,replacements);
     S.doc.audioCues.bgm=S.doc.audioCues.bgm.map(g=>({...g,talkIds:ids(g.talkIds).filter(id=>!removed.has(id))})).filter(g=>g.talkIds.length);
     for(const key of folderKeys)delete S.branchFolders[key];
-    const usedOptions=new Set([...values(S.doc.talks).flatMap(t=>ids(t.option)),...values(S.doc.events).flatMap(e=>ids(e.options))]);
-    for(const oid of optionIds)if(!usedOptions.has(oid))delete S.doc.options[oid];
+    if(optionIds.size){const usedOptions=new Set([...Branches.optionParentCounts(S.doc).keys(),...values(S.doc.events).flatMap(e=>ids(e.options))]);
+    for(const oid of optionIds)if(!usedOptions.has(oid))delete S.doc.options[oid];}
     S.branchFolders=Branches.cleanup(S.doc,S.branchFolders,S.replacements);for(const parent of new Set(values(S.branchFolders).filter(f=>f.kind==='condition').map(f=>f.parentTalkId)))Timeline.sync(S.doc,S.branchFolders,parent,true);
     const visible=visibleIds();S.selected=visible.includes(S.selected)?S.selected:(replacements[selected[0]]?.find(id=>visible.includes(id))||visible[Math.min(index,visible.length-1)]||null);S.activeFolder=Branches.ownedBy(S.branchFolders,S.selected);
   });
@@ -632,7 +653,7 @@ function addOption(content='新的选择') {
   const t=talk();if(!t)return;if(Timeline.entries(S.branchFolders,t.id).length){toast('这句已有条件分支，请在分支内的对话上添加玩家选项。','note');return;}let created=null;mutate('添加对话选项',()=>{const id=nextId(S.doc.options,eventForTalk()*100+1);S.doc.options[id]={id,content:typeof content==='string'?content:'新的选择',talkId:[],talkId2:[],effect:[],effect2:[],check:[],precondition:[]};t.option=[...ids(t.option),id];Branches.create(S.doc,S.branchFolders,t.id,id);S.folderOpen[Branches.key(t.id,id)]=true;created=id;});return created;
 }
 function deleteOption(oid) {
-  const t=talk();if(!t)return;mutate('删除对话选项',()=>{t.option=ids(t.option).filter(x=>x!==oid);if(!values(S.doc.talks).some(x=>ids(x.option).includes(oid))&&!values(S.doc.events).some(x=>ids(x.options).includes(oid)))delete S.doc.options[oid];S.branchFolders=Branches.cleanup(S.doc,S.branchFolders);if(S.activeFolder&&!S.branchFolders[S.activeFolder])S.activeFolder=null;});
+  const t=talk();if(!t)return;mutate('删除对话选项',()=>{t.option=ids(t.option).filter(x=>x!==oid);if(!Branches.optionParents(S.doc,oid).length&&!values(S.doc.events).some(x=>ids(x.options).includes(oid)))delete S.doc.options[oid];S.branchFolders=Branches.cleanup(S.doc,S.branchFolders);if(S.activeFolder&&!S.branchFolders[S.activeFolder])S.activeFolder=null;});
 }
 
 function allConditionTemplates(){return [...Effects.conditionTemplates(S.premises),...S.conditionTemplates];}
@@ -1127,10 +1148,13 @@ function deleteEvents(eventIds) {
  if(references.length)toast('已删除的事件仍被引用：'+[...new Set(references)].join('、')+'。这些跳转现在指向不存在的事件，请自行调整。','note');
  mutate('删除事件及专属对话',()=>{
   removePremises(Object.keys(S.premises).filter(k=>selected.includes(Number(S.premises[k].eventId))));for(const id of selected){StudentAgeEventBindings.clearSocialBindings(S.doc,S.doc.events[id]);delete S.doc.events[id];delete S.doc.eventGrades?.[id];}
-  for(const row of values(S.doc.actionEvents))row.evts=ids(row.evts).filter(value=>!selected.includes(value));for(const row of values(S.doc.actions))if(selected.includes(Number(row.evtId)))row.evtId=0;for(const row of values(S.doc.interactions))if(owned.has(Number(row.talkId)))delete S.doc.interactions[row.id];
-  for(const tid of owned){delete S.doc.talks[tid];delete S.doc.talkOwners[tid];S.deleted.push(tid);S.replacements[tid]=[];replaceEdges(tid,[]);delete S.doc.audioCues.sfx[tid];if(S.doc.audioCues.nativeAudio)delete S.doc.audioCues.nativeAudio[tid];}
+  for(const row of values(S.doc.actionEvents))if(ids(row.evts).some(value=>selected.includes(value)))row.evts=ids(row.evts).filter(value=>!selected.includes(value));for(const row of values(S.doc.actions))if(selected.includes(Number(row.evtId)))row.evtId=0;for(const row of values(S.doc.interactions))if(owned.has(Number(row.talkId)))delete S.doc.interactions[row.id];
+  const replacements={};for(const tid of owned){delete S.doc.talks[tid];delete S.doc.talkOwners[tid];S.deleted.push(tid);replacements[tid]=[];delete S.doc.audioCues.sfx[tid];if(S.doc.audioCues.nativeAudio)delete S.doc.audioCues.nativeAudio[tid];}
+  // Repair links in one pass that leaves untouched rows alone. A pass per deleted line rewrote every dialogue each
+  // time, which froze large mods and left the whole table marked as edited for every later edit.
+  Object.assign(S.replacements,replacements);Timeline.replaceMany(S.doc,S.branchFolders,replacements);
+  // plan() keeps any option that a remaining dialogue or event still lists, so no remaining row needs rewriting.
   for(const oid of ownOptions)delete S.doc.options[oid];
-  for(const row of values(S.doc.talks))row.option=ids(row.option).filter(o=>!ownOptions.has(o));for(const row of values(S.doc.events))if(row.options)row.options=ids(row.options).filter(o=>!ownOptions.has(o));
   S.order=S.order.filter(t=>!owned.has(t));S.branchFolders=Branches.cleanup(S.doc,S.branchFolders,S.replacements);S.doc.audioCues.bgm=S.doc.audioCues.bgm.map(g=>({...g,talkIds:ids(g.talkIds).filter(t=>!owned.has(t))})).filter(g=>g.talkIds.length);
   if(selected.includes(Number(S.event))){S.event=values(S.doc.events)[0]?.id||'all';S.selected=null;S.activeFolder=null;}
  });window.STUDIO_EVENTS?.refresh();return true;
@@ -2241,7 +2265,7 @@ window.STUDIO_STORY_JSON={
   rows=clone(rows);const map={};if(['talks','options','events'].includes(key))for(const [id,row]of Object.entries(rows)){const next=Number(row?.id);if(Number.isInteger(next)&&next>0&&next<=2147483647&&String(next)!==id){map[id]=next;row.id=Number(id);}}
   for(const [id,next]of Object.entries({...map}))if((rows[next]||S.doc[key][next])&&localStoryIds(key).has(Number(next))&&map[next]===undefined)map[next]=Number(id);
   if(new Set(Object.values(map)).size!==Object.keys(map).length)throw Error('多条记录指向同一个编号，请逐条修改编号。');
-  history('编辑 JSON');const graphChanged=['talks','options','events'].includes(key),beforeIds=graphChanged?new Set(Object.keys(S.doc.talks)):null;for(const id of Object.keys(previous))if(!rows[id])delete S.doc[key][id];Object.assign(S.doc[key],clone(rows));
+  history('编辑 JSON');const graphChanged=['talks','options','events'].includes(key),beforeIds=graphChanged?new Set(Object.keys(S.doc.talks)):null;for(const id of Object.keys(previous))if(!rows[id])delete S.doc[key][id];for(const [id,row]of Object.entries(clone(rows)))if(JSON.stringify(row)!==JSON.stringify(previous[id]))S.doc[key][id]=row;
   if(key==='talks'){S.order=S.order.filter(id=>S.doc.talks[id]);for(const id of Object.keys(rows).map(Number))if(!S.order.includes(id))S.order.push(id);}
   // Rows typed into the JSON carry the numbers the author chose: keep them out of automatic renumbering.
   if(key==='talks'||key==='options')for(const id of Object.keys(rows))if(!previous[id]&&Number.isInteger(Number(id)))S.pinned[key].add(Number(id));

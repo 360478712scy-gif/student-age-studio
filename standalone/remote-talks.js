@@ -34,14 +34,16 @@ async function fetchRows(base,ids){
  }
 }
 function table(base,initial){
- let graphVersion=0;const changes=new Map(Object.entries(copy(initial))),handles=new Map();
+ // linkVersion counts only what changes who leads where: the set of rows and their nextTalk/nextTalk2/option.
+ let graphVersion=0,linkVersion=0,keyCache=null,keyVersion=-1;const changes=new Map(Object.entries(copy(initial))),handles=new Map();
  const exists=id=>changes.has(id)?changes.get(id)!==null:base.ids.has(id);
  const stateFor=id=>changes.get(id)||entry(base,id);
- const keys=()=>[...new Set([...base.ids,...changes.keys()])].filter(exists).sort((a,b)=>Number(a)-Number(b));
+ // Rows appear and disappear only through the table itself, which advances graphVersion; sort once per version.
+ const keys=()=>{if(keyVersion!==graphVersion){keyCache=[...new Set([...base.ids,...changes.keys()])].filter(exists).sort((a,b)=>Number(a)-Number(b));keyVersion=graphVersion;}return keyCache.slice();};
  function fields(id){const e=stateFor(id);return [...new Set([...(base.summaries[e.source]?.fields||[]),...Object.keys(e.set)])].filter(k=>!e.remove.includes(k));}
  function read(id,key){const e=stateFor(id);if(e.remove.includes(key))return undefined;if(own(e.set,key))return e.set[key];if(!e.source)return undefined;if(key==='content'&&base.summaries[e.source].fields.includes('content'))return JSON.parse(text(base,e.source)).content;return own(base.summaries[e.source].record,key)?base.summaries[e.source].record[key]:undefined;}
  function put(id,key,value,remove=false){
-  if(key!=='content')graphVersion++;
+  if(key!=='content')graphVersion++;if(key==='nextTalk'||key==='nextTalk2'||key==='option')linkVersion++;
   const e=copy(stateFor(id));
   if(key==='content'&&e.source&&!base.kept.has(e.source)&&base.cache.has(e.source)){base.kept.set(e.source,text(base,e.source));}
   e.remove=e.remove.filter(k=>k!==key);if(remove){delete e.set[key];e.remove.push(key);}else e.set[key]=copy(value);
@@ -75,8 +77,8 @@ function table(base,initial){
  }
  const proxy=new Proxy({}, {
   get(_,id){return typeof id==='string'&&exists(id)?node(id):undefined;},
-  set(_,id,row){if(typeof id!=='string')return false;const n=nodes.get(row);const value=n&&n.base===base?n.state():{source:null,set:copy(row),remove:[]};graphVersion++;detach(id);changes.set(id,value);return true;},
-  deleteProperty(_,id){graphVersion++;detach(id);changes.set(id,null);return true;},
+  set(_,id,row){if(typeof id!=='string')return false;const n=nodes.get(row);const value=n&&n.base===base?n.state():{source:null,set:copy(row),remove:[]};graphVersion++;linkVersion++;detach(id);changes.set(id,value);return true;},
+  deleteProperty(_,id){graphVersion++;linkVersion++;detach(id);changes.set(id,null);return true;},
   has(_,id){return exists(id);},ownKeys:keys,
   getOwnPropertyDescriptor(_,id){return exists(id)?{configurable:true,enumerable:true,writable:true,value:undefined}:undefined;}
  });
@@ -85,7 +87,7 @@ function table(base,initial){
   const e=copy(value);if(e.source===id){const original=base.summaries[id];for(const key of Object.keys(e.set)){const before=key==='content'?((base.kept.has(id)||base.cache.has(id))?JSON.parse(text(base,id)).content:Symbol()):original.record[key];if(equal(e.set[key],before)&&original.fields.includes(key))delete e.set[key];}e.remove=e.remove.filter(k=>original.fields.includes(k));if(!Object.keys(e.set).length&&!e.remove.length)continue;}
   e.set=Object.fromEntries(Object.entries(e.set).sort(([a],[b])=>a.localeCompare(b)));e.remove.sort();out[id]=e;
  }return out;}
- const info={base,get graphVersion(){return graphVersion;},keys,state,stateFor,read,fields,proxy};tables.set(proxy,info);return proxy;
+ const info={base,get graphVersion(){return graphVersion;},get linkVersion(){return linkVersion;},keys,state,stateFor,read,fields,proxy};tables.set(proxy,info);return proxy;
 }
 function pack(value){const t=tables.get(value),n=nodes.get(value);if(t)return {__studioRemoteTalks:t.base.id,changes:t.state()};if(n)return {__studioRemoteRow:n.base.id,id:n.id,entry:n.state()};return value;}
 function revive(value){if(!value||typeof value!=='object')return value;const id=value.__studioRemoteTalks||value.__studioRemoteRow;if(!id)return value;const base=bases.get(id);if(!base)throw Error('对话底稿已过期，无法恢复草稿。');return value.__studioRemoteTalks?table(base,value.changes):table(base,{[value.id]:value.entry})[value.id];}

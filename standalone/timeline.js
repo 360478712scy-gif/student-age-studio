@@ -64,7 +64,7 @@ function insert(doc,folders,folder,row,after=null){
  const members=ids(folder.talkIds),index=after===null?members.length-1:members.indexOf(Number(after));
  if(after!==null&&index<0)throw Error('这句不属于当前对话夹。');
  const previous=doc.talks[members[index]],option=doc.options[folder.optionId];
- if(!folder.kind&&Object.values(doc.talks).filter(t=>ids(t.option).includes(folder.optionId)).length>1)throw Error('这个选项被多句共用，请先制作独立选项。');
+ if(!folder.kind&&branchApi().optionParents(doc,folder.optionId).length>1)throw Error('这个选项被多句共用，请先制作独立选项。');
  if(previous&&(ids(previous.option).length||previous.miniGame?.length||(!entries(folders,previous.id).length&&(previous.check?.length||ids(previous.nextTalk2).length))))throw Error('请在这句的子分支中添加对话。');
  row.nextTalk=previous?next(doc,folders,previous.id):folder.kind==='condition'?[folder.exitId]:ids(option?.talkId);
  if(!row.nextTalk.length&&folder.continuation?.kind==='talk')row.nextTalk=targets(doc,folder.continuation);
@@ -82,10 +82,12 @@ function setContinuation(doc,folders,folder,c){
  folder.continuation=copy(c);
 }
 function replace(doc,folders,from,to,except=new Set()){
- const repair=v=>ids(v).flatMap(id=>id===from?ids(to):[id]);
- for(const t of Object.values(doc.talks))if(!except.has(Number(t.id))){t.nextTalk=repair(t.nextTalk);t.nextTalk2=repair(t.nextTalk2);}
- for(const table of [doc.options,doc.events])for(const r of Object.values(table||{})){r.talkId=repair(r.talkId);if('talkId2'in r)r.talkId2=repair(r.talkId2);}
- for(const f of Object.values(folders)){if(f.kind==='condition'){f.baseNext=repair(f.baseNext);if(Array.isArray(f.failureNext))f.failureNext=repair(f.failureNext);}if(f.continuation?.kind==='talk'&&Number(f.continuation.talkId)===from)f.continuation=to.length?{kind:'talk',talkId:to[0]}:{kind:'end'};if(f.continuation?.kind==='targets')f.continuation.targets=repair(f.continuation.targets);}
+ // Only rows that point at `from` are rewritten. Writing every row marks the whole table as edited, and
+ // each later history snapshot and unsaved-change check then has to compare all of them.
+ const repair=(r,key)=>{const old=r[key];if(Array.isArray(old)&&old.some(id=>Number(id)===from))r[key]=ids(old).flatMap(id=>id===from?ids(to):[id]);};
+ for(const t of Object.values(doc.talks))if(!except.has(Number(t.id))){repair(t,'nextTalk');repair(t,'nextTalk2');}
+ for(const table of [doc.options,doc.events])for(const r of Object.values(table||{})){repair(r,'talkId');repair(r,'talkId2');}
+ for(const f of Object.values(folders)){if(f.kind==='condition'){repair(f,'baseNext');repair(f,'failureNext');}if(f.continuation?.kind==='talk'&&Number(f.continuation.talkId)===from)f.continuation=to.length?{kind:'talk',talkId:to[0]}:{kind:'end'};if(f.continuation?.kind==='targets')repair(f.continuation,'targets');}
 }
 // Apply already-resolved deletion destinations in one pass; untouched rows stay lazy.
 function replaceMany(doc,folders,replacements){
@@ -129,7 +131,7 @@ function moveToFolder(doc,folders,order,source,key){
  if(source===Number(folder.parentTalkId))throw Error('不能把对话拖进它自己的对话夹。');
  if(ids(row.option).length||entries(folders,source).length||row.miniGame?.length||row.check?.length||ids(row.nextTalk2).length||ids(row.nextTalk).length>1)throw Error('这句带有分支出口，不能单独移入；可以拖动分支里的普通对话。');
  if(ids(doc.talkOwners?.[source]).length>1)throw Error('这句被多个事件共用，不能单独移入对话夹。');
- for(const f of [folder,folders[lane]].filter(Boolean))if(f.kind!=='condition'&&Object.values(doc.talks).filter(t=>ids(t.option).includes(Number(f.optionId))).length>1)throw Error('这个选项被多句共用，请先制作独立选项。');
+ for(const f of [folder,folders[lane]].filter(Boolean))if(f.kind!=='condition'&&branchApi().optionParents(doc,f.optionId).length>1)throw Error('这个选项被多句共用，请先制作独立选项。');
  const following=next(doc,folders,source);
  if(following.includes(source))throw Error('这句有循环连接，不能直接移动。');
  replace(doc,folders,source,following,new Set([source]));
@@ -150,7 +152,7 @@ function removeFolder(doc,folders,key){
  if(!root&&!ids(parent.option).includes(optionId))throw Error('这个对话夹已不存在。');
  const base=conditional?ids(root.baseNext):next(doc,folders,parentId),removedKeys=new Set([key]),dead=new Set(),optionIds=new Set();
  if(!conditional){parent.option=ids(parent.option).filter(id=>id!==optionId);optionIds.add(optionId);}
- const sharedOption=id=>Object.values(doc.talks).some(t=>!dead.has(Number(t.id))&&ids(t.option).includes(id))||Object.values(doc.events||{}).some(e=>ids(e.options).includes(id));
+ const sharedOption=id=>branchApi().optionParents(doc,id).some(t=>!dead.has(t))||Object.values(doc.events||{}).some(e=>ids(e.options).includes(id));
  const collect=f=>{for(const id of ids(f.talkIds))dead.add(id);if(f.kind==='condition'){dead.add(Number(f.routerId));dead.add(Number(f.exitId));}else optionIds.add(Number(f.optionId));};
  if(root&&(conditional||!sharedOption(optionId)))collect(root);
  let changed=true;
@@ -160,7 +162,8 @@ function removeFolder(doc,folders,key){
  for(const id of dead)for(const oid of ids(doc.talks[id]?.option))optionIds.add(oid);
  for(const id of removedKeys)delete folders[id];
  const continuation=base.filter(id=>!dead.has(id)),replacements={};
- for(const id of dead){delete doc.talks[id];replacements[id]=continuation.slice();replace(doc,folders,id,continuation);}
+ for(const id of dead){delete doc.talks[id];replacements[id]=continuation.slice();}
+ replaceMany(doc,folders,replacements);
  for(const oid of optionIds)if(!sharedOption(oid))delete doc.options[oid];
  if(conditional&&!entries(folders,parentId).length){parent.nextTalk=continuation;parent.nextTalk2=[];parent.check=[];}
  for(const id of new Set(Object.values(folders).filter(f=>f.kind==='condition').map(f=>f.parentTalkId)))sync(doc,folders,id,true);

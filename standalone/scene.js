@@ -697,13 +697,14 @@ class Renderer {
     if(!node.animate)return;let start=state.motionStarts?.[role.id]||role;const motions=state.motions.filter(m=>m.id===role.id);
     const entry=motions.find(m=>m.code>=1001&&m.code<=1003),entering=entry&&!start.visible;
     if(!retarget){node.sceneMotionState=state;node.scenePositionAnimations??=new Map();}
-    function tween(property,from,to,motion,duration=.4){
+    function tween(property,from,to,motion,duration=.4,easing='ease-out'){
       const frames=[{[property]:from},{[property]:to}];
       if(retarget){const animation=node.scenePositionAnimations?.get(property);if(animation?.playState==='running'||animation?.playState==='paused')animation.effect.setKeyframes(frames);return;}
-      if(from===to)return;node.scenePositionAnimations.set(property,node.animate(frames,{duration:Math.max(.001,motion?.duration||duration)*1000,delay:Math.max(0,motion?.delay||0)*1000,easing:'ease-out',fill:'backwards'}));
+      if(from===to)return;node.scenePositionAnimations.set(property,node.animate(frames,{duration:Math.max(.001,motion?.duration||duration)*1000,delay:Math.max(0,motion?.delay||0)*1000,easing,fill:'backwards'}));
     }
     const from=this.layout(node,start,state.reference);let left=from.left,bottom=from.bottom;
-    if(entering){tween('opacity',0,1,entry,entry.code===1002?.15:.4);if(entry.code===1001&&entry.fromAxis!==3)left=entry.fromAxis===1?'-35%':'135%';if(entry.code===1003)bottom=(parseFloat(from.bottom)-100)+'%';}
+    // Native fades every entrance in over 0.15 s, linearly (DOFade 0.15, Ease.Linear), like the exits.
+    if(entering){tween('opacity',0,1,entry,.15,'linear');if(entry.code===1001&&entry.fromAxis!==3)left=entry.fromAxis===1?'-35%':'135%';if(entry.code===1003)bottom=(parseFloat(from.bottom)-100)+'%';}
     const changeScale=motions.find(m=>m.code===3003),flip=motions.find(m=>m.code===3005||m.code===3007);
     const track=state.positionTracks?.[role.id];
     if(track?.steps.length){

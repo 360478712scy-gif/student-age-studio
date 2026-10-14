@@ -1,7 +1,7 @@
 'use strict';
 (() => {
 const h=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const actions={1001:'滑动登场',1002:'渐显登场',2001:'滑动退场',2002:'渐隐退场',3000:'切换表情',3001:'跳跃',3002:'摇晃',3004:'水平位移',3008:'竖直位移',3005:'有动画翻转',3007:'无动画翻转',3006:'更换服装',3009:'气泡表情',3012:'黑影',3013:'取消黑影'};
+const actions={1001:'滑动登场',1002:'渐显登场',1003:'从下方登场',2001:'滑动退场',2002:'渐隐退场',3000:'切换表情',3001:'跳跃',3002:'摇晃',3004:'水平位移',3008:'竖直位移',3005:'有动画翻转',3007:'无动画翻转',3006:'更换服装',3009:'气泡表情',3012:'黑影',3013:'取消黑影'};
 const presets={};
 const names={...actions,1003:'从下方登场',3003:'强调放大',3004:'拖动位移（水平）',3007:'无动画翻转',3008:'拖动位移（垂直）',3009:'气泡表情',3012:'黑影',3013:'取消黑影',3014:'更换发型'};
 // UP 非官方补丁把 3003 的参数当作倍数；只在插件编辑模式里提供，原版固定放大到 1.1 倍。
@@ -22,7 +22,7 @@ function open(options){
  const atlas=(()=>{try{return '/api/social-emojis?token='+encodeURIComponent(new URL(options.assetUrl(''),location.href).searchParams.get('token')||'');}catch{return '';}})();
  const context=()=>options.context(),existing=()=>selected===null?null:context()?.row.roles?.[selected],role=()=>Number(existing()?.[0]??initial.role),args=()=>existing()?.slice(2)||draft;
  const status=text=>q('[role=status]').textContent=text,name=id=>context()?.doc.persons?.[id]?.name||(Number(id)===0?'白雨':'人物 '+id),actionName=c=>c===3003&&pluginEditing()?'调整大小（UP）':names[c]||'扩展动作';
- function defaults(value){const c=context(),actor=c.after.roles[initial.role]||c.before.roles[initial.role]||{};return ({1001:[1,actor.axis||3,0],1002:[1,actor.axis||3,0],2001:[actor.x<0?1:2,0],2002:[0],3000:[actor.face||0],3001:[1,0,1],3002:[.4,0],3005:[0],3007:[0],3006:[actor.cloth||0],3004:[0,0],3008:[0,0,0],3009:[0,0],3003:[1.1,0],3012:[],3013:[]})[value]?.slice()||[];}
+ function defaults(value){const c=context(),actor=c.after.roles[initial.role]||c.before.roles[initial.role]||{};return ({1001:[1,actor.axis||3,0],1002:[1,actor.axis||3,0],1003:[1,actor.axis||3,0],2001:[actor.x<0?1:2,0],2002:[0],3000:[actor.face||0],3001:[1,0,1],3002:[.4,0],3005:[0],3007:[0],3006:[actor.cloth||0],3004:[0,0],3008:[0,0,0],3009:[0,0],3003:[1.1,0],3012:[],3013:[]})[value]?.slice()||[];}
  draft=defaults(code);
  function stop(){clearTimeout(timer);clearTimeout(frame);timer=frame=null;playing=false;audio?.stop();stage.getAnimations?.({subtree:true}).forEach(a=>a.cancel());q('[data-action-play]').textContent='播放';q('[data-actions-play]').textContent='播放全部';}
  function draw(){const c=context();if(c)renderer.draw(c.doc,c.after,{edit:false});}
@@ -34,6 +34,8 @@ function open(options){
   const c=context();if(!c)return;const values=args(),details=options.appearance?.(role())||c;
   let html=`<div class="action-settings-heading"><h3>${h(preset&&selected===null?presets[preset].label:actionName(code))}</h3><span>${selected===null?'待添加 · '+h(initial.name):'编辑已添加动作 · '+h(name(role()))}</span></div>`;
   if([1001,1002,1003,2001].includes(code)){const index=code===2001?0:1;html+=`<label class="action-param"><span>${code===2001?'退场方向':'登场位置'}</span><select data-action-arg="${index}">${(code===2001?[[1,'向左滑出'],[2,'向右滑出']]:[[1,'左侧'],[3,'中间'],[2,'右侧']]).map(([n,s])=>`<option value="${n}" ${Number(values[index])===n?'selected':''}>${s}</option>`).join('')}</select></label>`;}
+  // Native starts a 1003 entrance one screen height below its slot, only for a role that is not on stage yet.
+  if(code===1003)html+='<p class="helper">人物从画面下方向上窜出，0.4 秒升到登场位置。人物已经在场时，只会移动到所选位置。</p>';
   if(code===3001)html+=range(0,'跳跃次数',1,5,1,'次')+range(2,'跳跃力度',.2,5,.1,'');
   if(code===3002)html+=range(0,'摇晃时长',.1,3,.1);
   if(code===3003)html+=pluginEditing()?range(0,'大小倍数',.1,3,.05,'倍')+'<p class="helper">在人物当前大小上乘以这个倍数，例如 0.8 缩小、1.5 放大。需要玩家安装 UP 非官方补丁；没有安装时，游戏按原版固定放大到 1.1 倍。</p>':'<p class="helper">原版强调放大：人物放大到当前的 1.1 倍。在插件编辑模式中可以设置任意倍数（需要 UP 非官方补丁）。</p>';

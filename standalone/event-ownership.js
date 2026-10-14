@@ -38,14 +38,20 @@ function ownership(doc,folders,previous=doc.talkOwners||{},anchor=[],analysis=nu
  for(const id of anchored){const key=String(id);if(!talks.has(key))continue;const set=result[key]??=new Set();for(const e of ids(previous[key]||previous[id]))if(doc.events[e])set.add(e);}
  return listed(result);
 }
-function sync(doc,folders,currentEvent,beforeIds){
+// `report.anchored` tells the caller how many new lines were tied to the current event by this call.
+function sync(doc,folders,currentEvent,beforeIds,report=null){
  const previous={...(doc.talkOwners||{})},anchor=[],analysis={};
  if(beforeIds&&doc.events[currentEvent])for(const t of Object.keys(doc.talks))if(!beforeIds.has(t)){previous[t]=[Number(currentEvent)];anchor.push(Number(t));}
+ if(report)report.anchored=anchor.length;
  doc.talkOwners=ownership(doc,folders,previous,anchor,analysis);return analysis.display;
 }
 function interactionTalks(doc){const found=new Set(),todo=Object.values(doc.interactions||{}).map(r=>Number(r.talkId)).filter(Boolean);while(todo.length){const id=todo.pop(),r=doc.talks[id];if(!r||found.has(id))continue;found.add(id);todo.push(...ids(r.nextTalk),...ids(r.nextTalk2),...ids(r.option).flatMap(o=>[...ids(doc.options?.[o]?.talkId),...ids(doc.options?.[o]?.talkId2)]));}return found;}
 function plan(doc,folders,eventIds,localIds){const owners=ownership(doc,folders),removed=new Set(eventIds.map(Number)),local=new Set((localIds||[]).map(Number)),idle=interactionTalks(doc);
  const talks=new Set(Object.keys(doc.talks).map(Number).filter(t=>(owners[t]||[]).length&&(owners[t]||[]).every(e=>removed.has(e))));
- const options=new Set([...eventIds.flatMap(e=>ids(doc.events[e]?.options)),...[...talks].flatMap(t=>ids(doc.talks[t]?.option))]);for(const [id,row]of Object.entries(doc.talks))if(!talks.has(Number(id)))for(const o of ids(row.option))options.delete(o);for(const [id,row]of Object.entries(doc.events))if(!removed.has(Number(id)))for(const o of ids(row.options))options.delete(o);return {talks,options};
+ const options=new Set([...eventIds.flatMap(e=>ids(doc.events[e]?.options)),...[...talks].flatMap(t=>ids(doc.talks[t]?.option))]);
+ // Events without options have nothing to keep. Otherwise read only the option field, as links() does.
+ if(options.size){const remote=globalThis.StudentAgeRemoteTalks?.info?.(doc.talks),field=remote?t=>remote.read(t,'option'):t=>doc.talks[t].option;
+  for(const id of Object.keys(doc.talks))if(!talks.has(Number(id)))for(const o of ids(field(id)))options.delete(o);for(const [id,row]of Object.entries(doc.events))if(!removed.has(Number(id)))for(const o of ids(row.options))options.delete(o);}
+ return {talks,options};
 }
 return {ownership,display,sync,plan,interactionTalks};});
