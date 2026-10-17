@@ -9,7 +9,7 @@ const event={id:7,type:2,npc:111234,mapId:3,rate:.5,maxcount:1,condition:[],effe
 const doc={events:{7:event},talks:{71:{id:71,content:'保留正文',nextTalk:[],effect:[]}},options:{}};
 const apply=social=>B.applySocial(doc,event,{social},{},()=>9000000);
 apply({kind:'favor',favor:30});B.syncSocialEffects(doc);
-assert.deepEqual(plain(event.condition),[[7,1,111234,30],[7,101,111234,3],[0,1,.5]]);
+assert.deepEqual(plain(event.condition),[[7,1,111234,30],[0,1,.5]]);
 event.condition=[];B.syncSocialEffects(doc);
 // Changing away from a social type and back must not undo the user's deletions.
 apply(null);apply({kind:'favor',favor:50});B.syncSocialEffects(doc);

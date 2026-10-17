@@ -2606,6 +2606,15 @@ class StudioStore:
                     from native_condition_migration import is_owned
                     rows[:] = [row for row in rows if not (isinstance(row, dict) and is_owned(row.get('template')))]
                     bundled = [row for row in bundled if not (isinstance(row, dict) and is_owned(row.get('template')))]
+                    # Existing extracted catalogs retain the old non-holiday choice.
+                    # Update the picker only; authored condition rows remain untouched.
+                    for row in rows:
+                        if isinstance(row, dict) and row.get('template', [])[:2] == [2, 8]:
+                            for parameter in row.get('parameters', []):
+                                if parameter.get('index') == 2:
+                                    for choice in parameter.get('choices', []):
+                                        if choice.get('id') == 0:
+                                            choice['id'] = -1
                 existing = {signature(row) for row in rows if isinstance(row, dict)}
                 rows.extend(row for row in bundled if signature(row) not in existing)
                 if kind == 'effect': rows.sort(key=lambda row: row.get('label') != '直接成为恋人')

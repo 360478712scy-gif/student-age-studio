@@ -71,6 +71,19 @@ class NativeConditionIntegrationTests(unittest.TestCase):
         self.assertEqual(collect('GiftEvtCfg', rows)[0]['rows'], [[7, 1, 3, 30], [1163, 1, 2]])
         self.assertEqual(rows, before)
 
+    def test_cached_holiday_choices_use_native_negative_value(self):
+        holiday = {'label': '是否假期', 'template': [2, 8, 1], 'match': {'0': 2, '1': 8},
+                   'parameters': [{'index': 2, 'choices': [{'id': 1, 'label': '假期'},
+                                                        {'id': 0, 'label': '非假期'}]}]}
+        catalog = {'commands': {'condition': [holiday], 'effect': [copy.deepcopy(holiday)]}}
+        before = copy.deepcopy(catalog)
+        with patch.object(self.store, 'catalog', return_value=catalog):
+            result = self.store.command_catalog(self.ident)['commands']
+        revised = next(t for t in result['condition'] if t['template'] == [2, 8, 1])
+        self.assertEqual(revised['parameters'][0]['choices'][1]['id'], -1)
+        self.assertIn(holiday, result['effect'])
+        self.assertEqual(catalog, before)
+
     def test_text_save_advances_condition_cache_without_rescanning(self):
         self.write('TalkCfg', {'1': {'id': 1, 'content': 'before', 'check': [[7, 9006, 3, 30]],
                                    'nextTalk': [], 'effect': []}})
