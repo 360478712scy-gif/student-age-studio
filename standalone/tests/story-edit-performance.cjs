@@ -67,19 +67,20 @@ const context = extra => {
 // 3. Option text edits update only the option and its rendered folder title. They must not
 // rebuild the dialogue list, which was the 1.6s-per-key browser path.
 {
-  const title = { textContent: '' };
+  const title = { innerHTML: '' };
   const node = { dataset: { folder: '1:101' }, querySelector: () => title };
   let histories = 0, dirty = 0, lists = 0;
   const box = context({
     S: { branchFolders: { '1:101': { optionId: 101 } } },
     document: { querySelectorAll: () => [node] },
+    StudentAgeRecordLabels: { html: (id, value) => `[${id}] ${value}` },
     history: () => histories++, updateTextDirty: () => dirty++, renderList: () => lists++,
   });
   vm.runInContext(take('function updateOptionTextCard', 'function setSpeakerName'), box);
   const option = { id: 101, content: '旧选项' };
   box.updateOptionContent(option, '新选项');
   assert.equal(option.content, '新选项');
-  assert.equal(title.textContent, '新选项');
+  assert.equal(title.innerHTML, '[101] 新选项');
   assert.equal(histories, 1);
   assert.equal(dirty, 1);
   assert.equal(lists, 0, 'option typing must not rebuild the talk list');
