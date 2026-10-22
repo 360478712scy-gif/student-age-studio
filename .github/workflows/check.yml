@@ -45,6 +45,8 @@ jobs:
       - run: node standalone/tests/ownership-reuse.cjs
       - run: node standalone/tests/talk-field-scan.cjs
       - run: node standalone/tests/save-payload-state.cjs
+      - run: node standalone/tests/story-edit-performance.cjs
+      - run: node standalone/tests/story-edit-review.cjs
       - run: node standalone/tests/up-audio-warning.cjs
       - run: node standalone/tests/mac-folder-bridge.cjs
       - run: node standalone/tests/json-unrelated-save.cjs

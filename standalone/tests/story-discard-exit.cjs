@@ -17,10 +17,11 @@ const report=value=>{console.log(JSON.stringify(value,null,2));if(evidence>=0)fs
 (async()=>{
  for(const [kind,factory]of Object.entries(factories)){
   const talks=factory();await R.ensure(talks,[1,2]);
-  const S={doc:{talks,events:{7:{id:7,title:'保存的事件',talkId:[1]}},options:{},talkOwners:{1:[7],2:[7]}},order:[1,2],deleted:[],replacements:{},premises:{saved:{name:'原有前提',talkId:2}},branchFolders:{residue:{kind:'condition',routerId:90,talkIds:[2],failureNext:[999999],future:{keep:true}}},pinned:{talks:new Set([1,2]),options:new Set(),events:new Set([7])},idMappings:{},selected:1,event:7,localIds:{talks:[1,2],events:[7]},undo:[],redo:[],dirty:false};
+  const S={doc:{talks,events:{7:{id:7,title:'保存的事件',talkId:[1]}},options:{},talkOwners:{1:[7],2:[7]}},order:[1,2],deleted:[],replacements:{},premises:{saved:{name:'原有前提',talkId:2}},branchFolders:{residue:{kind:'condition',routerId:90,talkIds:[2],failureNext:[999999],future:{keep:true}}},pinned:{talks:new Set([1,2]),options:new Set(),events:new Set([7])},idMappings:{},selected:1,event:7,localIds:{talks:[1,2],events:[7]},undo:[],redo:[],dirty:false};S.savedOwners=S.doc.talkOwners;
   let closed=0,refreshed=0,reconciled=0;
   const box={S,IndexedTalks:I,clone:I.clone,externalSession:null,renumberTimer:null,textDirtyTimer:null,window:{STUDIO_EVENTS:{refresh(){refreshed++;}}},closeModal(){closed++;},clearTimeout(){},invalidateStageMemo(){},reconcileStoryClaims(){reconciled++;},renderChrome(){},render(){}};
-  vm.createContext(box);vm.runInContext(['currentSignature','pinnedSnapshot','arrayRestore','restoredDoc','idsRestore','restore','updateDirty'].map(line).join('\n')+'\n'+source.slice(start,end),box);
+  const snapshotBaseLine=source.slice(source.indexOf('const snapshotBases='),source.indexOf('\n',source.indexOf('const snapshotBases=')));
+  vm.createContext(box);vm.runInContext(snapshotBaseLine+'\n'+['sameValue','ownersDiffer','signatureFromParts','currentSignature','pinnedSnapshot','seedOwnershipSnapshot','arrayRestore','restoredDoc','idsRestore','restore','updateDirty'].map(line).join('\n')+'\n'+source.slice(start,end),box);
   S.saved=box.currentSignature();const saved=S.saved;
   S.doc.talks[1].content='明确放弃的正文';S.doc.talks[99]={id:99,content:'未保存的对话',nextTalk:[999999]};S.order.push(99);S.deleted=[2];S.replacements={2:[99]};S.premises.draft={name:'未保存前提'};S.branchFolders.draft={kind:'condition',routerId:99,talkIds:[999999]};S.pinned.talks.add(99);S.idMappings={TalkCfg:{1:7001}};S.selected=99;S.undo=[{}];S.redo=[{}];S.dirty=true;
   if(blocked){
