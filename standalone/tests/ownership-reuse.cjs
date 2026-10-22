@@ -14,7 +14,7 @@ function studio(talks){
  rows[9001]={id:9001,content:'未归属',nextTalk:[1003],nextTalk2:[],option:[]};
  const S={doc:{talks:talks(rows),options:{101:{id:101,content:'选项',talkId:[2003],talkId2:[]}},events:{1:{id:1,title:'甲',talkId:[1001]},2:{id:2,title:'乙',talkId:[2001]},3:{id:3,title:'丙',talkId:[3001],options:[101]}}},branchFolders:{},event:1};
  const calls={sync:0,display:0},tasks=[];
- const box={S,Remote:R,IndexedTalks:I,queueMicrotask:fn=>tasks.push(fn),StudentAgeEventOwnership:{sync:(...args)=>{calls.sync++;return Ownership.sync(...args);},display:(...args)=>{calls.display++;return Ownership.display(...args);}}};
+ const box={S,Remote:R,IndexedTalks:I,ids:v=>Array.isArray(v)?v.map(Number).filter(Number.isFinite):[],queueMicrotask:fn=>tasks.push(fn),StudentAgeEventOwnership:{sync:(...args)=>{calls.sync++;return Ownership.sync(...args);},display:(...args)=>{calls.display++;return Ownership.display(...args);}}};
  vm.createContext(box);vm.runInContext(take('let displayMemo=null;','function shownWith('),box);
  // A new browser task: the per-task memo expires, only stamped state survives.
  const nextTask=()=>{tasks.splice(0).forEach(fn=>fn());};
@@ -38,6 +38,7 @@ function studio(talks){
  for(const [name,change] of Object.entries({
   speaker:()=>{row(1002).roleIds=[2,3];},effect:()=>{row(2004).effect=[[1,2,3]];},text:()=>{row(3002).content='改过的正文';},unknown:()=>{row(1005).future={keep:true};},
   nestedNonLink:()=>{row(1002).roleIds.push(9);},collapse:()=>{S.branchFolders={...S.branchFolders};},
+  eventTitle:()=>{S.doc.events[1].title='改过的标题';},eventCondition:()=>{S.doc.events[1].condition=[[1,2,3]];},
  }))assert.deepEqual(edit(change),{synced:0,walked:0},name+' leaves links alone and reuses both maps');
  for(const [name,change] of Object.entries({
   next:()=>{row(1002).nextTalk=[2005];},failure:()=>{row(1003).nextTalk2=[3004];},nestedLink:()=>{row(1004).nextTalk.push(3006);},option:()=>{row(2002).option=[101];},
@@ -58,6 +59,13 @@ function studio(talks){
  // A link edit made outside an undoable edit is still noticed by the next reader.
  nextTask();row(3001).nextTalk=[1008];assert.deepEqual(box.eventDisplay(),Ownership.display(S.doc,S.branchFolders));assert.equal(calls.display,walks+1);
  assert.equal(R.stats(S.doc.talks).loaded,0);
+}
+
+// Seeded at project load: the first link-neutral edit must reuse the loaded map.
+{
+ const {S,box,calls}=studio(makeRemote);
+ box.seedOwnershipDisplay(Ownership.display(S.doc,S.branchFolders));
+ const before=calls.sync;box.syncOwnership(null);assert.equal(calls.sync,before,'seeded ownership/display caches are reused');
 }
 
 // Randomised edits: every step is compared with an unconditional sync and a fresh display walk inside edit().

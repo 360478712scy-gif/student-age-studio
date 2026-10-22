@@ -3,6 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const Indexed=require('../indexed-talks.js'),Remote=Indexed.Remote,Ownership=require('../event-ownership.js');
 const source=fs.readFileSync(process.env.STUDIO_TEST_APP_SOURCE||path.join(__dirname,'../app.js'),'utf8');
 const keys=source.slice(source.indexOf('const jsonStoryKeys='),source.indexOf('\n',source.indexOf('const jsonStoryKeys=')));
+const signatures=source.slice(source.indexOf('function signatureFromParts('),source.indexOf('\n',source.indexOf('function signatureFromParts(')));
 const bridge=source.slice(source.indexOf('window.STUDIO_STORY_JSON={'),source.indexOf('window.STUDIO_CURRENT_REVISION='));
 const plain=value=>JSON.parse(JSON.stringify(value));
 function harness(talks){
@@ -11,8 +12,8 @@ function harness(talks){
  S.saved=Indexed.stringify([S.doc,S.order]);
  const context={window:{STUDIO_EVENTS:{refresh(){}}},S,IndexedTalks:Indexed,Remote,jsonSegment:()=>null,clone:Indexed.clone,editable:()=>true,
   localStoryIds:key=>new Set(S.localIds[key]||[]),history:()=>history.push(Indexed.clone(S.doc)),Branches:{cleanup:(doc,folders)=>{counts.cleanup++;return folders;}},
-  StudentAgeEventOwnership:{sync:(...args)=>{counts.ownership++;return Ownership.sync(...args);}},syncExternal:()=>counts.external++,updateDirty:()=>{S.dirty=Indexed.stringify([S.doc,S.order])!==S.saved;},render(){},renderChrome(){},visibleIds:()=>[1],runRenumber:async()=>{counts.renumber++;return true;}};
- vm.createContext(context);vm.runInContext(keys+'\n'+bridge,context);return {S,counts,history,api:context.window.STUDIO_STORY_JSON};
+  StudentAgeEventOwnership:{sync:(...args)=>{counts.ownership++;return Ownership.sync(...args);}},syncExternal:()=>counts.external++,updateDirty:()=>{S.dirty=context.signatureFromParts([S.doc,S.order])!==S.saved;},render(){},renderChrome(){},visibleIds:()=>[1],runRenumber:async()=>{counts.renumber++;return true;}};
+ vm.createContext(context);vm.runInContext(keys+'\n'+signatures+'\n'+bridge,context);return {S,counts,history,api:context.window.STUDIO_STORY_JSON};
 }
 (async()=>{
  // The large table is genuinely unloaded. Non-graph JSON writes must not build
