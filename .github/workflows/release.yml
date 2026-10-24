@@ -125,10 +125,13 @@ jobs:
           git -C /tmp/studio-feed diff --cached --quiet || git -C /tmp/studio-feed commit -m "Code payload $RELEASE_TAG"
           export PAYLOAD_COMMIT=$(git -C /tmp/studio-feed rev-parse HEAD)
           python - <<'PYFEED'
-          import hashlib,json,os
+          import hashlib,json,os,sys
           from pathlib import Path
+          sys.path.insert(0,'standalone')
+          from error_logs import display_version
+          notes_file='docs/releases/v'+display_version(os.environ['RELEASE_TAG'].removeprefix('v')).replace('.','')+'.md'
           p=Path('/tmp/studio-feed/student-age-studio-update.zip');data=p.read_bytes()
-          feed={'format':1,'runtimeAbi':1,'version':os.environ['RELEASE_TAG'],'commit':os.environ['PAYLOAD_COMMIT'],'sha256':hashlib.sha256(data).hexdigest(),'size':len(data),'notes':Path('docs/releases/v151.md').read_text(encoding='utf-8')}
+          feed={'format':1,'runtimeAbi':1,'version':os.environ['RELEASE_TAG'],'commit':os.environ['PAYLOAD_COMMIT'],'sha256':hashlib.sha256(data).hexdigest(),'size':len(data),'notes':Path(notes_file).read_text(encoding='utf-8')}
           Path('/tmp/studio-feed/latest.json').write_text(json.dumps(feed,ensure_ascii=False,indent=2),encoding='utf-8')
           PYFEED
           git -C /tmp/studio-feed add latest.json
