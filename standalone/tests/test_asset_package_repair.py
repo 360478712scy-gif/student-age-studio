@@ -198,8 +198,8 @@ class AssetPackageDiskTests(unittest.TestCase):
 
     def test_dependency_manifest_keeps_foreign_reference(self):
         manifest = self.project.path/'manifest.json'
-        data = json.loads(manifest.read_text()); data['dependencies'] = ['old']
-        manifest.write_text(json.dumps(data))
+        data = json.loads(manifest.read_text(encoding='utf-8')); data['dependencies'] = ['old']
+        manifest.write_text(json.dumps(data), encoding='utf-8')
         self.assertEqual(self.check()['repairable'], 0)
         self.assertEqual(self.path.read_bytes(), self.raw)
 
