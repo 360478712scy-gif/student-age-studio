@@ -3176,8 +3176,28 @@ class StudioStore:
             for field in ("tags", "dependencies"):
                 if revised.get(field) is not None and not isinstance(revised[field], list):
                     raise ApiError(field + " 必须是列表。")
-            backup = self.commit(project, {"manifest.json": json_bytes(revised)}, revision)
-            return {"ok": True, "revision": self.revision(project), "backup": backup, "manifest": revised, "project": self.project(project.id).public()}
+            changes = {"manifest.json": json_bytes(revised)}
+            repaired_assets = 0
+            new_package = str(metadata.get("packageId") or project.path.name)
+            if new_package != project.package:
+                if new_package in {'.', '..'} or any(c in new_package for c in '/\\') or any(ord(c) < 32 for c in new_package):
+                    raise ApiError('包标识不能包含路径分隔符、控制字符或使用点目录。')
+                from asset_package_repair import FIELDS, rewrite, existing_asset
+                for relative, path in self.json_document_files(project).items():
+                    if not relative.startswith('Cfgs/') or path.name not in FIELDS: continue
+                    if path.stat().st_size > self.JSON_SOURCE_LIMIT:
+                        raise ApiError('素材配置过大，无法安全同步包标识；请保留原包标识。')
+                    try:
+                        patched, count = rewrite(path.read_bytes(), path.name, new_package,
+                            lambda name: existing_asset(self, project, name), old_package=project.package)
+                    except (ValueError, UnicodeError) as error:
+                        raise ApiError('无法安全同步素材包标识，请先修复配置文件：' + relative) from error
+                    if patched is not None:
+                        changes[relative] = patched
+                        repaired_assets += count
+            backup = self.commit(project, changes, revision)
+            return {"ok": True, "revision": self.revision(project), "backup": backup, "manifest": revised,
+                    "assetPathsRepaired": repaired_assets, "project": self.project(project.id).public()}
 
     def audio_cues(self, project, talks=None):
         data = read_json(safe_path(project.path, "StudentAgeStudio/audio-cues.json"), {})

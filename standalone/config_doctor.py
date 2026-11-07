@@ -2,6 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
+import asset_package_repair
 
 
 def inspect(store, project_id, api):
@@ -10,6 +11,13 @@ def inspect(store, project_id, api):
     digest = hashlib.sha256()
     issues, changes = [], {}
     files = store.json_document_files(project)
+    # A damaged manifest must not disable the JSON repair tool itself.
+    try:
+        manifest = json.loads((project.path / 'manifest.json').read_text(encoding='utf-8-sig'),
+                              object_pairs_hook=asset_package_repair._object)
+        dependencies = not isinstance(manifest, dict) or bool(manifest.get('dependencies'))
+    except (OSError, ValueError, UnicodeError, RecursionError):
+        dependencies = True
     for relative, path in files.items():
         digest.update(relative.encode('utf-8'))
         try:
@@ -29,6 +37,16 @@ def inspect(store, project_id, api):
                 if fixable:
                     changes[relative] = (b'\xef\xbb\xbf' if data.startswith(b'\xef\xbb\xbf') else b'') + repair['text'].encode('utf-8')
                 continue
+            if relative.startswith('Cfgs/') and path.name in asset_package_repair.FIELDS:
+                try:
+                    patched, count = asset_package_repair.rewrite(data, path.name, project.package,
+                        lambda name: asset_package_repair.existing_asset(store, project, name), dependencies=dependencies)
+                    if patched is not None:
+                        changes[relative] = patched
+                        issues.append({'path':relative, 'message':'发现 %s 处素材引用仍使用旧包标识，但对应文件就在当前模组内。' % count,
+                            'fixable':True, 'action':'备份后将素材路径的包标识改为当前模组的“%s”；不移动或删除资源。' % project.package})
+                except (ValueError, api.ApiError) as error:
+                    issues.append({'path':relative, 'message':'无法安全检查素材路径：'+str(error), 'fixable':False})
             # Known table naming is separate from auxiliary mappings such as CustomKeyMap.
             if relative.startswith('Cfgs/') and path.name.endswith('Cfg.json'):
                 rows=json.loads(api.compatible_json(text),strict=False)
