@@ -61,18 +61,35 @@ function routes(doc,talk,{allBranches=false}={}) {
   }
   return result;
 }
-function pathTo(doc,target,roots) {
+function pathTo(doc,target,roots,{authoring=false,authoringTalks=null}={}) {
   target=Number(target);
-  function search(starts){
+  // Playback follows active exits. Editing may still inspect an earlier route
+  // hidden by an unconditional branch; only use its retained authoring links
+  // after the active route fails, without changing any saved or playback edge.
+  let authoringDoc=null;
+  function links(talk,editing=false){
+    const model=editing?authoringDoc:doc,result=routes(model,talk,{allBranches:editing});
+    if(editing)for(const folder of Object.values(model.branchFolders||{})){
+      if(folder.kind!=='condition'||Number(folder.parentTalkId)!==Number(talk.id))continue;
+      for(const id of list(folder.baseNext))if(doc.talks?.[id]&&!result.some(r=>r.id===id))result.push({id,available:true});
+    }
+    return result;
+  }
+  function search(starts,editing=false){
     const queue=[],parents=new Map();
     for(const root of unique(list(starts)))if(doc.talks?.[root]){queue.push(root);parents.set(root,null);}
     for(let index=0;index<queue.length&&index<20000;index++){
       const id=queue[index];if(id===target){const path=[];for(let node=id;node!==null;node=parents.get(node))path.push(node);path.reverse();return {path,found:true};}
-      for(const route of routes(doc,doc.talks[id]))if(route.id!==null&&route.available&&!parents.has(route.id)){parents.set(route.id,id);queue.push(route.id);}
+      for(const route of links(doc.talks[id],editing))if(route.id!==null&&route.available&&!parents.has(route.id)){parents.set(route.id,id);queue.push(route.id);}
     }
     return null;
   }
   const explicit=search(roots);if(explicit)return explicit;
+  if(authoring&&window.StudentAgeBranches?.conditionKeys){
+    const valid=window.StudentAgeBranches.conditionKeys(authoringTalks?{...doc,talks:authoringTalks}:doc,doc.branchFolders),folders=Object.fromEntries(Object.entries(doc.branchFolders||{}).filter(([key,f])=>f.kind!=='condition'||valid.has(key)));
+    authoringDoc={...doc,branchFolders:folders};
+    const retained=search(roots,true);if(retained)return {...retained,authoring:true};
+  }
   // A new mod can contain a connected draft before an event entry is assigned.
   // Recover only real predecessors of this dialogue, never its sidebar neighbours.
   const incoming=new Map();
@@ -338,7 +355,7 @@ function reconstruct(doc,target,options={}) {
   const cacheKey=remote?(globalThis.StudentAgeIndexedTalks?.stringify||JSON.stringify)([remote.graphVersion,options.grade,options.reference,options.roots,options.event,doc.protagonistGender,doc.persons,doc.faces,doc.backgrounds,doc.options,doc.branchFolders]):null;
   if(remote)doc={...doc,talks:StudentAgeRemoteTalks.sceneTable(doc.talks,target)};
   const roots=options.roots?.length?options.roots:Object.values(doc.events||{}).flatMap(e=>list(e.talkId));
-  const route=options.trace?{path:options.trace,found:true}:pathTo(doc,target,roots);
+  const route=options.trace?{found:true,...options.routeInfo,path:options.trace}:pathTo(doc,target,roots);
   let state=blank(options.reference||[2560,1440]),trace=[],start=0;
   const event=options.event||Object.values(doc.events||{}).find(e=>list(e.talkId).includes(route.path[0]));
   if(event&&[70,71].includes(Number(event.type)))state.phoneEvent=copy(event);
@@ -348,7 +365,8 @@ function reconstruct(doc,target,options={}) {
   for(let index=start;index<route.path.length;index++){const id=route.path[index],talk=doc.talks?.[id];if(talk){if(state.talkId!==null&&routes(doc,doc.talks[state.talkId]).some(r=>r.id===Number(id)&&r.reset)){state=blank(options.reference||[2560,1440]);trace=[];}state=apply(doc,state,talk,options.grade??1,false);trace.push(talk.id);}
     if(cache&&(index+1)%64===0){const point={index:index+1,state:copy(state),trace:trace.slice()};point.state.content='';point.bytes=JSON.stringify(point).length*2;cache.points.push(point);cache.bytes+=point.bytes;while(cache.points.length>64||cache.bytes>4*1024*1024){const old=cache.points.shift();cache.bytes-=old.bytes;}}
   }
-  state.trace=trace;
+  state.trace=trace;state.routeInfo={found:route.found,...(route.inferred?{inferred:true}:{}),...(route.authoring?{authoring:true}:{})};
+  if(route.authoring)state.warnings.push('当前句被前面的分支绕过，编辑画面按保留的原路线还原；实际播放仍按分支条件进行。');
   if(route.inferred)state.warnings.push('这段尚未设置事件入口，按已连接的前后对话还原。');
   if(!route.found&&state.talkId!==null)state.warnings.push('找不到通向这句的事件入口。这里只能从这句开始还原，前一幕状态未知。');
   if(!options.trace&&route.path.some((id,index)=>index<route.path.length-1&&routes(doc,doc.talks[id]).filter(r=>r.available).length>1))state.warnings.push('这句之前有分支；当前按可到达的路线还原。播放时可选择另一条路线。');
@@ -780,10 +798,10 @@ class Renderer {
 class Player {
   constructor(options){this.options=options;this.trace=[];this.playing=false;this.timer=null;this.scene=null;this.ended=false;this.historyStarted=false;}
   get doc(){return this.options.getDoc();}
-  select(id,trace=null){
-    if(this.options.loadTalk&&globalThis.StudentAgeRemoteTalks?.info(this.doc.talks)&&!StudentAgeRemoteTalks.ready(this.doc.talks,id)){this.pause();const sequence=this.loadSequence=(this.loadSequence||0)+1,doc=this.doc.talks;this.options.loadTalk(id).then(()=>{if(sequence===this.loadSequence&&doc===this.doc.talks)this.select(id,trace);}).catch(error=>this.options.onWarning?.(error.message));return;}
-    this.loadSequence=(this.loadSequence||0)+1;this.pause();this.ended=false;this.historyStarted=false;this.scene=reconstruct(this.doc,id,{...this.options.getContext(),trace:trace||undefined});this.trace=this.scene.trace.slice();this.render(false);}
-  refresh(){if(this.trace.length){this.scene=reconstruct(this.doc,this.trace[this.trace.length-1],{...this.options.getContext(),trace:this.trace});this.render(false);}}
+  select(id,trace=null,routeInfo=null){
+    if(this.options.loadTalk&&globalThis.StudentAgeRemoteTalks?.info(this.doc.talks)&&!StudentAgeRemoteTalks.ready(this.doc.talks,id)){this.pause();const sequence=this.loadSequence=(this.loadSequence||0)+1,doc=this.doc.talks;this.options.loadTalk(id).then(()=>{if(sequence===this.loadSequence&&doc===this.doc.talks)this.select(id,trace,routeInfo);}).catch(error=>this.options.onWarning?.(error.message));return;}
+    this.loadSequence=(this.loadSequence||0)+1;this.pause();this.ended=false;this.historyStarted=false;this.routeInfo=routeInfo;this.scene=reconstruct(this.doc,id,{...this.options.getContext(),trace:trace||undefined,routeInfo});this.trace=this.scene.trace.slice();this.render(false);}
+  refresh(){if(this.trace.length){this.scene=reconstruct(this.doc,this.trace[this.trace.length-1],{...this.options.getContext(),trace:this.trace,routeInfo:this.routeInfo});this.render(false);}}
   choices(){return this.options.getChoices?.(this.scene)??this.scene.routeChoices??[];}
   render(animate,initial=false){this.options.onRender(initial?{...this.scene,transition:null}:this.scene,{animate,playing:this.playing,ended:this.ended});}
   recordStart(reason='play'){if(this.historyStarted||!this.scene?.talkId)return;this.historyStarted=true;this.options.onHistory?.({kind:'start',talkId:this.scene.talkId,reason,scene:copy(this.scene)});}
@@ -805,10 +823,10 @@ class Player {
     if(this.options.loadTalk&&!route.end){const sequence=this.loadSequence=(this.loadSequence||0)+1,scene=this.scene;try{await this.options.loadTalk(route.id);}catch(error){this.pause();this.options.onWarning?.(error.message);return;}if(sequence!==this.loadSequence||scene!==this.scene)return;}
 this.recordStart('choice');if(route.optionId!==undefined||route.conditional||route.type==='alternate')this.options.onHistory?.({kind:'choice',route:copy(route)});if(route.end){this.ended=true;this.pause();this.options.onHistory?.({kind:'end'});this.render(false);return;}
     if(this.trace.length>=2000){this.pause();this.options.onWarning?.('这次预览已经经过很多句，请重置后继续。');return;}
-    if(route.reset)this.trace=[];if(this.resumeAfterChoice){this.playing=true;this.resumeAfterChoice=false;}this.trace.push(route.id);this.scene=reconstruct(this.doc,route.id,{...this.options.getContext(),trace:this.trace});
+    if(route.reset){this.trace=[];this.routeInfo=null;}if(this.resumeAfterChoice){this.playing=true;this.resumeAfterChoice=false;}this.trace.push(route.id);this.scene=reconstruct(this.doc,route.id,{...this.options.getContext(),trace:this.trace,routeInfo:this.routeInfo});
     this.options.onHistory?.({kind:'line',talkId:route.id,scene:copy(this.scene)});this.options.onSelect?.(route.id);this.render(true);if(this.playing)this.schedule();
   }
-  back(){this.pause();this.ended=false;if(this.trace.length<2)return;this.trace.pop();this.scene=reconstruct(this.doc,this.trace[this.trace.length-1],{...this.options.getContext(),trace:this.trace});this.options.onSelect?.(this.scene.talkId);this.render(false);}
+  back(){this.pause();this.ended=false;if(this.trace.length<2)return;this.trace.pop();this.scene=reconstruct(this.doc,this.trace[this.trace.length-1],{...this.options.getContext(),trace:this.trace,routeInfo:this.routeInfo});this.options.onSelect?.(this.scene.talkId);this.render(false);}
   reset(){this.pause();this.ended=false;const roots=this.options.getContext().roots||[],id=roots[0]||this.trace[0];if(id){this.select(id);this.recordStart('replay');this.options.onSelect?.(id);}}
   dispose(){this.pause();}
 }

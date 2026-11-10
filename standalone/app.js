@@ -1426,12 +1426,12 @@ function openStoryPreview(){
  if(largeScene){largeScene.paperClosed=null;largeScene.paperSignature=null;}
  if(!talk()){toast('先选择一个有对话的事件。','note');return;}if(storyPreview)return;
  stopLinePlayback(false);ensureScene();scenePlayer.pause();stageAudio.stop();closeContextMenu();
- storyPreview={auto:false,selected:S.selected,event:S.event,activeFolder:S.activeFolder,folderOpen:clone(S.folderOpen),previewRole:S.previewRole,scroll:$('#editor-scroll').scrollTop,trace:scenePlayer.trace.slice()};
+ storyPreview={auto:false,selected:S.selected,event:S.event,activeFolder:S.activeFolder,folderOpen:clone(S.folderOpen),previewRole:S.previewRole,scroll:$('#editor-scroll').scrollTop,trace:scenePlayer.trace.slice(),routeInfo:scenePlayer.scene?.routeInfo};
  const stage=$('#large-scene'),controls=$('#story-preview-controls');storyPreview.portals=[stage,controls].map(node=>{const marker=document.createComment('preview-return');node.before(marker);document.body.append(node);return {node,marker};});
  document.activeElement?.blur();window.getSelection()?.removeAllRanges();
  controls.innerHTML='<button type="button" data-story-preview="history" aria-label="Tab 日志"><i aria-hidden="true"></i><span>日志</span></button><button type="button" data-story-preview="auto" aria-label="Shift 自动播放" aria-pressed="false"><i aria-hidden="true"></i><span>自动</span></button><button type="button" data-story-preview="exit" aria-label="Esc 退出剧情预览"><i aria-hidden="true"></i><span>菜单</span></button>';
  document.body.classList.add('story-fullscreen');controls.hidden=false;sceneMode='play';
- const id=S.selected;scenePlayer.select(id,storyPreview.trace.at(-1)===id?storyPreview.trace:null);stageAudio.prime(scenePlayer.trace.slice(0,-1));prepareSceneExpressions(scenePlayer.scene);scenePlayer.play({initial:true});updateStoryPreviewControls();$('#large-scene').focus();
+ const id=S.selected;scenePlayer.select(id,storyPreview.trace.at(-1)===id?storyPreview.trace:null,scenePlayer.scene?.routeInfo);stageAudio.prime(scenePlayer.trace.slice(0,-1));prepareSceneExpressions(scenePlayer.scene);scenePlayer.play({initial:true});updateStoryPreviewControls();$('#large-scene').focus();
 }
 let historyImageObserver=null,historyImageEpoch=0;
 const historyPortraitLoads=new Map();
@@ -1479,7 +1479,7 @@ function closeStoryPreview(){
  if(!storyPreview)return;if(storyExitDialog.open)storyExitDialog.close();closeStoryHistory(false);const prior=storyPreview;storyPreview=null;scenePlayer?.pause();stageAudio?.stop();largeScene?.container.getAnimations?.({subtree:true}).forEach(a=>a.cancel());
  for(const {node,marker} of prior.portals||[]){marker.replaceWith(node);}
  document.body.classList.remove('story-fullscreen');$('#story-preview-controls').hidden=true;sceneMode='edit';
- Object.assign(S,{selected:prior.selected,event:prior.event,activeFolder:prior.activeFolder,folderOpen:prior.folderOpen,previewRole:prior.previewRole});scenePlayer.select(S.selected,prior.trace);render();$('[data-action="preview-story"]')?.focus({preventScroll:true});$('#editor-scroll').scrollTo({top:prior.scroll,behavior:'instant'});requestAnimationFrame(()=>{if(!storyPreview&&S.selected===prior.selected)$('#editor-scroll').scrollTo({top:prior.scroll,behavior:'instant'});});
+ Object.assign(S,{selected:prior.selected,event:prior.event,activeFolder:prior.activeFolder,folderOpen:prior.folderOpen,previewRole:prior.previewRole});scenePlayer.select(S.selected,prior.trace,prior.routeInfo);render();$('[data-action="preview-story"]')?.focus({preventScroll:true});$('#editor-scroll').scrollTo({top:prior.scroll,behavior:'instant'});requestAnimationFrame(()=>{if(!storyPreview&&S.selected===prior.selected)$('#editor-scroll').scrollTo({top:prior.scroll,behavior:'instant'});});
 }
 function openActionEditor(){
  if(!editable()||!talk())return;stopLinePlayback();const after=currentStage(),before=currentStage(true),selected=S.selected,project=S.project.id;
@@ -1534,12 +1534,12 @@ let stageMemo=[],stageMemoQueued=false;
 function invalidateStageMemo(){stageMemo=[];}
 function currentStage(before=false,doc=S.doc) {
   if(!doc||!S.selected||!window.StudentAgeScene)return {roles:{},trace:[],warnings:[]};
-  const playerTrace=scenePlayer?.scene?.talkId===S.selected?scenePlayer.trace:null;
+  const playerTrace=scenePlayer?.historyStarted&&scenePlayer.scene?.talkId===S.selected?scenePlayer.trace:null;
   const cached=stageMemo.find(row=>row.doc===doc&&row.selected===S.selected&&row.event===S.event&&row.grade===S.grade&&row.before===before&&row.trace===playerTrace&&row.length===playerTrace?.length);
   if(cached)return cached.state;
-  const context=sceneContext(),model={...doc,talks:Remote.ready(doc.talks,S.selected)?doc.talks:Remote.sceneTable(doc.talks,null),branchFolders:S.branchFolders},trace=playerTrace?playerTrace.slice():StudentAgeScene.pathTo({...model,talks:Remote.routingTable(doc.talks)},S.selected,context.roots).path;
+  const context=sceneContext(),model={...doc,talks:Remote.ready(doc.talks,S.selected)?doc.talks:Remote.sceneTable(doc.talks,null),branchFolders:S.branchFolders},routeInfo=playerTrace?scenePlayer.scene.routeInfo:StudentAgeScene.pathTo({...model,talks:Remote.routingTable(doc.talks)},S.selected,context.roots,{authoring:true,authoringTalks:doc.talks}),trace=playerTrace?playerTrace.slice():routeInfo.path.slice();
   if(before)trace.pop();
-  const state=before&&!trace.length?StudentAgeScene.blank(context.reference):StudentAgeScene.reconstruct(model,trace[trace.length-1]||S.selected,{...context,trace});
+  const state=before&&!trace.length?StudentAgeScene.blank(context.reference):StudentAgeScene.reconstruct(model,trace[trace.length-1]||S.selected,{...context,trace,routeInfo});
   stageMemo.push({doc,selected:S.selected,event:S.event,grade:S.grade,before,trace:playerTrace,length:playerTrace?.length,state});
   // Reuse work within a single UI update, never across asynchronous edits.
   if(!stageMemoQueued){stageMemoQueued=true;queueMicrotask(()=>{stageMemoQueued=false;invalidateStageMemo();});}
@@ -1660,7 +1660,7 @@ function renderPreview() {
   $('#scene-panel').hidden=!talk();
   if(!S.doc||!talk()){renderInspector();return;}
   if(sceneMode!=='edit'){largeScene?.refreshPortraits();if(!storyPreview)renderInspector();return;}
-  if(!sceneSyncing){ensureScene();sceneSyncing=true;try{if(scenePlayer.scene?.talkId===S.selected)scenePlayer.refresh();else scenePlayer.select(S.selected);}finally{sceneSyncing=false;}}
+  if(!sceneSyncing){ensureScene();sceneSyncing=true;try{if(scenePlayer.historyStarted&&scenePlayer.scene?.talkId===S.selected)scenePlayer.refresh();else {const state=currentStage();scenePlayer.select(S.selected,state.trace,state.routeInfo);}}finally{sceneSyncing=false;}}
 }
 function renderMiniScene(){renderPreview();}
 function openScene() {
