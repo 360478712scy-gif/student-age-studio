@@ -76,6 +76,8 @@ jobs:
           node standalone/tests/condition-talk-references.cjs
           node standalone/tests/command-localization-ui.cjs
           node standalone/tests/workshop-unbind-ui.cjs
+          node standalone/tests/love-gift-ui.cjs
+          node standalone/tests/asset-picker-session.cjs
           node standalone/tests/unfinished-draft-ui.cjs
           node standalone/tests/social-comment-edit.cjs
   publish:

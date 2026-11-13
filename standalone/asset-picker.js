@@ -91,7 +91,7 @@ function recordLocation(name){return [["学校", ["学校", "小学", "中学", 
 async function catalogPage(page){
  if(P.options.recordRows){
   const current=context(),local=new Set((current.localIds?.[P.kind==='portrait'?'persons':'backgrounds']||[]).map(String));
-  const isLocal=r=>['original','game'].includes(r.source)?false:r.custom===true||['mod','local','imported'].includes(r.source)||local.has(String(r.id));
+  const isLocal=r=>P.options.recordLocalIds!=null?P.options.recordLocalIds.has(String(r.id)):['original','game'].includes(r.source)?false:r.custom===true||['mod','local','imported'].includes(r.source)||local.has(String(r.id));
   const name=r=>r.name||window.StudentAgeAssetNames?.name(r,P.kind)||'未命名';
   const rows=P.options.recordRows.filter(r=>(r.selectionOnly||P.source==='mod'===isLocal(r))&&(!P.affection||(r.hasAffection??(Number(r.init?.[0])>1))===(P.affection==='yes'))&&(!P.location||recordLocation(name(r))===P.location)&&StudentAgeSearch.matches(P.query,name(r),r.id,r.url,r.personName,r.profileName));
   const items=rows.map(r=>({assetId:'record-selection:'+r.id,sourceId:r.id,displayId:r.recordId??r.id,kind:P.kind,name:name(r),origin:isLocal(r)?'imported':'game',canImport:true,available:true,previewUrl:P.options.recordImage?.(r)||(P.kind==='portrait'&&Number(r.id)>=0&&!r.selectionOnly?'/api/space-head?'+new URLSearchParams({projectId:current.project.id,personId:r.id}):r.url?'/api/assets?'+new URLSearchParams({projectId:current.project.id,path:r.url}):'')}));
@@ -157,14 +157,14 @@ async function open(kind,options={}){if(P.busy)return false;kind=aliases[kind]||
  if(P.options.selectFromDocument){P.initializing=false;P.projects=[];P.folders={};if(P.options.recordRows&&P.options.multiple&&Array.isArray(P.options.selected)){for(const row of P.options.recordRows)if(P.options.selected.map(String).includes(String(row.id))){const key='record-selection:'+row.id;P.selected.add(key);P.selectedPeople.set(key,{assetId:key,sourceId:row.id});}}shell();await reload();return true;}
  const results=await Promise.allSettled([api('projects'),api('asset-folders')]);if(sequence!==P.sequence||!dialog.open)return false;P.initializing=false;const [projects,folders]=results;if(projects.status==='fulfilled'){P.projects=(Array.isArray(projects.value)?projects.value:projects.value.projects||[]).filter(project=>/^(local|workshop):/.test(String(project.id)));if(!P.projects.some(project=>project.id===P.sourceProjectId))P.sourceProjectId='';}else message(projects.reason.message,true);if(folders.status==='fulfilled'){P.folders=folders.value.folders||{};P.settingsRevision=folders.value.revision;}else message(folders.reason.message,true);shell();await reload();return true;}
  dialog.addEventListener('cancel',event=>{event.preventDefault();close();});dialog.addEventListener('close',()=>{if(!dialog.open)releasePicker();});
- async function pickRecords(kind,{title,rows,projectId,image,multiple=false,selected=null}={}){
+ async function pickRecords(kind,{title,rows,projectId,image,localIds,multiple=false,selected=null}={}){
   if(dialog.open)throw Error('请先关闭当前素材选择窗口。');
   const base=baseContext(),id=projectId||base.project?.id||window.STUDIO_CURRENT_PROJECT?.();if(!id)throw Error('请先打开模组。');
   const same=base.project?.id===id,current={...base,project:same?base.project:{id,name:'当前模组'},doc:same?base.doc||{}:{},localIds:same?base.localIds||{}:{}};
   rows=[...new Map(rows.map(r=>[String(r.id),r])).values()];
   let result=null;const selectedRows=[];
   return new Promise((resolve,reject)=>{
-   open(kind,{recordRows:rows,recordImage:image,selected,title,selectFromDocument:true,selectPerson:true,multiple,confirmLabel:'确定选择',getContext:()=>current,
+   open(kind,{recordRows:rows,recordLocalIds:localIds==null?null:new Set(localIds.map(String)),recordImage:image,selected,title,selectFromDocument:true,selectPerson:true,multiple,confirmLabel:'确定选择',getContext:()=>current,
     onUse:r=>{const row=rows.find(x=>String(x.id)===String(r.id));if(!row)return false;result=row;selectedRows.push(row);return true;},
     onClose:()=>resolve(multiple?(result?selectedRows:null):result)
    }).then(ok=>{if(!ok)return resolve(null);if(title)dialog.querySelector('h2').textContent=title;

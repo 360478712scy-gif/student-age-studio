@@ -38,6 +38,27 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   });
   await page.waitForFunction(()=>longTimers.size>0);await page.evaluate(()=>STUDIO_ASSET_PICKER.close());
   assert.equal(await page.evaluate(()=>longTimers.size),0);assert.equal(await page.evaluate(()=>pendingFace),null);
+  // An explicit record source list belongs to the caller, not the global story context.
+  for(const kind of ['portrait','background']){
+   await page.evaluate(kind=>{window.sourcePick=STUDIO_ASSET_PICKER.pickRecords(kind,{projectId:'local:other',rows:[{id:101,name:'Original'},{id:103,name:'Mod',source:'original'}],localIds:['103']})},kind);
+   await page.waitForSelector('[data-picker-source-id="101"]');assert.equal(await page.locator('[data-picker-source-id="103"]').count(),0);
+   await page.locator('[data-asset-source="mod"]').click();await page.waitForSelector('[data-picker-source-id="103"]');assert.equal(await page.locator('[data-picker-source-id="101"]').count(),0);
+   await page.locator('[data-picker-source-id="103"]').click();assert.equal((await page.evaluate(()=>sourcePick)).id,103);
+  }
+  await page.evaluate(()=>{window.emptySource=STUDIO_ASSET_PICKER.pickRecords('portrait',{rows:[{id:1,name:'Original',source:'mod'}],localIds:[]})});
+  await page.waitForSelector('[data-picker-source-id="1"]');await page.locator('[data-asset-source="mod"]').click();
+  await page.waitForSelector('.ap-empty');await page.evaluate(()=>STUDIO_ASSET_PICKER.close());assert.equal(await page.evaluate(()=>emptySource),null);
+  await page.addScriptTag({path:path.resolve(__dirname,'../character-ui.js')});
+  await page.addScriptTag({path:path.resolve(__dirname,'../event-bindings.js')});
+  await page.evaluate(()=>{
+   window.giftHost=document.createElement('div');document.body.append(giftHost);
+   window.gift=StudentAgeEventBindings.create({bindings:{gifts:[]},persons:{103:{id:103,name:'Mod recipient'}},refs:{PersonCfg:{101:{id:101,name:'Original recipient'}}},localIds:{PersonCfg:['103']}});
+   gift.mount(giftHost,{type:110,projectId:'local:other',repaint:()=>{},error:e=>{throw e}});
+  });
+  await page.locator('[data-gift-person="0"]').click();await page.waitForSelector('[data-picker-source-id="101"]');
+  assert.equal(await page.locator('[data-picker-source-id="103"]').count(),0);
+  await page.locator('[data-asset-source="mod"]').click();await page.waitForSelector('[data-picker-source-id="103"]');await page.locator('[data-picker-source-id="103"]').click();
+  await page.waitForFunction(()=>gift.value().gifts[0].npc===103);
   slow=true;
   await page.evaluate(()=>{const original=window.fetch;window.abortedReads=0;window.fetch=(...args)=>original(...args).catch(e=>{if(e.name==='AbortError')abortedReads++;throw e});window.opening=STUDIO_ASSET_PICKER.open('background')});
   await page.waitForTimeout(50);await page.evaluate(()=>STUDIO_ASSET_PICKER.close());
