@@ -129,6 +129,40 @@ class OriginalDialogueTests(unittest.TestCase):
             descriptor = self.store.talk_segments.open(self.ident, ['1002'])
             self.assertEqual(descriptor['segmentedTalks']['ids'], ['1002001'])
 
+    def _native_branch_roundtrip(self, original_view):
+        # Direct native conditions modify one spoken row, never create helpers.
+        with original_mode.scope(self.ident if original_view else None):
+            data = self.store.load(self.ident, ['1001'] if original_view else ())
+            row = dict(data['talks']['1001001'])
+            row.update(check=[[7, 1, 3, 20]], nextTalk=[1001002, 1001003],
+                       nextTalk2=[1001003, 1001002], future={'keep': 9})
+            talks = dict(data['talks']); talks['1001001'] = row
+            original_before = self.store.original_dialogue.rows('TalkCfg', [1001001])
+            self.store.save({'projectId': self.ident, 'revision': data['revision'],
+                             'talks': talks, 'options': data['options'], 'branchFolders': {}})
+            disk = json.loads((self.cfg / 'TalkCfg.json').read_text(encoding='utf-8'))
+            self.assertEqual(set(disk), {'1001001', '1003001', '1500000001'})
+            self.assertEqual(disk['1001001'], row)
+            self.assertEqual(self.store.original_dialogue.rows('TalkCfg', [1001001]), original_before)
+            opened = self.store.load(self.ident, ['1001'] if original_view else ())
+            self.assertEqual(opened['talks']['1001001'], row)
+            self.assertFalse(opened.get('branchFolders'))
+            # Empty failure retains the native success fallback, not an end helper.
+            opened['talks']['1001001']['nextTalk2'] = []
+            self.store.save({'projectId': self.ident, 'revision': opened['revision'],
+                             'talks': opened['talks'], 'options': opened['options'], 'branchFolders': {}})
+            again = json.loads((self.cfg / 'TalkCfg.json').read_text(encoding='utf-8'))
+            self.assertEqual(set(again), set(disk))
+            self.assertEqual(again['1001001']['nextTalk2'], [])
+            self.assertEqual(again['1001001']['content'], row['content'])
+            self.assertEqual(again['1500000001'], disk['1500000001'])
+
+    def test_native_branch_mod_save_reopen_without_blank_rows(self):
+        self._native_branch_roundtrip(False)
+
+    def test_native_branch_original_view_save_reopen_without_blank_rows(self):
+        self._native_branch_roundtrip(True)
+
 
 if __name__ == '__main__':
     unittest.main()
