@@ -388,7 +388,7 @@ function composeMappings(base,next){
   }return out;
 }
 function eventTraversal(eventId){
-  const owners=S.doc.talkOwners||{},owned=id=>{const o=ids(owners[id]);return o.length===1&&o[0]===eventId&&!S.catalogTalkIds?.has(Number(id));};
+  const owners=S.doc.talkOwners||{},owned=id=>{const o=ids(owners[id]);return o.length===1&&o[0]===eventId&&!S.catalogTalkIds?.has(Number(id))&&!S.catalogAll?.talks?.has(String(id));};
   if(!S.order.some(owned))return [];
   const hidden=Timeline.internals(S.branchFolders),folderTalks=new Set(values(S.branchFolders).flatMap(f=>ids(f.talkIds))),conditionsByParent=conditionFolderIndex(),seen=new Set(),out=[];
   for(const id of S.order){if(seen.has(id)||folderTalks.has(Number(id))||hidden.has(id)||!S.doc.talks[id])continue;seen.add(id);out.push(id);for(const t of branchBlock(id,seen,conditionsByParent))out.push(t);}
@@ -399,7 +399,8 @@ function eventTraversal(eventId){
 function talkOptionLists(){const info=Remote.info(S.doc.talks);return IndexedTalks.keysWithField(S.doc.talks,'option').map(id=>[Number(id),ids(info?info.read(id,'option'):S.doc.talks[id].option)]);}
 function localStoryIds(key){const local=new Set((S.localIds?.[key]||[]).map(Number));return new Set(Object.keys(S.doc?.[key]||{}).filter(id=>local.has(Number(id))||!S.catalogIds?.[key]?.has(id)).map(Number));}
 function renumberPlan(eventId){
-  if(!S.doc?.events?.[eventId]||S.catalogIds?.events?.has(String(eventId))||S.project?.originalMode||eventId*1000>2147483647)return null;
+  // Overrides are local for saving, but remain original IDs for automatic numbering.
+  if(!S.doc?.events?.[eventId]||S.catalogAll?.events?.has(String(eventId))||S.catalogIds?.events?.has(String(eventId))||S.project?.originalMode||eventId*1000>2147483647)return null;
   const talksInOrder=eventTraversal(eventId);if(!talksInOrder.length)return null;
   const localOptions=localStoryIds('options');
   // Hand-set IDs are never touched; sequential numbers skip anything a pinned row or another local row holds.
@@ -411,7 +412,7 @@ function renumberPlan(eventId){
     if(n>999||fresh>2147483647){if(!renumberWarned.has(eventId)){renumberWarned.add(eventId);toast('本事件对话超过 999 句，无法继续自动编号。','note');}return null;}
     if(fresh!==id)talkMap[id]=fresh;}
   const optionMap={},candidates=[];const seenOptions=new Set();
-  for(const id of talksInOrder)for(const oid of ids(S.doc.talks[id]?.option)){if(seenOptions.has(oid))continue;seenOptions.add(oid);const row=S.doc.options[oid];if(!row||!localOptions.has(oid)||S.pinned.options.has(oid))continue;candidates.push(oid);}
+  for(const id of talksInOrder)for(const oid of ids(S.doc.talks[id]?.option)){if(seenOptions.has(oid))continue;seenOptions.add(oid);const row=S.doc.options[oid];if(!row||!localOptions.has(oid)||S.catalogAll?.options?.has(String(oid))||S.pinned.options.has(oid))continue;candidates.push(oid);}
   // Only an event with options of its own needs to know which of them dialogue elsewhere also lists.
   const foreignOptions=new Set();if(candidates.length)for(const [id,list]of talkOptionLists())if(!domain.has(id))for(const oid of list)foreignOptions.add(oid);
   const optionOrder=candidates.filter(oid=>!foreignOptions.has(oid));
@@ -549,7 +550,7 @@ document.addEventListener('click',e=>{
   const scope=prefix.closest('.wk-record-heading,.character-record-heading,.character-record-title,article,section,form,header');const button=prefix.closest('[data-record-table][data-record-id]')||scope?.querySelector('[data-record-table][data-record-id]');
   if(button&&!button.disabled)window.STUDIO_IDS.open(button.dataset.recordTable,button.dataset.recordId,prefix);
 },true);
-function renumberableEvent(){return S.event!=='all'&&S.doc?.events?.[S.event]&&!S.catalogIds?.events?.has(String(S.event))&&!S.project?.originalMode?Number(S.event):null;}
+function renumberableEvent(){return S.event!=='all'&&S.doc?.events?.[S.event]&&!S.catalogAll?.events?.has(String(S.event))&&!S.catalogIds?.events?.has(String(S.event))&&!S.project?.originalMode?Number(S.event):null;}
 // ---- Speakers: several people may speak one line; a custom name replaces the joined names. ----
 function renderSpeakers(state){
   const box=$('#scene-speakers');if(!box)return;const t=talk();if(!t){box.innerHTML='';return;}

@@ -96,6 +96,15 @@ class OriginalDialogueTests(unittest.TestCase):
         self.store.save({'projectId': self.ident, 'revision': data['revision'], 'talks': talks})
         after = json.loads((self.cfg / 'TalkCfg.json').read_text(encoding='utf-8'))
         self.assertEqual(after['1001002']['content'], '改过的二'); self.assertNotIn('1001001', after)
+        # Local overrides must keep their original identity after saving and reopening.
+        # The editor uses this complete catalog list, not catalog minus localIds, for numbering.
+        reopened = self.store.load(self.ident)
+        self.assertIn('1001', reopened['localIds']['events'])
+        self.assertIn('1001', reopened['catalogIds']['events'])
+        self.assertIn('1001002', reopened['localIds']['talks'])
+        self.assertIn('1001002', reopened['catalogIds']['talks'])
+        self.assertEqual(reopened['talks']['1001002']['id'], 1001002)
+        self.assertEqual(reopened['talks']['1001002']['option'], [100101])
 
     def test_corrupt_edits_open_as_empty_with_warning(self):
         with original_mode.scope(self.ident):

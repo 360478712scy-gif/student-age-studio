@@ -43,6 +43,7 @@ jobs:
       - run: node standalone/tests/up-audio-warning.cjs
       - run: node standalone/tests/mac-folder-bridge.cjs
       - run: node standalone/tests/story-id-claims.cjs
+      - run: node standalone/tests/original-id-numbering.cjs
       - run: node standalone/tests/timeline-folder-drop.cjs
       - run: node standalone/tests/all-story-export.cjs
       - run: node qa/tests/dialogue-text.cjs
