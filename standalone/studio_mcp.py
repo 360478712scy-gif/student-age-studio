@@ -18,7 +18,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 SERVER_INFO = {'name': 'student-age-studio', 'title': '拾光工坊 · 学生时代模组编辑器', 'version': '1.2.0'}
 PROTOCOLS = ('2025-06-18', '2025-03-26', '2024-11-05')
 
-INSTRUCTIONS = """拾光工坊（学生时代模组编辑器）的 MCP 工具，用编辑器自身的逻辑读写模组。
+SCENE_ENTRY = ('先按剧情判断每幕谁已经在画面里、谁中途登场：开场已在场的人，即使晚开口或全程不说话，也要在第一句'
+               '（可以是旁白）用 actions 明确安排登场和站位，不要等到各自的第一句台词；剧情安排中途登场、画外音或仅被提及的人不要提前入画，'
+               '分支只安排当前路径的人物。多人同句可用 ["人物", 1002, 1, 站位, 0]（左=1、中=3、右=2）。')
+
+INSTRUCTIONS = f"""拾光工坊（学生时代模组编辑器）的 MCP 工具，用编辑器自身的逻辑读写模组。
 使用要点：
 1. 先用 list_mods 找到模组（之后 mod 参数写编号或唯一名称即可）；订阅模组只读。
 2. 修改剧情前先用 get_event / list_events / search_lines 了解现状；说话人可写人物名、编号、"旁白"(-1) 或 "主角"(0)，不确定时用 list_persons。
@@ -26,9 +30,10 @@ INSTRUCTIONS = """拾光工坊（学生时代模组编辑器）的 MCP 工具，
 4. 编写事件条件/效果前先用 list_commands 查模板：每条条件/效果是一个数组，按 template 与 parameters 填写。
 5. 编辑器窗口开着时也能用；若编辑器里有未保存的修改，之后编辑器保存时会提示冲突，请提醒用户先保存或刷新。
 6. 演出（立绘站位、表情、背景、音乐、音效）写在每句对话里，素材编号先用 list_assets 查：
+   - {SCENE_ENTRY}
    - enter 写 "左"/"中"/"右"：人物在这句登场或换位置。已经站在那里的人物不会重复登场，所以只在第一次出场或换位置时写。
    - expression 写表情名（如 "害羞"）或编号；exit 写要退场的人物。
-   - background 换背景。按游戏规则，换背景会让所有人物退场，换背景后的第一句要重新写 enter。
+   - background 换背景。按游戏规则，换背景会让所有人物退场，在新场景第一句重新安排当时在场的人。
    - music 从这句开始播放背景音乐，直到下一个写了 music 的句子；sound 在这句播放音效。
    - 已有的句子用 edit_line 修改演出，用 set_music 给一段对话设置背景音乐。
    - 没写任何动作的句子，游戏会让说话人自动登场；写了动作的句子只执行写出的动作，工具会自动补上说话人的登场。
@@ -90,17 +95,17 @@ TOOLS = [
     tool('read_table', '读取任意配置表（如 ItemCfg、ActionCfg、PersonGrowCfg），默认只返回模组自己的记录。',
          {'mod': MOD, 'name': {'type': 'string'}, 'ids': {'type': 'array', 'items': {'type': 'string'}, 'description': '记录编号列表'}, 'query': {'type': 'string'},
           'include_original': {'type': 'boolean'}, 'limit': {'type': 'integer', 'default': 50}}, ['mod', 'name']),
-    tool('create_event', '新建剧情事件及其全部对话（可含选项分支）。编号自动分配，对话编号为 事件号×1000+序号。',
+    tool('create_event', '新建剧情事件及其全部对话（可含选项分支）。编号自动分配，对话编号为 事件号×1000+序号。' + SCENE_ENTRY,
          {'mod': MOD, 'title': {'type': 'string'}, 'lines': {'type': 'array', 'items': LINE_SCHEMA},
           'type': {'type': 'integer', 'default': 1, 'description': '事件类型编号'}, 'npc': {'type': 'string', 'description': '关联人物：名称或编号'},
           'map_id': {'type': 'integer', 'default': 0, 'description': '地点编号，0 为不限'}, 'rate': {'type': 'number', 'default': 1, 'description': '触发概率 0–1'},
           'maxcount': {'type': 'integer', 'default': 1}, 'condition': {'type': 'array'}, 'effect': {'type': 'array'},
           'event_id': {'type': 'integer', 'description': '可选：指定事件编号'}, **WRITE}, ['mod', 'title', 'lines'], False),
-    tool('add_lines', '在事件中插入对话（默认接在主线末尾；after 指定插在某句之后）。',
+    tool('add_lines', '在事件中插入对话（默认接在主线末尾；after 指定插在某句之后）。' + SCENE_ENTRY,
          {'mod': MOD, 'event_id': {'type': 'integer'}, 'lines': {'type': 'array', 'items': LINE_SCHEMA}, 'after': {'type': 'integer'}, **WRITE},
          ['mod', 'event_id', 'lines'], False),
     tool('edit_line', '修改一句对话：文字、说话人、显示名、演出（登场位置、表情、退场、背景、音效、CG）、跳转、条件分支和本句效果。只改传入的项。'
-         'enter 写 "无" 取消登场；expression 写空字符串取消表情；sound 写 "无" 取消音效；actions 会整体替换这句的动作。',
+         'enter 写 "无" 取消登场；expression 写空字符串取消表情；sound 写 "无" 取消音效；actions 会整体替换这句的动作。' + SCENE_ENTRY,
          {'mod': MOD, 'talk_id': {'type': 'integer'}, 'text': {'type': 'string'}, 'speaker': {'type': 'string', 'description': '新的说话人：名称、编号、旁白或主角'},
           'display_name': {'type': 'string'}, **{k: v for k, v in STAGE.items() if k != 'expressions'},
           'cg': {'type': 'string', 'description': '从这句显示 CG（编号或名称，见 list_assets(kind="cgs")）；"end" 结束 CG；"无" 去掉'},
@@ -109,7 +114,7 @@ TOOLS = [
           'next_if_failed': {'type': 'integer', 'description': '判定不满足时跳到的对话编号'},
           'effect': {'type': 'array', 'items': {'type': 'array'}, 'description': '这句执行的效果（效果数组，见 list_commands）；传 [] 清空'}, **WRITE}, ['mod', 'talk_id'], False),
     tool('set_options', '设置一句对话之后的玩家选项（整体替换）。每个选项写 text，并用 goto 跳到已有对话，或用 lines 新写选择后的对话；'
-         '保留原有选项时带上它的 id。options 传空数组表示去掉选项。新写的分支对话结束后接到 rejoin_to（默认是这句原来的下一句）。',
+         '保留原有选项时带上它的 id。options 传空数组表示去掉选项。新写的分支对话结束后接到 rejoin_to（默认是这句原来的下一句）。' + SCENE_ENTRY,
          {'mod': MOD, 'talk_id': {'type': 'integer'}, 'options': {'type': 'array', 'items': {'type': 'object', 'required': ['text'], 'properties': {
              'id': {'type': 'integer', 'description': '已有选项编号（保留并修改）'}, 'text': {'type': 'string'},
              'goto': {'type': 'integer', 'description': '跳到已有对话编号'}, 'lines': {'type': 'array', 'items': LINE_SCHEMA, 'description': '新写的分支对话'},
@@ -139,7 +144,7 @@ TOOLS = [
          {'mod': MOD, 'path': {'type': 'string', 'description': '如 Cfgs/zh-cn/ItemCfg.json'}, 'text': {'type': 'string'}, 'confirm_overwrite': {'type': 'boolean'}}, ['mod'], False),
     tool('list_external_dialogues', '列出事件外对话夹：名称、句数、首句和绑定的用途（送礼、闲聊、小游戏开场等）。', {'mod': MOD}, ['mod']),
     tool('create_external_dialogue', '新建事件外对话夹（不属于任何事件的连续对话），并可绑定游戏里的播放位置。用途种类与所需参数见 list_assets(kind="dialogue_uses")，'
-         '如 {"kind": "gift", "npc": "肖清雅", "item": 1000001}。',
+         '如 {"kind": "gift", "npc": "肖清雅", "item": 1000001}。' + SCENE_ENTRY,
          {'mod': MOD, 'name': {'type': 'string'}, 'lines': {'type': 'array', 'items': LINE_SCHEMA},
           'uses': {'type': 'array', 'items': {'type': 'object', 'required': ['kind'], 'properties': {
               'kind': {'type': 'string'}, 'npc': {'type': 'string'}, 'item': {'type': 'integer'}, 'level': {'type': 'integer'}, 'giftMode': {'type': 'integer'},
