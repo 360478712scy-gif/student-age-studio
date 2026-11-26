@@ -139,6 +139,27 @@ class StudioAgentTests(unittest.TestCase):
         self.assertEqual([i['name'] for i in s.assets(mod, 'music')['items']], ['心动足迹'])
         self.assertEqual(s.assets(mod, 'expressions', person='主角')['items'][4]['name'], '害羞')
 
+    def test_mcp_places_silent_characters_before_dialogue_without_pulling_forward_late_entrants(self):
+        cfgs = self.store.project(self.mod).path / 'Cfgs' / 'zh-cn'
+        cfgs.mkdir(parents=True, exist_ok=True)
+        (cfgs / 'PersonCfg.json').write_text(json.dumps({'3': {'id': 3, 'name': '同伴'}, '4': {'id': 4, 'name': '同学'}}),
+                                            encoding='utf-8')
+        options = studio_mcp.argparse.Namespace(mods=None, game=None, workshop=None)
+        handler = studio_mcp.Handler(options)
+        handler.studio = self.studio
+        response = handler.handle({'method': 'tools/call', 'params': {
+            'name': 'create_event', 'arguments': {'mod': self.mod, 'title': '出场顺序', 'lines': [
+                {'text': '教室里，白雨和同伴在等人。', 'actions': [['主角', 1002, 1, 1, 0], ['3', 1002, 1, 2, 0]]},
+                {'speaker': '主角', 'text': '还没来吗？', 'enter': '左'},
+                {'text': '另一位同学推门进来。', 'actions': [['4', 1002, 1, 3, 0]]},
+                {'speaker': '4', 'text': '久等了。', 'enter': '中'},
+            ]}}})
+        self.assertFalse(response['isError'], response)
+        talks = self.store.load(self.mod)['talks']
+        self.assertEqual([talks[str(t)]['roles'] for t in response['structuredContent']['lineIds']], [
+            [[0, 1002, 1, 1, 0], [3, 1002, 1, 2, 0]], [], [[4, 1002, 1, 3, 0]], [],
+        ])
+
     def test_options_branches_and_other_tables(self):
         s, mod = self.studio, self.mod
         created = s.create_event(mod, '分支', [{'text': '一'}, {'speaker': '主角', 'text': '二'}, {'text': '三'}, {'text': '四'}], event_id=1700000)
@@ -204,7 +225,12 @@ class McpProtocolTests(unittest.TestCase):
         replies = [json.loads(line) for line in out.getvalue().splitlines()]
         self.assertEqual([r['id'] for r in replies], [1, 2, 3, 4])  # the notification gets no reply
         self.assertEqual(replies[0]['result']['protocolVersion'], '2025-06-18')
-        names = {t['name'] for t in replies[1]['result']['tools']}
+        self.assertIn('不要等到各自的第一句台词', replies[0]['result']['instructions'])
+        self.assertIn('不要提前入画', replies[0]['result']['instructions'])
+        descriptions = {t['name']: t['description'] for t in replies[1]['result']['tools']}
+        for name in ('create_event', 'add_lines', 'edit_line', 'set_options', 'create_external_dialogue'):
+            self.assertIn('开场已在场', descriptions[name])
+        names = set(descriptions)
         self.assertTrue({'list_mods', 'get_event', 'create_event', 'add_lines', 'delete_lines'} <= names)
         self.assertTrue(all(t['inputSchema']['type'] == 'object' for t in replies[1]['result']['tools']))
         self.assertEqual(replies[2]['error']['code'], -32602)
